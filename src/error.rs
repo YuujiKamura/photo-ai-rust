@@ -41,8 +41,8 @@ pub enum PhotoAiError {
     #[error("画像が見つかりません: {0}")]
     NoImagesFound(String),
 
-    #[error("HTTPエラー: {0}")]
-    Http(#[from] reqwest::Error),
+    #[error("CLI実行エラー: {0}")]
+    CliExecution(String),
 }
 
 pub type Result<T> = std::result::Result<T, PhotoAiError>;
