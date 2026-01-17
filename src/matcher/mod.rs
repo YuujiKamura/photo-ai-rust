@@ -1,110 +1,148 @@
-mod types;
-
-pub use types::{MasterEntry, MatchResult};
+//! マスタ照合モジュール
+//!
+//! 既存の constructionHierarchyData.ts と同じJSON構造を読み込み、
+//! AI解析結果と照合して工種・種別・細別を特定する。
+//!
+//! ## 階層構造
+//! ```text
+//! 直接工事費
+//!   └─ 写真区分（品質管理写真、施工状況写真...）
+//!       └─ 工種（舗装工、区画線工...）
+//!           └─ 種別（舗装打換え工...）
+//!               └─ 細別（表層工、上層路盤工...）
+//!                   └─ 備考キー or { matchPatterns: [...] }
+//! ```
 
 use crate::analyzer::AnalysisResult;
 use crate::error::{PhotoAiError, Result};
-use calamine::{open_workbook, Reader, Xlsx};
+use serde_json::Value;
 use std::path::Path;
 
-/// Excelマスタを読み込み、MasterEntryリストに変換
-///
-/// 想定シート構造:
-/// | 写真区分 | 工種 | 種別 | 細別 | 照合パターン |
-/// |---------|------|------|------|-------------|
-/// | 品質管理 | 舗装工 | 表層工 | - | 温度,密度 |
-fn load_master_from_excel(master_path: &Path) -> Result<Vec<MasterEntry>> {
-    let mut workbook: Xlsx<_> = open_workbook(master_path)
-        .map_err(|e| PhotoAiError::InvalidMaster(format!("Excel読み込みエラー: {}", e)))?;
-
-    // 最初のシートを使用
-    let sheet_name = workbook
-        .sheet_names()
-        .first()
-        .cloned()
-        .ok_or_else(|| PhotoAiError::InvalidMaster("シートが見つかりません".into()))?;
-
-    let range = workbook
-        .worksheet_range(&sheet_name)
-        .map_err(|e| PhotoAiError::InvalidMaster(format!("シート読み込みエラー: {}", e)))?;
-
-    let mut entries = Vec::new();
-    let mut header_row = true;
-
-    for row in range.rows() {
-        // ヘッダー行をスキップ
-        if header_row {
-            header_row = false;
-            continue;
-        }
-
-        // 最低5列必要（写真区分, 工種, 種別, 細別, 照合パターン）
-        if row.len() < 5 {
-            continue;
-        }
-
-        let photo_category = cell_to_string(&row[0]);
-        let work_type = cell_to_string(&row[1]);
-        let variety = cell_to_string(&row[2]);
-        let detail = cell_to_string(&row[3]);
-        let patterns_str = cell_to_string(&row[4]);
-
-        // 空行をスキップ
-        if photo_category.is_empty() && work_type.is_empty() {
-            continue;
-        }
-
-        // 照合パターンをカンマ区切りで分割
-        let match_patterns: Vec<String> = patterns_str
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-
-        if !match_patterns.is_empty() {
-            entries.push(MasterEntry {
-                photo_category,
-                work_type,
-                variety,
-                detail,
-                match_patterns,
-            });
-        }
-    }
-
-    Ok(entries)
+/// 照合結果
+#[derive(Debug, Clone, Default)]
+pub struct MatchResult {
+    pub photo_category: String,
+    pub work_type: String,
+    pub variety: String,
+    pub detail: String,
+    pub remark: String,
+    pub matched_patterns: Vec<String>,
 }
 
-/// セル値を文字列に変換
-fn cell_to_string(cell: &calamine::Data) -> String {
-    match cell {
-        calamine::Data::String(s) => s.clone(),
-        calamine::Data::Int(i) => i.to_string(),
-        calamine::Data::Float(f) => f.to_string(),
-        calamine::Data::Bool(b) => b.to_string(),
-        calamine::Data::Empty => String::new(),
-        _ => String::new(),
+/// 階層走査時のコンテキスト
+#[derive(Clone)]
+struct TraverseContext {
+    photo_category: String,
+    work_type: String,
+    variety: String,
+    detail: String,
+}
+
+/// マスタJSONを読み込み
+fn load_master(master_path: &Path) -> Result<Value> {
+    let content = std::fs::read_to_string(master_path)?;
+    let master: Value = serde_json::from_str(&content)
+        .map_err(|e| PhotoAiError::InvalidMaster(format!("JSONパースエラー: {}", e)))?;
+    Ok(master)
+}
+
+/// 階層を再帰的に走査し、matchPatternsを持つエントリを収集
+fn collect_match_entries(
+    value: &Value,
+    ctx: &TraverseContext,
+    depth: usize,
+    entries: &mut Vec<(TraverseContext, String, Vec<String>)>,
+) {
+    let Some(obj) = value.as_object() else {
+        return;
+    };
+
+    for (key, child) in obj {
+        // matchPatternsキーは特別扱い
+        if key == "matchPatterns" {
+            if let Some(arr) = child.as_array() {
+                let patterns: Vec<String> = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect();
+                if !patterns.is_empty() {
+                    // 親キー（細別または備考）をremarkとして記録
+                    entries.push((ctx.clone(), String::new(), patterns));
+                }
+            }
+            continue;
+        }
+
+        // 階層に応じてコンテキストを更新
+        let new_ctx = match depth {
+            0 => TraverseContext {
+                photo_category: key.clone(),
+                ..ctx.clone()
+            },
+            1 => TraverseContext {
+                work_type: key.clone(),
+                ..ctx.clone()
+            },
+            2 => TraverseContext {
+                variety: key.clone(),
+                ..ctx.clone()
+            },
+            3 => TraverseContext {
+                detail: key.clone(),
+                ..ctx.clone()
+            },
+            _ => ctx.clone(),
+        };
+
+        // 子ノードがオブジェクトで matchPatterns を持つ場合
+        if let Some(child_obj) = child.as_object() {
+            if let Some(patterns_val) = child_obj.get("matchPatterns") {
+                if let Some(arr) = patterns_val.as_array() {
+                    let patterns: Vec<String> = arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect();
+                    if !patterns.is_empty() {
+                        let ctx_with_remark = TraverseContext {
+                            detail: if depth >= 3 { new_ctx.detail.clone() } else { key.clone() },
+                            ..new_ctx.clone()
+                        };
+                        entries.push((ctx_with_remark, key.clone(), patterns));
+                    }
+                }
+                // matchPatternsのみのノードは子を持たないのでスキップ
+                if child_obj.len() == 1 {
+                    continue;
+                }
+            }
+        }
+
+        // 再帰
+        collect_match_entries(child, &new_ctx, depth + 1, entries);
     }
 }
 
 /// 解析結果とマスタをマッチング
-fn match_entry(result: &AnalysisResult, entries: &[MasterEntry]) -> Option<MatchResult> {
+fn match_entry(
+    result: &AnalysisResult,
+    entries: &[(TraverseContext, String, Vec<String>)],
+) -> Option<MatchResult> {
     let mut best_match: Option<MatchResult> = None;
     let mut best_score = 0;
 
     // 検索対象テキスト（OCR + 説明文 + 写真区分）
     let search_text = format!(
         "{} {} {}",
-        result.detected_text.to_lowercase(),
-        result.description.to_lowercase(),
-        result.photo_category.to_lowercase()
-    );
+        result.detected_text,
+        result.description,
+        result.photo_category
+    ).to_lowercase();
 
-    for entry in entries {
+    for (ctx, remark, patterns) in entries {
         // 写真区分が一致するかチェック（部分一致）
         let category_match = result.photo_category.is_empty()
-            || entry.photo_category.contains(&result.photo_category)
-            || result.photo_category.contains(&entry.photo_category);
+            || ctx.photo_category.contains(&result.photo_category)
+            || result.photo_category.contains(&ctx.photo_category);
 
         if !category_match {
             continue;
@@ -112,7 +150,7 @@ fn match_entry(result: &AnalysisResult, entries: &[MasterEntry]) -> Option<Match
 
         // パターンマッチング
         let mut matched_patterns = Vec::new();
-        for pattern in &entry.match_patterns {
+        for pattern in patterns {
             if search_text.contains(&pattern.to_lowercase()) {
                 matched_patterns.push(pattern.clone());
             }
@@ -121,18 +159,13 @@ fn match_entry(result: &AnalysisResult, entries: &[MasterEntry]) -> Option<Match
         let score = matched_patterns.len();
         if score > best_score {
             best_score = score;
-            let confidence = if entry.match_patterns.is_empty() {
-                0.0
-            } else {
-                score as f32 / entry.match_patterns.len() as f32
-            };
-
             best_match = Some(MatchResult {
-                work_type: entry.work_type.clone(),
-                variety: entry.variety.clone(),
-                detail: entry.detail.clone(),
+                photo_category: ctx.photo_category.clone(),
+                work_type: ctx.work_type.clone(),
+                variety: ctx.variety.clone(),
+                detail: ctx.detail.clone(),
+                remark: remark.clone(),
                 matched_patterns,
-                confidence,
             });
         }
     }
@@ -148,24 +181,25 @@ pub fn match_with_master(
         return Err(PhotoAiError::FileNotFound(master_path.display().to_string()));
     }
 
-    // 拡張子でExcelかJSONか判定
-    let ext = master_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
+    let master = load_master(master_path)?;
 
-    let entries = match ext.as_str() {
-        "xlsx" | "xls" => load_master_from_excel(master_path)?,
-        _ => {
-            return Err(PhotoAiError::InvalidMaster(
-                "マスタファイルはExcel形式（.xlsx）で指定してください".into(),
-            ));
-        }
+    // 「直接工事費」キーがあればその下を使う
+    let root = master
+        .get("直接工事費")
+        .unwrap_or(&master);
+
+    // matchPatternsを持つエントリを収集
+    let mut entries = Vec::new();
+    let initial_ctx = TraverseContext {
+        photo_category: String::new(),
+        work_type: String::new(),
+        variety: String::new(),
+        detail: String::new(),
     };
+    collect_match_entries(root, &initial_ctx, 0, &mut entries);
 
     if entries.is_empty() {
-        eprintln!("警告: マスタにマッチングパターンが見つかりません");
+        eprintln!("警告: マスタにmatchPatternsが見つかりません");
         return Ok(results.to_vec());
     }
 
@@ -198,31 +232,84 @@ pub fn match_with_master(
 mod tests {
     use super::*;
 
-    fn create_test_entries() -> Vec<MasterEntry> {
-        vec![
-            MasterEntry {
-                photo_category: "品質管理".to_string(),
-                work_type: "舗装工".to_string(),
-                variety: "表層工".to_string(),
-                detail: "".to_string(),
-                match_patterns: vec!["温度".to_string(), "密度".to_string()],
-            },
-            MasterEntry {
-                photo_category: "出来形管理".to_string(),
-                work_type: "舗装工".to_string(),
-                variety: "路盤工".to_string(),
-                detail: "".to_string(),
-                match_patterns: vec!["厚さ".to_string(), "幅".to_string()],
-            },
-        ]
+    fn create_test_master() -> Value {
+        serde_json::json!({
+            "直接工事費": {
+                "品質管理写真": {
+                    "舗装工": {
+                        "舗装打換え工": {
+                            "表層工": {
+                                "アスファルト混合物温度測定": {
+                                    "matchPatterns": ["温度管理", "合材温度", "到着温度", "敷均し温度"]
+                                }
+                            },
+                            "上層路盤工": {
+                                "現場密度測定": {
+                                    "matchPatterns": ["密度測定", "RI計器", "砂置換法"]
+                                }
+                            }
+                        }
+                    }
+                },
+                "出来形管理写真": {
+                    "舗装工": {
+                        "舗装打換え工": {
+                            "上層路盤工": {
+                                "不陸整正出来形": {
+                                    "matchPatterns": ["路盤出来形", "出来形検測", "基準高"]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn test_collect_match_entries() {
+        let master = create_test_master();
+        let root = master.get("直接工事費").unwrap();
+
+        let mut entries = Vec::new();
+        let initial_ctx = TraverseContext {
+            photo_category: String::new(),
+            work_type: String::new(),
+            variety: String::new(),
+            detail: String::new(),
+        };
+        collect_match_entries(root, &initial_ctx, 0, &mut entries);
+
+        assert_eq!(entries.len(), 3);
+
+        // 温度測定エントリを確認
+        let temp_entry = entries.iter().find(|(ctx, _, _)| ctx.detail == "表層工");
+        assert!(temp_entry.is_some());
+        let (ctx, remark, patterns) = temp_entry.unwrap();
+        assert_eq!(ctx.photo_category, "品質管理写真");
+        assert_eq!(ctx.work_type, "舗装工");
+        assert_eq!(ctx.variety, "舗装打換え工");
+        assert_eq!(remark, "アスファルト混合物温度測定");
+        assert!(patterns.contains(&"温度管理".to_string()));
     }
 
     #[test]
     fn test_match_entry_temperature() {
-        let entries = create_test_entries();
+        let master = create_test_master();
+        let root = master.get("直接工事費").unwrap();
+
+        let mut entries = Vec::new();
+        let initial_ctx = TraverseContext {
+            photo_category: String::new(),
+            work_type: String::new(),
+            variety: String::new(),
+            detail: String::new(),
+        };
+        collect_match_entries(root, &initial_ctx, 0, &mut entries);
+
         let result = AnalysisResult {
             file_name: "test.jpg".to_string(),
-            detected_text: "温度 160.4℃".to_string(),
+            detected_text: "到着温度 160.4℃".to_string(),
             photo_category: "品質管理".to_string(),
             ..Default::default()
         };
@@ -232,17 +319,29 @@ mod tests {
 
         let m = matched.unwrap();
         assert_eq!(m.work_type, "舗装工");
-        assert_eq!(m.variety, "表層工");
-        assert!(m.matched_patterns.contains(&"温度".to_string()));
+        assert_eq!(m.variety, "舗装打換え工");
+        assert_eq!(m.detail, "表層工");
+        assert!(m.matched_patterns.contains(&"到着温度".to_string()));
     }
 
     #[test]
-    fn test_match_entry_thickness() {
-        let entries = create_test_entries();
+    fn test_match_entry_density() {
+        let master = create_test_master();
+        let root = master.get("直接工事費").unwrap();
+
+        let mut entries = Vec::new();
+        let initial_ctx = TraverseContext {
+            photo_category: String::new(),
+            work_type: String::new(),
+            variety: String::new(),
+            detail: String::new(),
+        };
+        collect_match_entries(root, &initial_ctx, 0, &mut entries);
+
         let result = AnalysisResult {
             file_name: "test.jpg".to_string(),
-            detected_text: "厚さ 50mm".to_string(),
-            photo_category: "出来形".to_string(),
+            detected_text: "RI計器による密度測定".to_string(),
+            photo_category: "品質管理".to_string(),
             ..Default::default()
         };
 
@@ -250,12 +349,24 @@ mod tests {
         assert!(matched.is_some());
 
         let m = matched.unwrap();
-        assert_eq!(m.variety, "路盤工");
+        assert_eq!(m.detail, "上層路盤工");
+        assert!(m.matched_patterns.len() >= 2); // "密度測定" と "RI計器"
     }
 
     #[test]
     fn test_match_entry_no_match() {
-        let entries = create_test_entries();
+        let master = create_test_master();
+        let root = master.get("直接工事費").unwrap();
+
+        let mut entries = Vec::new();
+        let initial_ctx = TraverseContext {
+            photo_category: String::new(),
+            work_type: String::new(),
+            variety: String::new(),
+            detail: String::new(),
+        };
+        collect_match_entries(root, &initial_ctx, 0, &mut entries);
+
         let result = AnalysisResult {
             file_name: "test.jpg".to_string(),
             detected_text: "関係ないテキスト".to_string(),
