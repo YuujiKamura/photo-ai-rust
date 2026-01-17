@@ -11,15 +11,13 @@ clap = { version = "4", features = ["derive"] }
 
 # 画像処理
 image = "0.25"
-base64 = "0.22"
 kamadak-exif = "0.5"
 
 # ファイル操作
 walkdir = "2"
 
-# HTTP/API
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
-tokio = { version = "1", features = ["full"] }
+# 非同期（CLI出力待ち用）
+tokio = { version = "1", features = ["full", "process"] }
 
 # シリアライズ
 serde = { version = "1", features = ["derive"] }
@@ -38,3 +36,4 @@ thiserror = "2"
 # ユーティリティ
 indicatif = "0.17"
 rayon = "1"
+dirs = "5"

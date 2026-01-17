@@ -10,11 +10,37 @@
     ↓
 [1] 画像スキャン (walkdir + image)
     ↓
-[2] Claude API解析 (reqwest + base64)
+[2] Claude CLI呼び出し (std::process::Command)
     ↓
 [3] 工種マスタ照合 (serde_json)
     ↓
 [4] PDF/Excel出力 (printpdf / rust_xlsxwriter)
+```
+
+## 重要: Claude CLI方式
+
+**HTTP APIは使わない。Claude CLIを呼び出す。**
+
+理由:
+- 認証管理が不要（CLIが管理）
+- セッション管理が簡単
+- TypeScript版と同じアプローチ
+
+### 呼び出し方式
+
+```rust
+use std::process::Command;
+
+// 単発呼び出し
+let output = Command::new("claude")
+    .args(["-p", &prompt, "--output-format", "text"])
+    .output()?;
+
+// 永続プロセス（Phase 2で検討）
+let mut child = Command::new("claude")
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .spawn()?;
 ```
 
 ## フェーズ
@@ -22,20 +48,21 @@
 ### Phase 1: 基盤構築
 - [ ] プロジェクト構造
 - [ ] CLI引数パース (clap)
-- [ ] 設定ファイル読み込み (config)
+- [ ] 設定ファイル読み込み
 - [ ] エラーハンドリング (anyhow/thiserror)
 
 ### Phase 2: 画像処理
 - [ ] フォルダスキャン (walkdir)
-- [ ] 画像読み込み・リサイズ (image)
-- [ ] Base64エンコード (base64)
+- [ ] 画像ファイル一覧取得
 - [ ] EXIF日時取得 (kamadak-exif)
+- [ ] 画像をtemp-imagesにコピー
 
-### Phase 3: Claude API連携
-- [ ] API呼び出し (reqwest)
-- [ ] Vision APIでの画像解析
+### Phase 3: Claude CLI連携
+- [ ] Command::new("claude")で呼び出し
+- [ ] プロンプト構築（画像パス含む）
 - [ ] JSONレスポンスパース
-- [ ] バッチ処理・リトライ
+- [ ] バッチ処理
+- [ ] 永続プロセス化（オプション）
 
 ### Phase 4: マスタ照合
 - [ ] 工種マスタJSON読み込み
@@ -54,7 +81,7 @@
 ### Phase 6: 最適化
 - [ ] 並列処理 (rayon)
 - [ ] プログレス表示 (indicatif)
-- [ ] キャッシュ機構
+- [ ] Claude CLI永続プロセス化
 
 ## 依存クレート
 
@@ -62,28 +89,38 @@
 [dependencies]
 # CLI
 clap = { version = "4", features = ["derive"] }
+
 # 画像
 image = "0.25"
-base64 = "0.22"
 kamadak-exif = "0.5"
+
 # ファイル
 walkdir = "2"
-# HTTP
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
-tokio = { version = "1", features = ["full"] }
+
+# 非同期（CLI出力待ち用）
+tokio = { version = "1", features = ["full", "process"] }
+
 # JSON
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
 # PDF
 printpdf = "0.7"
+
 # Excel
 rust_xlsxwriter = "0.79"
+
 # ユーティリティ
 anyhow = "1"
 thiserror = "2"
 indicatif = "0.17"
 rayon = "1"
+dirs = "5"
 ```
+
+**削除したクレート:**
+- reqwest（HTTP不要）
+- base64（CLI経由なので不要）
 
 ## コマンド例
 
@@ -96,17 +133,15 @@ photo-ai export result.json --format pdf -o 写真台帳.pdf
 
 # 一括処理
 photo-ai run ./photos -o 写真台帳.pdf
-
-# サーバーモード（将来）
-photo-ai serve --port 3001
 ```
 
-## TypeScript版からの移行ポイント
+## TypeScript版からの改善点
 
-1. **Claude CLI依存を排除** → API直接呼び出し
-2. **遅延処理の徹底** → 必要時のみbase64化
-3. **型安全性** → Rustの型システムで保証
-4. **エラーハンドリング** → Result型で明示的に
+1. **Claude CLI呼び出しの改善** → Rust のCommand APIで安定化
+2. **パス処理の改善** → Rustの PathBuf で正規化
+3. **遅延処理の徹底** → 必要時のみファイル操作
+4. **型安全性** → Rustの型システムで保証
+5. **エラーハンドリング** → Result型で明示的に
 
 ## ディレクトリ構造
 
@@ -117,12 +152,13 @@ photo-ai-rust/
 │   ├── main.rs           # エントリポイント
 │   ├── cli.rs            # CLI引数定義
 │   ├── config.rs         # 設定
+│   ├── error.rs          # エラー型
 │   ├── scanner/          # 画像スキャン
 │   │   ├── mod.rs
 │   │   └── exif.rs
-│   ├── analyzer/         # Claude API
+│   ├── analyzer/         # Claude CLI呼び出し
 │   │   ├── mod.rs
-│   │   ├── client.rs
+│   │   ├── claude_cli.rs # CLI実行
 │   │   └── types.rs
 │   ├── matcher/          # マスタ照合
 │   │   └── mod.rs
