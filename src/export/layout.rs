@@ -39,6 +39,11 @@ pub const MM_TO_PT: f32 = 72.0 / 25.4;
 pub const PT_TO_PX: f32 = 96.0 / 72.0;
 pub const PX_TO_PT: f32 = 72.0 / 96.0;
 
+/// Excel列幅変換係数
+pub const PT_PER_EXCEL_COL: f32 = 5.3;
+pub const PX_PER_EXCEL_COL: f32 = 7.1;
+pub const EXCEL_COL_OFFSET_PX: f32 = 5.0;
+
 // ============================================
 // 導出されるpt値
 // ============================================
@@ -59,6 +64,32 @@ pub const PHOTO_HEIGHT_PT_2UP: f32 = PHOTO_HEIGHT_MM_2UP * MM_TO_PT; // 364.3pt
 /// 情報パネル幅（pt）
 pub const INFO_WIDTH_PT: f32 = INFO_WIDTH_MM * MM_TO_PT;         // 188.5pt
 
+/// ブロック高さ（pt）
+pub const BLOCK_HEIGHT_3UP_PT: f32 = PHOTO_HEIGHT_PT_3UP + GAP_PT; // 271.25pt
+pub const BLOCK_HEIGHT_2UP_PT: f32 = PHOTO_HEIGHT_PT_2UP * 1.5;    // 2upは別計算
+
+// ============================================
+// Excel用レイアウト定数
+// ============================================
+
+/// 全体スケール
+pub const EXCEL_SCALE: f32 = 1.1;
+
+/// 行の設計（写真高さ242.9ptを10行 + 余白1行）
+pub const PHOTO_ROWS: u8 = 10;
+pub const GAP_ROWS: u8 = 1;
+pub const ROWS_PER_BLOCK_3UP: u8 = PHOTO_ROWS + GAP_ROWS; // 11行/ブロック
+pub const ROWS_PER_BLOCK_2UP: u8 = PHOTO_ROWS + GAP_ROWS; // 2upも同様
+
+/// 行高さ (pt) = 写真高さ ÷ 写真行数 × SCALE
+pub const ROW_HEIGHT_PT: f32 = 26.0; // floor((242.9 / 10) * 1.1)
+
+/// 列幅 (Excel単位)
+pub const PHOTO_COL_WIDTH: f32 = 56.1;  // アスペクト比に合わせて調整
+pub const LABEL_COL_WIDTH: f32 = 11.0;  // 10 * SCALE
+pub const VALUE_COL_WIDTH: f32 = 28.6;  // 26 * SCALE
+pub const INFO_COL_WIDTH: f32 = 39.6;   // LABEL + VALUE
+
 // ============================================
 // フィールド定義
 // ============================================
@@ -73,6 +104,8 @@ pub struct FieldDefinition {
 
 /// レイアウトフィールド（React版 LAYOUT_FIELDS と同等）
 pub const LAYOUT_FIELDS: &[FieldDefinition] = &[
+    FieldDefinition { key: "date", label: "日時", row_span: 1 },
+    FieldDefinition { key: "photoCategory", label: "区分", row_span: 1 },
     FieldDefinition { key: "workType", label: "工種", row_span: 1 },
     FieldDefinition { key: "variety", label: "種別", row_span: 1 },
     FieldDefinition { key: "detail", label: "細別", row_span: 1 },
@@ -165,6 +198,73 @@ impl PdfLayout {
 }
 
 // ============================================
+// Excelレイアウト設定構造体
+// ============================================
+
+/// Excelレイアウト設定
+#[derive(Debug, Clone)]
+pub struct ExcelLayout {
+    /// 1ブロックあたりの行数
+    pub rows_per_block: u8,
+    /// 写真部分の行数
+    pub photo_rows: u8,
+    /// 行高さ (pt)
+    pub row_height_pt: f32,
+    /// 列A幅（画像列）
+    pub col_a_width: f32,
+    /// 列B幅（ラベル列）
+    pub col_b_width: f32,
+    /// 列C幅（値列）
+    pub col_c_width: f32,
+    /// 写真幅 (pt)
+    pub photo_width_pt: f32,
+    /// 写真高さ (pt)
+    pub photo_height_pt: f32,
+    /// 情報パネル幅 (pt)
+    pub info_width_pt: f32,
+}
+
+impl ExcelLayout {
+    /// 3枚/ページ用レイアウト
+    pub fn three_up() -> Self {
+        Self {
+            rows_per_block: ROWS_PER_BLOCK_3UP,
+            photo_rows: PHOTO_ROWS,
+            row_height_pt: ROW_HEIGHT_PT,
+            col_a_width: PHOTO_COL_WIDTH,
+            col_b_width: LABEL_COL_WIDTH,
+            col_c_width: VALUE_COL_WIDTH,
+            photo_width_pt: PHOTO_WIDTH_PT,
+            photo_height_pt: PHOTO_HEIGHT_PT_3UP,
+            info_width_pt: INFO_WIDTH_PT,
+        }
+    }
+
+    /// 2枚/ページ用レイアウト
+    pub fn two_up() -> Self {
+        Self {
+            rows_per_block: ROWS_PER_BLOCK_2UP,
+            photo_rows: PHOTO_ROWS,
+            row_height_pt: ROW_HEIGHT_PT,
+            col_a_width: PHOTO_COL_WIDTH,
+            col_b_width: LABEL_COL_WIDTH,
+            col_c_width: VALUE_COL_WIDTH,
+            photo_width_pt: PHOTO_WIDTH_PT,
+            photo_height_pt: PHOTO_HEIGHT_PT_2UP,
+            info_width_pt: INFO_WIDTH_PT,
+        }
+    }
+
+    /// 指定枚数でレイアウト取得
+    pub fn for_photos_per_page(n: u8) -> Self {
+        match n {
+            2 => Self::two_up(),
+            _ => Self::three_up(),
+        }
+    }
+}
+
+// ============================================
 // ヘルパー関数
 // ============================================
 
@@ -190,6 +290,30 @@ pub fn px_to_pt(px: f32) -> f32 {
 #[inline]
 pub fn pt_to_px(pt: f32) -> f32 {
     pt * PT_TO_PX
+}
+
+/// pt → Excel列幅 変換
+#[inline]
+pub fn pt_to_excel_col(pt: f32) -> f32 {
+    (pt / PT_PER_EXCEL_COL).round()
+}
+
+/// Excel列幅 → pt 変換
+#[inline]
+pub fn excel_col_to_pt(units: f32) -> f32 {
+    (units * PT_PER_EXCEL_COL).round()
+}
+
+/// px → Excel幅 変換
+#[inline]
+pub fn px_to_excel_width(px: f32) -> f32 {
+    ((px - EXCEL_COL_OFFSET_PX) / PX_PER_EXCEL_COL).round()
+}
+
+/// Excel幅 → px 変換
+#[inline]
+pub fn excel_width_to_px(units: f32) -> f32 {
+    (units * PX_PER_EXCEL_COL + EXCEL_COL_OFFSET_PX).round()
 }
 
 #[cfg(test)]
@@ -228,5 +352,39 @@ mod tests {
         let layout2 = PdfLayout::two_up();
         assert_eq!(layout2.photos_per_page, 2);
         assert!(layout2.photo_height_mm > layout.photo_height_mm);
+    }
+
+    #[test]
+    fn test_excel_layout() {
+        let layout = ExcelLayout::three_up();
+        assert_eq!(layout.rows_per_block, 11);
+        assert_eq!(layout.photo_rows, 10);
+        assert!((layout.row_height_pt - 26.0).abs() < 0.01);
+        assert!((layout.col_a_width - 56.1).abs() < 0.01);
+        assert!((layout.col_b_width - 11.0).abs() < 0.01);
+        assert!((layout.col_c_width - 28.6).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_excel_conversion() {
+        // Excel列幅変換
+        let pt = 53.0;
+        let col = pt_to_excel_col(pt);
+        assert_eq!(col, 10.0);
+
+        let back = excel_col_to_pt(col);
+        assert_eq!(back, 53.0);
+    }
+
+    #[test]
+    fn test_layout_fields() {
+        // フィールド数の確認
+        assert_eq!(LAYOUT_FIELDS.len(), 8);
+
+        // 最初と最後のフィールド確認
+        assert_eq!(LAYOUT_FIELDS[0].key, "date");
+        assert_eq!(LAYOUT_FIELDS[0].label, "日時");
+        assert_eq!(LAYOUT_FIELDS[7].key, "measurements");
+        assert_eq!(LAYOUT_FIELDS[7].row_span, 3);
     }
 }

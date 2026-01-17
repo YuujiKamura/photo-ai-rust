@@ -1,7 +1,23 @@
 use crate::analyzer::AnalysisResult;
 use crate::error::{PhotoAiError, Result};
+use super::layout::{LAYOUT_FIELDS, LABEL_COL_WIDTH, VALUE_COL_WIDTH};
 use rust_xlsxwriter::*;
 use std::path::Path;
+
+/// フィールド値を取得（LAYOUT_FIELDSのkeyに基づく）
+fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
+    match key {
+        "date" => "-",  // TODO: EXIF日時実装後に対応
+        "photoCategory" => &result.photo_category,
+        "workType" => &result.work_type,
+        "variety" => &result.variety,
+        "detail" => &result.detail,
+        "station" => &result.station,
+        "remarks" => &result.remarks,
+        "measurements" => &result.measurements,
+        _ => "-",
+    }
+}
 
 pub fn generate_excel(
     results: &[AnalysisResult],
@@ -17,20 +33,12 @@ pub fn generate_excel(
         .set_background_color(Color::RGB(0xE0E0E0))
         .set_border(FormatBorder::Thin);
 
-    // ヘッダー
-    let headers = [
-        "ファイル名",
-        "工種",
-        "種別",
-        "細別",
-        "測点",
-        "備考",
-        "写真説明",
-        "写真区分",
-    ];
+    // ヘッダー: ファイル名 + LAYOUT_FIELDSのラベル
+    worksheet.write_string_with_format(0, 0, "ファイル名", &header_format)
+        .map_err(|e| PhotoAiError::ExcelGeneration(format!("ヘッダー書き込みエラー: {}", e)))?;
 
-    for (col, header) in headers.iter().enumerate() {
-        worksheet.write_string_with_format(0, col as u16, *header, &header_format)
+    for (col, field) in LAYOUT_FIELDS.iter().enumerate() {
+        worksheet.write_string_with_format(0, (col + 1) as u16, field.label, &header_format)
             .map_err(|e| PhotoAiError::ExcelGeneration(format!("ヘッダー書き込みエラー: {}", e)))?;
     }
 
@@ -38,29 +46,28 @@ pub fn generate_excel(
     for (row, result) in results.iter().enumerate() {
         let row_num = (row + 1) as u32;
 
+        // ファイル名
         worksheet.write_string(row_num, 0, &result.file_name)
             .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
-        worksheet.write_string(row_num, 1, &result.work_type)
-            .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
-        worksheet.write_string(row_num, 2, &result.variety)
-            .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
-        worksheet.write_string(row_num, 3, &result.detail)
-            .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
-        worksheet.write_string(row_num, 4, &result.station)
-            .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
-        worksheet.write_string(row_num, 5, &result.remarks)
-            .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
-        worksheet.write_string(row_num, 6, &result.description)
-            .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
-        worksheet.write_string(row_num, 7, &result.photo_category)
-            .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
+
+        // LAYOUT_FIELDSの各フィールド
+        for (col, field) in LAYOUT_FIELDS.iter().enumerate() {
+            let value = get_field_value(result, field.key);
+            worksheet.write_string(row_num, (col + 1) as u16, value)
+                .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
+        }
     }
 
-    // 列幅調整
-    worksheet.set_column_width(0, 20.0)
+    // 列幅調整（layout.rsの定数を使用）
+    worksheet.set_column_width(0, 20.0)  // ファイル名
         .map_err(|e| PhotoAiError::ExcelGeneration(format!("列幅設定エラー: {}", e)))?;
-    worksheet.set_column_width(6, 40.0)
-        .map_err(|e| PhotoAiError::ExcelGeneration(format!("列幅設定エラー: {}", e)))?;
+
+    // ラベル列とデータ列の幅
+    for col in 1..=(LAYOUT_FIELDS.len() as u16) {
+        let width = if col % 2 == 1 { LABEL_COL_WIDTH as f64 } else { VALUE_COL_WIDTH as f64 };
+        worksheet.set_column_width(col, width)
+            .map_err(|e| PhotoAiError::ExcelGeneration(format!("列幅設定エラー: {}", e)))?;
+    }
 
     // 保存
     workbook.save(output_path)

@@ -283,7 +283,22 @@ fn draw_rect(layer: &PdfLayerReference, x_pt: f32, y_pt: f32, width_pt: f32, hei
     layer.add_line(rect);
 }
 
-/// 情報欄テキスト描画（React版169-187行）
+/// フィールド値を取得（LAYOUT_FIELDSのkeyに基づく）
+fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
+    match key {
+        "date" => "-",  // TODO: EXIF日時実装後に対応
+        "photoCategory" => &result.photo_category,
+        "workType" => &result.work_type,
+        "variety" => &result.variety,
+        "detail" => &result.detail,
+        "station" => &result.station,
+        "remarks" => &result.remarks,
+        "measurements" => &result.measurements,
+        _ => "-",
+    }
+}
+
+/// 情報欄テキスト描画（layout.rsのLAYOUT_FIELDSを使用）
 fn draw_info_fields(
     layer: &PdfLayerReference,
     result: &AnalysisResult,
@@ -292,21 +307,15 @@ fn draw_info_fields(
     photo_height_pt: f32,
     fonts: &FontSet,
 ) {
-    // React版169-174行のフィールド定義
-    let fields = [
-        ("工種", result.work_type.as_str()),
-        ("種別", result.variety.as_str()),
-        ("細別", result.detail.as_str()),
-        ("測点", result.station.as_str()),
-        ("備考", result.remarks.as_str()),
-        ("測定値", result.measurements.as_str()),
-    ];
+    // LAYOUT_FIELDSを使用してフィールドを描画
+    let mut y_offset = 0u8;
 
-    // React版180行: y = rowY + photoHeight - 15 - idx * 18
-    for (idx, (label, value)) in fields.iter().enumerate() {
-        let y_pt = row_y_pt + photo_height_pt - 15.0 - (idx as f32 * 18.0);
+    for field in layout::LAYOUT_FIELDS.iter() {
+        let y_pt = row_y_pt + photo_height_pt - 15.0 - (y_offset as f32 * 18.0);
+
         if y_pt > row_y_pt + 5.0 {
-            let label_text = process_text(label, fonts.is_japanese);
+            let label_text = process_text(field.label, fonts.is_japanese);
+            let value = get_field_value(result, field.key);
             let value_text = if value.is_empty() { "-" } else { value };
             let value_text = process_text(value_text, fonts.is_japanese);
 
@@ -316,9 +325,11 @@ fn draw_info_fields(
             let truncated: String = value_text.chars().take(20).collect();
             layer.use_text(&truncated, 9.0, pt_to_mm(info_x_pt + 45.0), pt_to_mm(y_pt), &fonts.regular);
         }
+
+        y_offset += field.row_span;
     }
 
-    // ファイル名（React版187行）
+    // ファイル名
     layer.use_text(
         &result.file_name,
         7.0,
@@ -330,15 +341,13 @@ fn draw_info_fields(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_aspect_ratio_calculation() {
         // 横長画像（4:3）を縦長ボックス（1:2）にフィット
-        let img_aspect = 4.0 / 3.0;
-        let box_aspect = 100.0 / 200.0;
+        let img_aspect: f64 = 4.0 / 3.0;
+        let box_aspect: f64 = 100.0 / 200.0;
 
-        let (w, h) = if img_aspect > box_aspect {
+        let (w, h): (f64, f64) = if img_aspect > box_aspect {
             (100.0, 100.0 / img_aspect)
         } else {
             (200.0 * img_aspect, 200.0)
