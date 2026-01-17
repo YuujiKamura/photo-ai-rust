@@ -17,6 +17,10 @@
 //! - JSON (.json): 上記の階層構造を直接記述
 //! - Excel (.xlsx/.xls): フラット形式で記述 → 内部でJSON構造に変換
 
+pub mod alias;
+
+pub use alias::apply_aliases;
+
 use crate::analyzer::AnalysisResult;
 use crate::error::{PhotoAiError, Result};
 use calamine::{open_workbook, Reader, Xlsx};

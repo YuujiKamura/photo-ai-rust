@@ -137,24 +137,28 @@ fn parse_response(response: &str, images: &[ImageInfo]) -> Result<Vec<AnalysisRe
     let raw: Vec<RawResult> = serde_json::from_str(json_str.trim())
         .map_err(|e| PhotoAiError::ApiParse(format!("JSONパースエラー: {}", e)))?;
 
-    // file_nameからfile_pathを取得するためのマップ
-    let path_map: std::collections::HashMap<&str, &std::path::Path> = images
+    // file_nameからImageInfoを取得するためのマップ
+    let info_map: std::collections::HashMap<&str, &ImageInfo> = images
         .iter()
-        .map(|img| (img.file_name.as_str(), img.path.as_path()))
+        .map(|img| (img.file_name.as_str(), img))
         .collect();
 
     // AnalysisResultに変換
     let results = raw
         .into_iter()
         .map(|r| {
-            let file_path = path_map
-                .get(r.file_name.as_str())
-                .map(|p| p.display().to_string())
+            let img_info = info_map.get(r.file_name.as_str());
+            let file_path = img_info
+                .map(|i| i.path.display().to_string())
+                .unwrap_or_default();
+            let date = img_info
+                .and_then(|i| i.date.clone())
                 .unwrap_or_default();
 
             AnalysisResult {
                 file_name: r.file_name,
                 file_path,
+                date,
                 has_board: r.has_board,
                 detected_text: r.detected_text,
                 measurements: r.measurements,

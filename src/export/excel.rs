@@ -7,7 +7,7 @@ use std::path::Path;
 /// フィールド値を取得（LAYOUT_FIELDSのkeyに基づく）
 fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
     match key {
-        "date" => "-",  // TODO: EXIF日時実装後に対応
+        "date" => if result.date.is_empty() { "-" } else { &result.date },
         "photoCategory" => &result.photo_category,
         "workType" => &result.work_type,
         "variety" => &result.variety,

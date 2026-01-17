@@ -9,6 +9,10 @@ pub struct AnalysisResult {
     #[serde(default)]
     pub file_path: String,
 
+    /// 撮影日時（EXIF DateTimeOriginal）
+    #[serde(default)]
+    pub date: String,
+
     #[serde(default)]
     pub work_type: String,        // 工種
 

@@ -3,7 +3,7 @@ mod excel;
 pub mod layout;
 
 use crate::analyzer::AnalysisResult;
-use crate::cli::ExportFormat;
+use crate::cli::{ExportFormat, PdfQuality};
 use crate::error::Result;
 use std::path::Path;
 
@@ -13,12 +13,13 @@ pub fn export_results(
     output_dir: &Path,
     photos_per_page: u8,
     title: &str,
+    pdf_quality: PdfQuality,
 ) -> Result<()> {
     match format {
         ExportFormat::Pdf => {
             let output_path = output_dir.join(format!("{}.pdf", title));
-            println!("- PDFを生成中...");
-            pdf::generate_pdf(results, &output_path, photos_per_page, title)?;
+            println!("- PDFを生成中... (品質: {})", pdf_quality);
+            pdf::generate_pdf(results, &output_path, photos_per_page, title, pdf_quality)?;
             println!("✔ PDF出力: {}", output_path.display());
         }
         ExportFormat::Excel => {
@@ -31,8 +32,8 @@ pub fn export_results(
             let pdf_path = output_dir.join(format!("{}.pdf", title));
             let excel_path = output_dir.join(format!("{}.xlsx", title));
 
-            println!("- PDFを生成中...");
-            pdf::generate_pdf(results, &pdf_path, photos_per_page, title)?;
+            println!("- PDFを生成中... (品質: {})", pdf_quality);
+            pdf::generate_pdf(results, &pdf_path, photos_per_page, title, pdf_quality)?;
             println!("✔ PDF出力: {}", pdf_path.display());
 
             println!("- Excelを生成中...");

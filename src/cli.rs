@@ -32,6 +32,10 @@ pub enum Commands {
         /// 工種マスタJSONファイル
         #[arg(short, long)]
         master: Option<PathBuf>,
+
+        /// キャッシュを使用（再解析をスキップ）
+        #[arg(long)]
+        use_cache: bool,
     },
 
     /// 解析結果からPDF/Excelを生成
@@ -55,6 +59,18 @@ pub enum Commands {
         /// ドキュメントタイトル
         #[arg(short, long, default_value = "工事写真帳")]
         title: String,
+
+        /// PDF画像品質 (high/medium/low)
+        #[arg(long, default_value = "medium")]
+        pdf_quality: PdfQuality,
+
+        /// エイリアスプリセット (pavement/marking/general)
+        #[arg(long)]
+        preset: Option<String>,
+
+        /// カスタムエイリアスファイル（JSON）
+        #[arg(long)]
+        alias: Option<PathBuf>,
     },
 
     /// 解析からPDF/Excel出力まで一括実行
@@ -78,6 +94,14 @@ pub enum Commands {
         /// 工種マスタJSONファイル
         #[arg(short, long)]
         master: Option<PathBuf>,
+
+        /// PDF画像品質 (high/medium/low)
+        #[arg(long, default_value = "medium")]
+        pdf_quality: PdfQuality,
+
+        /// キャッシュを使用（再解析をスキップ）
+        #[arg(long)]
+        use_cache: bool,
     },
 
     /// 設定を表示/編集
@@ -109,6 +133,61 @@ impl std::str::FromStr for ExportFormat {
             "excel" | "xlsx" => Ok(ExportFormat::Excel),
             "both" => Ok(ExportFormat::Both),
             _ => Err(format!("Unknown format: {}. Use pdf, excel, or both", s)),
+        }
+    }
+}
+
+/// PDF画像品質設定
+#[derive(Clone, Copy, Debug, Default)]
+pub enum PdfQuality {
+    /// 高品質: 1400px, 85%
+    High,
+    /// 中品質: 800px, 75%（デフォルト）
+    #[default]
+    Medium,
+    /// 低品質: 500px, 60%
+    Low,
+}
+
+impl PdfQuality {
+    /// 最大ピクセル幅
+    pub fn max_width(&self) -> u32 {
+        match self {
+            PdfQuality::High => 1400,
+            PdfQuality::Medium => 800,
+            PdfQuality::Low => 500,
+        }
+    }
+
+    /// JPEG品質 (0-100)
+    pub fn jpeg_quality(&self) -> u8 {
+        match self {
+            PdfQuality::High => 85,
+            PdfQuality::Medium => 75,
+            PdfQuality::Low => 60,
+        }
+    }
+}
+
+impl std::str::FromStr for PdfQuality {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "high" | "h" => Ok(PdfQuality::High),
+            "medium" | "med" | "m" => Ok(PdfQuality::Medium),
+            "low" | "l" => Ok(PdfQuality::Low),
+            _ => Err(format!("Unknown quality: {}. Use high, medium, or low", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for PdfQuality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PdfQuality::High => write!(f, "high"),
+            PdfQuality::Medium => write!(f, "medium"),
+            PdfQuality::Low => write!(f, "low"),
         }
     }
 }

@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
     let config = Config::load()?;
 
     match cli.command {
-        Commands::Analyze { folder, output, batch_size, master } => {
+        Commands::Analyze { folder, output, batch_size, master, use_cache } => {
             println!("📸 photo-ai-rust - 写真解析\n");
 
             // 1. 画像スキャン
@@ -32,8 +32,12 @@ async fn main() -> Result<()> {
             }
 
             // 2. Claude CLI解析
-            println!("- AI解析中...");
-            let raw_results = analyzer::analyze_images(&images, batch_size, cli.verbose).await?;
+            println!("- AI解析中...{}", if use_cache { " (キャッシュ有効)" } else { "" });
+            let raw_results = if use_cache {
+                analyzer::analyze_images_with_cache(&images, &folder, batch_size, cli.verbose).await?
+            } else {
+                analyzer::analyze_images(&images, batch_size, cli.verbose).await?
+            };
             println!("✔ 解析完了");
 
             // 3. マスタ照合
@@ -52,7 +56,7 @@ async fn main() -> Result<()> {
             println!("\n✅ 解析完了");
         }
 
-        Commands::Export { input, format, output, photos_per_page, title } => {
+        Commands::Export { input, format, output, photos_per_page, title, pdf_quality, preset, alias } => {
             println!("📄 photo-ai-rust - エクスポート\n");
 
             let content = std::fs::read_to_string(&input)?;
@@ -71,19 +75,34 @@ async fn main() -> Result<()> {
                 }
             }
 
+            // エイリアス変換を適用
+            if preset.is_some() || alias.is_some() {
+                println!("- エイリアス変換中...");
+                results = matcher::apply_aliases(
+                    &results,
+                    preset.as_deref(),
+                    alias.as_deref(),
+                )?;
+                println!("✔ エイリアス変換完了");
+            }
+
             let output_dir = output.unwrap_or_else(|| std::path::PathBuf::from("."));
 
-            export::export_results(&results, &format, &output_dir, photos_per_page, &title)?;
+            export::export_results(&results, &format, &output_dir, photos_per_page, &title, pdf_quality)?;
 
             println!("\n✅ エクスポート完了");
         }
 
-        Commands::Run { folder, output, format, batch_size, master } => {
+        Commands::Run { folder, output, format, batch_size, master, pdf_quality, use_cache } => {
             println!("🚀 photo-ai-rust - 一括処理\n");
 
             // Analyze
             let images = scanner::scan_folder(&folder)?;
-            let raw_results = analyzer::analyze_images(&images, batch_size, cli.verbose).await?;
+            let raw_results = if use_cache {
+                analyzer::analyze_images_with_cache(&images, &folder, batch_size, cli.verbose).await?
+            } else {
+                analyzer::analyze_images(&images, batch_size, cli.verbose).await?
+            };
 
             // Match with master if provided
             let results = if let Some(master_path) = master {
@@ -94,7 +113,7 @@ async fn main() -> Result<()> {
 
             // Export
             let output_dir = output.unwrap_or_else(|| folder.clone());
-            export::export_results(&results, &format, &output_dir, 3, "工事写真帳")?;
+            export::export_results(&results, &format, &output_dir, 3, "工事写真帳", pdf_quality)?;
 
             println!("\n✅ 完了");
         }

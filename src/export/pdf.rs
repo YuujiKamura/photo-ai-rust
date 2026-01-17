@@ -3,6 +3,7 @@
 //! React版 pdfGenerator.ts のロジックをそのまま移植。
 
 use crate::analyzer::AnalysisResult;
+use crate::cli::PdfQuality;
 use crate::error::{PhotoAiError, Result};
 use super::layout::{self, mm_to_pt};
 use printpdf::*;
@@ -11,6 +12,7 @@ use std::io::{BufWriter, Cursor};
 use std::path::{Path, PathBuf};
 
 use ::image as image_crate;
+use image_crate::imageops::FilterType;
 
 /// フォント情報
 struct FontSet {
@@ -80,6 +82,7 @@ pub fn generate_pdf(
     output_path: &Path,
     photos_per_page: u8,
     title: &str,
+    quality: PdfQuality,
 ) -> Result<()> {
     let photos_per_page = photos_per_page.max(2).min(3) as usize;
 
@@ -143,6 +146,7 @@ pub fn generate_pdf(
                 row_y_pt,
                 photo_width_pt,
                 photo_height_pt,
+                quality,
             ) {
                 eprintln!("警告: 写真埋め込み失敗 ({}): {}", result.file_name, e);
             }
@@ -205,6 +209,25 @@ fn draw_header(
     );
 }
 
+/// 画像をリサイズ（品質設定に基づく）
+fn resize_image(
+    img: image_crate::DynamicImage,
+    quality: PdfQuality,
+) -> image_crate::DynamicImage {
+    let max_width = quality.max_width();
+    let (orig_w, orig_h) = (img.width(), img.height());
+
+    // 最大幅を超える場合のみリサイズ
+    if orig_w <= max_width {
+        return img;
+    }
+
+    let scale = max_width as f32 / orig_w as f32;
+    let new_h = (orig_h as f32 * scale) as u32;
+
+    img.resize(max_width, new_h, FilterType::Lanczos3)
+}
+
 /// 画像埋め込み（React版146-157行のロジック）
 fn embed_image_react_style(
     layer: &PdfLayerReference,
@@ -213,6 +236,7 @@ fn embed_image_react_style(
     y_pt: f32,
     box_width_pt: f32,
     box_height_pt: f32,
+    quality: PdfQuality,
 ) -> Result<()> {
     let path = Path::new(image_path);
     if !path.exists() {
@@ -221,7 +245,10 @@ fn embed_image_react_style(
 
     let dynamic_image = image_crate::open(path)
         .map_err(|e| PhotoAiError::PdfGeneration(format!("画像読み込みエラー: {}", e)))?;
-    let rgb_image = dynamic_image.to_rgb8();
+
+    // 品質設定に基づいてリサイズ
+    let resized_image = resize_image(dynamic_image, quality);
+    let rgb_image = resized_image.to_rgb8();
     let (width_px, height_px) = rgb_image.dimensions();
 
     let image = Image::from(ImageXObject {
@@ -286,7 +313,7 @@ fn draw_rect(layer: &PdfLayerReference, x_pt: f32, y_pt: f32, width_pt: f32, hei
 /// フィールド値を取得（LAYOUT_FIELDSのkeyに基づく）
 fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
     match key {
-        "date" => "-",  // TODO: EXIF日時実装後に対応
+        "date" => if result.date.is_empty() { "-" } else { &result.date },
         "photoCategory" => &result.photo_category,
         "workType" => &result.work_type,
         "variety" => &result.variety,
@@ -295,6 +322,75 @@ fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
         "remarks" => &result.remarks,
         "measurements" => &result.measurements,
         _ => "-",
+    }
+}
+
+/// テキスト自動調整設定
+struct TextFitConfig {
+    max_width_chars: usize,
+    base_font_size: f32,
+    min_font_size: f32,
+    max_lines: usize,
+}
+
+impl Default for TextFitConfig {
+    fn default() -> Self {
+        Self {
+            max_width_chars: 15,
+            base_font_size: 9.0,
+            min_font_size: 7.0,
+            max_lines: 2,
+        }
+    }
+}
+
+/// テキストをフィットさせて描画（自動縮小・改行・省略）
+fn draw_fitted_text(
+    layer: &PdfLayerReference,
+    text: &str,
+    x_pt: f32,
+    y_pt: f32,
+    fonts: &FontSet,
+    config: &TextFitConfig,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    let char_count = text.chars().count();
+
+    // 文字数に基づいてフォントサイズを決定
+    let font_size = if char_count <= config.max_width_chars {
+        config.base_font_size
+    } else if char_count <= config.max_width_chars * 2 {
+        // 文字数が多い場合は縮小
+        let ratio = config.max_width_chars as f32 / char_count as f32;
+        (config.base_font_size * ratio).max(config.min_font_size)
+    } else {
+        config.min_font_size
+    };
+
+    // 1行あたりの最大文字数を計算
+    let chars_per_line = ((config.max_width_chars as f32 * config.base_font_size / font_size) as usize).max(10);
+
+    // 最大文字数を超える場合は改行または省略
+    let total_max_chars = chars_per_line * config.max_lines;
+
+    if char_count <= chars_per_line {
+        // 1行に収まる
+        layer.use_text(text, font_size, pt_to_mm(x_pt), pt_to_mm(y_pt), &fonts.regular);
+    } else if char_count <= total_max_chars {
+        // 2行に分割
+        let (line1, line2) = text.split_at(text.char_indices().nth(chars_per_line).map(|(i, _)| i).unwrap_or(text.len()));
+        layer.use_text(line1, font_size, pt_to_mm(x_pt), pt_to_mm(y_pt), &fonts.regular);
+        layer.use_text(line2, font_size, pt_to_mm(x_pt), pt_to_mm(y_pt - 10.0), &fonts.regular);
+    } else {
+        // 省略記号で切り詰め
+        let max_chars = total_max_chars - 1;
+        let truncated: String = text.chars().take(max_chars).chain(std::iter::once('…')).collect();
+        let (line1, line2) = truncated.split_at(truncated.char_indices().nth(chars_per_line).map(|(i, _)| i).unwrap_or(truncated.len()));
+        layer.use_text(line1, font_size, pt_to_mm(x_pt), pt_to_mm(y_pt), &fonts.regular);
+        layer.use_text(line2, font_size, pt_to_mm(x_pt), pt_to_mm(y_pt - 10.0), &fonts.regular);
     }
 }
 
@@ -309,6 +405,7 @@ fn draw_info_fields(
 ) {
     // LAYOUT_FIELDSを使用してフィールドを描画
     let mut y_offset = 0u8;
+    let text_config = TextFitConfig::default();
 
     for field in layout::LAYOUT_FIELDS.iter() {
         let y_pt = row_y_pt + photo_height_pt - 15.0 - (y_offset as f32 * 18.0);
@@ -321,9 +418,8 @@ fn draw_info_fields(
 
             // ラベル
             layer.use_text(&format!("{}:", label_text), 8.0, pt_to_mm(info_x_pt + 5.0), pt_to_mm(y_pt), &fonts.regular);
-            // 値（20文字で切り詰め）
-            let truncated: String = value_text.chars().take(20).collect();
-            layer.use_text(&truncated, 9.0, pt_to_mm(info_x_pt + 45.0), pt_to_mm(y_pt), &fonts.regular);
+            // 値（自動調整）
+            draw_fitted_text(layer, &value_text, info_x_pt + 45.0, y_pt, fonts, &text_config);
         }
 
         y_offset += field.row_span;
