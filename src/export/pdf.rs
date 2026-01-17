@@ -180,6 +180,9 @@ pub fn generate_pdf(
     Ok(())
 }
 
+/// 統一フォントサイズ
+const UNIFIED_FONT_SIZE: f32 = 12.0;
+
 /// ヘッダー描画
 fn draw_header(
     layer: &PdfLayerReference,
@@ -194,7 +197,7 @@ fn draw_header(
     let title_text = process_text(title, fonts.is_japanese);
     layer.use_text(
         &title_text,
-        14.0,
+        UNIFIED_FONT_SIZE,
         pt_to_mm(margin_pt),
         pt_to_mm(a4_height_pt - margin_pt - 20.0),
         &fonts.bold,
@@ -202,7 +205,7 @@ fn draw_header(
 
     layer.use_text(
         &format!("Page {} / {}", page_num, total_pages),
-        10.0,
+        UNIFIED_FONT_SIZE,
         pt_to_mm(a4_width_pt - margin_pt - 80.0),
         pt_to_mm(a4_height_pt - margin_pt - 20.0),
         &fonts.regular,
@@ -228,7 +231,10 @@ fn resize_image(
     img.resize(max_width, new_h, FilterType::Lanczos3)
 }
 
-/// 画像埋め込み（React版146-157行のロジック）
+/// 写真比率（4:3統一）
+const PHOTO_ASPECT_RATIO: f32 = 4.0 / 3.0;
+
+/// 画像埋め込み（4:3比率で統一）
 fn embed_image_react_style(
     layer: &PdfLayerReference,
     image_path: &str,
@@ -263,29 +269,41 @@ fn embed_image_react_style(
         clipping_bbox: None,
     });
 
-    // ========== React版146-150行のアスペクト比計算そのまま ==========
-    let img_aspect = width_px as f32 / height_px as f32;
+    // 4:3比率で描画サイズを計算
     let box_aspect = box_width_pt / box_height_pt;
-
-    let (draw_width_pt, draw_height_pt) = if img_aspect > box_aspect {
-        // 横長画像: 幅にフィット
-        (box_width_pt, box_width_pt / img_aspect)
+    let (draw_width_pt, draw_height_pt) = if PHOTO_ASPECT_RATIO > box_aspect {
+        // 4:3が枠より横長: 幅にフィット
+        (box_width_pt, box_width_pt / PHOTO_ASPECT_RATIO)
     } else {
-        // 縦長画像: 高さにフィット
-        (box_height_pt * img_aspect, box_height_pt)
+        // 4:3が枠より縦長: 高さにフィット
+        (box_height_pt * PHOTO_ASPECT_RATIO, box_height_pt)
     };
 
-    // ========== React版152-156行のセンタリング ==========
+    // センタリング
     let draw_x_pt = x_pt + (box_width_pt - draw_width_pt) / 2.0;
     let draw_y_pt = y_pt + (box_height_pt - draw_height_pt) / 2.0;
 
-    // printpdfのスケール: 1px = 1pt として、目標サイズに合わせる
-    let scale_x = draw_width_pt / width_px as f32;
-    let scale_y = draw_height_pt / height_px as f32;
+    // 画像を4:3枠内にフィット（元画像のアスペクト比を維持しつつ）
+    let img_aspect = width_px as f32 / height_px as f32;
+    let (img_draw_w, img_draw_h) = if img_aspect > PHOTO_ASPECT_RATIO {
+        // 元画像が4:3より横長: 幅にフィット
+        (draw_width_pt, draw_width_pt / img_aspect)
+    } else {
+        // 元画像が4:3より縦長: 高さにフィット
+        (draw_height_pt * img_aspect, draw_height_pt)
+    };
+
+    // 4:3枠内でセンタリング
+    let final_x = draw_x_pt + (draw_width_pt - img_draw_w) / 2.0;
+    let final_y = draw_y_pt + (draw_height_pt - img_draw_h) / 2.0;
+
+    // printpdfのスケール
+    let scale_x = img_draw_w / width_px as f32;
+    let scale_y = img_draw_h / height_px as f32;
 
     image.add_to_layer(layer.clone(), ImageTransform {
-        translate_x: Some(pt_to_mm(draw_x_pt)),
-        translate_y: Some(pt_to_mm(draw_y_pt)),
+        translate_x: Some(pt_to_mm(final_x)),
+        translate_y: Some(pt_to_mm(final_y)),
         scale_x: Some(scale_x),
         scale_y: Some(scale_y),
         ..Default::default()
@@ -337,8 +355,8 @@ impl Default for TextFitConfig {
     fn default() -> Self {
         Self {
             max_width_chars: 15,
-            base_font_size: 9.0,
-            min_font_size: 7.0,
+            base_font_size: UNIFIED_FONT_SIZE,
+            min_font_size: UNIFIED_FONT_SIZE,
             max_lines: 2,
         }
     }
@@ -417,7 +435,7 @@ fn draw_info_fields(
             let value_text = process_text(value_text, fonts.is_japanese);
 
             // ラベル
-            layer.use_text(&format!("{}:", label_text), 8.0, pt_to_mm(info_x_pt + 5.0), pt_to_mm(y_pt), &fonts.regular);
+            layer.use_text(&format!("{}:", label_text), UNIFIED_FONT_SIZE, pt_to_mm(info_x_pt + 5.0), pt_to_mm(y_pt), &fonts.regular);
             // 値（自動調整）
             draw_fitted_text(layer, &value_text, info_x_pt + 45.0, y_pt, fonts, &text_config);
         }
@@ -428,7 +446,7 @@ fn draw_info_fields(
     // ファイル名
     layer.use_text(
         &result.file_name,
-        7.0,
+        UNIFIED_FONT_SIZE,
         pt_to_mm(info_x_pt + 5.0),
         pt_to_mm(row_y_pt + 5.0),
         &fonts.regular,
