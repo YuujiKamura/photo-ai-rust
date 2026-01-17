@@ -1,14 +1,19 @@
 //! PDF生成モジュール
 //!
-//! React版 pdfGenerator.ts のロジックをそのまま移植。
+//! ## 変更履歴
+//! - 2026-01-18: PNG圧縮（FlateDecode）対応実装
+//!   - flate2でRGBデータをDeflate圧縮
+//!   - lopdfで後処理してFlateDecode フィルター追加
 
 use crate::analyzer::AnalysisResult;
 use crate::cli::PdfQuality;
 use crate::error::{PhotoAiError, Result};
 use super::layout::{self, mm_to_pt};
 use printpdf::*;
+use flate2::Compression;
+use flate2::write::ZlibEncoder;
 use std::fs::File;
-use std::io::{BufWriter, Cursor};
+use std::io::{BufWriter, Cursor, Write};
 use std::path::{Path, PathBuf};
 
 use ::image as image_crate;
@@ -170,10 +175,81 @@ pub fn generate_pdf(
         );
     }
 
-    // 保存
-    let file = File::create(output_path)?;
+    // 出力先ディレクトリを確保
+    if let Some(parent) = output_path.parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
+    // 一時ファイルを出力先と同じディレクトリに作成
+    let temp_path = if let Some(parent) = output_path.parent() {
+        parent.join(format!(
+            "{}.tmp.pdf",
+            output_path.file_stem().unwrap_or_default().to_string_lossy()
+        ))
+    } else {
+        PathBuf::from(format!(
+            "{}.tmp.pdf",
+            output_path.file_stem().unwrap_or_default().to_string_lossy()
+        ))
+    };
+
+    let file = File::create(&temp_path)?;
     doc.save(&mut BufWriter::new(BufWriter::new(file)))
         .map_err(|e| PhotoAiError::PdfGeneration(format!("{:?}", e)))?;
+
+    // lopdfでFlateDecode フィルター追加
+    add_flate_filter_to_images(&temp_path, output_path)?;
+
+    // 一時ファイル削除
+    let _ = std::fs::remove_file(&temp_path);
+
+    Ok(())
+}
+
+/// lopdfで画像ストリームにFlateDecode フィルターを追加
+fn add_flate_filter_to_images(input_path: &Path, output_path: &Path) -> Result<()> {
+    let mut doc = lopdf::Document::load(input_path)
+        .map_err(|e| PhotoAiError::PdfGeneration(format!("lopdf load: {}", e)))?;
+
+    let mut image_count = 0;
+
+    // 全オブジェクトを走査して画像XObjectを探す
+    let object_ids: Vec<_> = doc.objects.keys().cloned().collect();
+    for obj_id in object_ids {
+        if let Ok(obj) = doc.get_object_mut(obj_id) {
+            if let lopdf::Object::Stream(ref mut stream) = obj {
+                // XObject/Image かどうか確認
+                let is_image = stream.dict.get(b"Subtype")
+                    .ok()
+                    .and_then(|o| {
+                        if let lopdf::Object::Name(name) = o {
+                            Some(name.as_slice() == b"Image")
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(false);
+
+                if is_image {
+                    // /Filter がなければ /FlateDecode を追加
+                    if stream.dict.get(b"Filter").is_err() {
+                        stream.dict.set(
+                            "Filter",
+                            lopdf::Object::Name(b"FlateDecode".to_vec())
+                        );
+                        image_count += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    eprintln!("FlateDecode フィルター追加: {}画像", image_count);
+
+    doc.save(output_path)
+        .map_err(|e| PhotoAiError::PdfGeneration(format!("lopdf save: {}", e)))?;
 
     Ok(())
 }
@@ -229,7 +305,7 @@ fn resize_image(
     img.resize(max_width, new_h, FilterType::Lanczos3)
 }
 
-/// 画像埋め込み（枠いっぱいにフィット、PNG圧縮）
+/// 画像埋め込み（枠いっぱいにフィット、PNG/Flate圧縮）
 fn embed_image_react_style(
     layer: &PdfLayerReference,
     image_path: &str,
@@ -251,16 +327,24 @@ fn embed_image_react_style(
     let resized_image = resize_image(dynamic_image, quality);
     let (width_px, height_px) = (resized_image.width(), resized_image.height());
 
-    // JPEGエンコード（圧縮）
-    let mut jpeg_data = Vec::new();
-    {
-        let mut encoder = image_crate::codecs::jpeg::JpegEncoder::new_with_quality(
-            &mut jpeg_data,
-            quality.jpeg_quality(),
-        );
-        encoder.encode_image(&resized_image)
-            .map_err(|e| PhotoAiError::PdfGeneration(format!("JPEG encode: {}", e)))?;
-    }
+    // RGBデータを取得
+    let rgb_image = resized_image.to_rgb8();
+    let raw_data = rgb_image.as_raw();
+
+    // flate2でDeflate圧縮（PNG相当）
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
+    encoder.write_all(raw_data)
+        .map_err(|e| PhotoAiError::PdfGeneration(format!("Flate encode: {}", e)))?;
+    let compressed_data = encoder.finish()
+        .map_err(|e| PhotoAiError::PdfGeneration(format!("Flate finish: {}", e)))?;
+
+    let compression_ratio = raw_data.len() as f32 / compressed_data.len() as f32;
+    eprintln!(
+        "  圧縮: {} -> {} bytes ({:.1}x)",
+        raw_data.len(),
+        compressed_data.len(),
+        compression_ratio
+    );
 
     // アスペクト比を維持して枠いっぱいにフィット
     let img_aspect = width_px as f32 / height_px as f32;
@@ -276,15 +360,15 @@ fn embed_image_react_style(
     let draw_x_pt = x_pt + (box_width_pt - draw_width_pt) / 2.0;
     let draw_y_pt = y_pt + (box_height_pt - draw_height_pt) / 2.0;
 
-    // JPEG圧縮で画像を埋め込む（DCTフィルター）
+    // 圧縮済みデータを埋め込み（filter: None → lopdfで後からFlateDecode追加）
     let image = Image::from(ImageXObject {
         width: Px(width_px as usize),
         height: Px(height_px as usize),
         color_space: ColorSpace::Rgb,
         bits_per_component: ColorBits::Bit8,
         interpolate: true,
-        image_data: jpeg_data,
-        image_filter: Some(ImageFilter::DCT),
+        image_data: compressed_data,
+        image_filter: None,  // lopdfで後処理
         smask: None,
         clipping_bbox: None,
     });
