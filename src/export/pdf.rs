@@ -180,7 +180,7 @@ pub fn generate_pdf(
     Ok(())
 }
 
-/// 統一フォントサイズ
+/// 統一フォントサイズ（12pt）
 const UNIFIED_FONT_SIZE: f32 = 12.0;
 
 /// ヘッダー描画
