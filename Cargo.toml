@@ -40,3 +40,6 @@ thiserror = "2"
 indicatif = "0.17"
 rayon = "1"
 dirs = "5"
+
+[dev-dependencies]
+tempfile = "3"

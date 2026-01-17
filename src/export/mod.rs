@@ -1,5 +1,5 @@
-mod pdf;
-mod excel;
+pub mod pdf;
+pub mod excel;
 pub mod layout;
 
 use crate::analyzer::AnalysisResult;

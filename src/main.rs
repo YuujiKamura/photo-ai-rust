@@ -1,12 +1,5 @@
-mod cli;
-mod config;
-mod error;
-mod scanner;
-mod analyzer;
-mod matcher;
-mod export;
-
 use clap::Parser;
+use photo_ai_rust::{cli, config, error, scanner, analyzer, matcher, export};
 use cli::{Cli, Commands};
 use config::Config;
 use error::Result;
