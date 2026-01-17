@@ -391,13 +391,17 @@ fn add_image_ops(
     let draw_x_pt = x_pt + (box_width_pt - draw_width_pt) / 2.0;
     let draw_y_pt = y_pt + (box_height_pt - draw_height_pt) / 2.0;
 
+    // printpdf 0.8: DPIを計算して画像サイズを制御
+    // 公式: img_width_px * (72 / dpi) = draw_width_pt
+    // よって: dpi = img_width_px * 72 / draw_width_pt
+    let dpi = img_width as f32 * 72.0 / draw_width_pt;
+
     ops.push(Op::UseXobject {
         id: image_id.clone(),
         transform: XObjectTransform {
             translate_x: Some(Pt(draw_x_pt)),
             translate_y: Some(Pt(draw_y_pt)),
-            scale_x: Some(draw_width_pt / img_width as f32),
-            scale_y: Some(draw_height_pt / img_height as f32),
+            dpi: Some(dpi),
             ..Default::default()
         },
     });
