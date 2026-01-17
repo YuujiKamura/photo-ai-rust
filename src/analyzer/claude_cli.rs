@@ -106,7 +106,7 @@ fn get_temp_dir() -> Result<PathBuf> {
     Ok(temp_dir)
 }
 
-fn copy_to_temp(images: &[ImageInfo], temp_dir: &PathBuf) -> Result<Vec<PathBuf>> {
+fn copy_to_temp(images: &[ImageInfo], temp_dir: &std::path::Path) -> Result<Vec<PathBuf>> {
     let mut local_paths = Vec::new();
 
     for img in images {
@@ -168,4 +168,76 @@ struct RawResult {
     scene_description: String,
     #[serde(default)]
     photo_category: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_response_with_json_block() {
+        let response = r#"Here is the analysis:
+```json
+[
+  {
+    "fileName": "test.jpg",
+    "hasBoard": true,
+    "detectedText": "温度 160.4℃",
+    "measurements": "160.4℃",
+    "sceneDescription": "アスファルト舗装工事",
+    "photoCategory": "品質管理"
+  }
+]
+```
+"#;
+        let result = parse_response(response, &[]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].file_name, "test.jpg");
+        assert!(result[0].has_board);
+        assert_eq!(result[0].detected_text, "温度 160.4℃");
+        assert_eq!(result[0].photo_category, "品質管理");
+    }
+
+    #[test]
+    fn test_parse_response_raw_json() {
+        let response = r#"[{"fileName": "photo1.jpg", "hasBoard": false, "sceneDescription": "道路工事"}]"#;
+        let result = parse_response(response, &[]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].file_name, "photo1.jpg");
+        assert!(!result[0].has_board);
+    }
+
+    #[test]
+    fn test_parse_response_multiple_photos() {
+        let response = r#"```json
+[
+  {"fileName": "a.jpg", "photoCategory": "施工状況"},
+  {"fileName": "b.jpg", "photoCategory": "品質管理"},
+  {"fileName": "c.jpg", "photoCategory": "安全管理"}
+]
+```"#;
+        let result = parse_response(response, &[]).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].photo_category, "施工状況");
+        assert_eq!(result[1].photo_category, "品質管理");
+        assert_eq!(result[2].photo_category, "安全管理");
+    }
+
+    #[test]
+    fn test_parse_response_no_json() {
+        let response = "This is not valid JSON";
+        let result = parse_response(response, &[]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_with_default_values() {
+        let response = r#"[{"fileName": "minimal.jpg"}]"#;
+        let result = parse_response(response, &[]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].file_name, "minimal.jpg");
+        assert!(!result[0].has_board);
+        assert_eq!(result[0].detected_text, "");
+        assert_eq!(result[0].measurements, "");
+    }
 }
