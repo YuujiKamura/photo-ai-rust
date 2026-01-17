@@ -57,8 +57,9 @@ pub fn scan_folder(folder: &Path) -> Result<Vec<ImageInfo>> {
 }
 
 /// Check if a file extension is a supported image format
-pub fn is_image_extension(ext: &str) -> bool {
-    IMAGE_EXTENSIONS.iter().any(|&e| e == ext)
+#[cfg(test)]
+fn is_image_extension(ext: &str) -> bool {
+    IMAGE_EXTENSIONS.contains(&ext)
 }
 
 #[cfg(test)]
