@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 pub struct AnalysisResult {
     pub file_name: String,
 
+    /// 画像ファイルの絶対パス（PDF出力時に使用）
+    #[serde(default)]
+    pub file_path: String,
+
     #[serde(default)]
     pub work_type: String,        // 工種
 

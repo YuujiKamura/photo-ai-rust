@@ -120,7 +120,7 @@ fn copy_to_temp(images: &[ImageInfo], temp_dir: &std::path::Path) -> Result<Vec<
     Ok(local_paths)
 }
 
-fn parse_response(response: &str, _images: &[ImageInfo]) -> Result<Vec<AnalysisResult>> {
+fn parse_response(response: &str, images: &[ImageInfo]) -> Result<Vec<AnalysisResult>> {
     // JSONブロックを抽出
     let json_str = if let Some(caps) = response.find("```json") {
         let start = caps + 7;
@@ -137,17 +137,31 @@ fn parse_response(response: &str, _images: &[ImageInfo]) -> Result<Vec<AnalysisR
     let raw: Vec<RawResult> = serde_json::from_str(json_str.trim())
         .map_err(|e| PhotoAiError::ApiParse(format!("JSONパースエラー: {}", e)))?;
 
+    // file_nameからfile_pathを取得するためのマップ
+    let path_map: std::collections::HashMap<&str, &std::path::Path> = images
+        .iter()
+        .map(|img| (img.file_name.as_str(), img.path.as_path()))
+        .collect();
+
     // AnalysisResultに変換
     let results = raw
         .into_iter()
-        .map(|r| AnalysisResult {
-            file_name: r.file_name,
-            has_board: r.has_board,
-            detected_text: r.detected_text,
-            measurements: r.measurements,
-            description: r.scene_description,
-            photo_category: r.photo_category,
-            ..Default::default()
+        .map(|r| {
+            let file_path = path_map
+                .get(r.file_name.as_str())
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+
+            AnalysisResult {
+                file_name: r.file_name,
+                file_path,
+                has_board: r.has_board,
+                detected_text: r.detected_text,
+                measurements: r.measurements,
+                description: r.scene_description,
+                photo_category: r.photo_category,
+                ..Default::default()
+            }
         })
         .collect();
 
