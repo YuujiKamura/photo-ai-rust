@@ -25,12 +25,13 @@ impl FontSet {
     }
 }
 
-/// 日本語フォントのパスを検索
+/// 日本語フォントのパスを検索（明朝体優先）
 fn find_japanese_font() -> Option<PathBuf> {
     #[cfg(windows)]
     {
         let windows_fonts = Path::new("C:\\Windows\\Fonts");
-        for font in ["meiryo.ttc", "YuGothM.ttc", "msgothic.ttc"] {
+        // 明朝体を優先
+        for font in ["YuMincho.ttc", "msmincho.ttc", "meiryo.ttc", "YuGothM.ttc", "msgothic.ttc"] {
             let path = windows_fonts.join(font);
             if path.exists() {
                 return Some(path);
