@@ -4,3 +4,4 @@
 !master/*.json
 *.xlsx
 *.pdf
+.claude/settings.local.json
