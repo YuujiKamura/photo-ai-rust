@@ -249,8 +249,18 @@ fn embed_image_react_style(
 
     // 品質設定に基づいてリサイズ
     let resized_image = resize_image(dynamic_image, quality);
-    let rgb_image = resized_image.to_rgb8();
-    let (width_px, height_px) = rgb_image.dimensions();
+    let (width_px, height_px) = (resized_image.width(), resized_image.height());
+
+    // JPEGエンコード（圧縮）
+    let mut jpeg_data = Vec::new();
+    {
+        let mut encoder = image_crate::codecs::jpeg::JpegEncoder::new_with_quality(
+            &mut jpeg_data,
+            quality.jpeg_quality(),
+        );
+        encoder.encode_image(&resized_image)
+            .map_err(|e| PhotoAiError::PdfGeneration(format!("JPEG encode: {}", e)))?;
+    }
 
     // アスペクト比を維持して枠いっぱいにフィット
     let img_aspect = width_px as f32 / height_px as f32;
@@ -266,15 +276,15 @@ fn embed_image_react_style(
     let draw_x_pt = x_pt + (box_width_pt - draw_width_pt) / 2.0;
     let draw_y_pt = y_pt + (box_height_pt - draw_height_pt) / 2.0;
 
-    // PNG圧縮（Flate）で画像を埋め込む
+    // JPEG圧縮で画像を埋め込む（DCTフィルター）
     let image = Image::from(ImageXObject {
         width: Px(width_px as usize),
         height: Px(height_px as usize),
         color_space: ColorSpace::Rgb,
         bits_per_component: ColorBits::Bit8,
         interpolate: true,
-        image_data: rgb_image.into_raw(),
-        image_filter: None,  // TODO: PNG圧縮 (#19)
+        image_data: jpeg_data,
+        image_filter: Some(ImageFilter::DCT),
         smask: None,
         clipping_bbox: None,
     });
