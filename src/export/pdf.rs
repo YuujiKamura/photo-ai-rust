@@ -1,13 +1,14 @@
 //! PDF生成モジュール
 //!
 //! 写真台帳PDFを生成する。A4縦、1ページあたり2〜3枚の写真を配置。
+//! 日本語フォント（メイリオ等）を自動検出して使用。
 
 use crate::analyzer::AnalysisResult;
 use crate::error::{PhotoAiError, Result};
 use printpdf::*;
 use std::fs::File;
-use std::io::BufWriter;
-use std::path::Path;
+use std::io::{BufWriter, Cursor};
+use std::path::{Path, PathBuf};
 
 // re-export for image loading
 use ::image as image_crate;
@@ -21,6 +22,124 @@ const MARGIN_MM: f32 = 15.0;
 const PHOTO_WIDTH_MM: f32 = 80.0;
 const PHOTO_HEIGHT_MM: f32 = 60.0;
 const ROW_HEIGHT_MM: f32 = 80.0;
+
+/// フォント情報を保持
+struct FontSet {
+    regular: IndirectFontRef,
+    bold: IndirectFontRef,
+    is_japanese: bool,
+}
+
+/// 日本語フォントのパスを検索
+fn find_japanese_font() -> Option<PathBuf> {
+    // Windows
+    #[cfg(windows)]
+    {
+        let windows_fonts = Path::new("C:\\Windows\\Fonts");
+        // 優先順: メイリオ > 游ゴシック > MSゴシック
+        let candidates = [
+            "meiryo.ttc",
+            "YuGothM.ttc",
+            "YuGothR.ttc",
+            "msgothic.ttc",
+        ];
+        for font in candidates {
+            let path = windows_fonts.join(font);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+
+    // macOS
+    #[cfg(target_os = "macos")]
+    {
+        let paths = [
+            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "/Library/Fonts/Arial Unicode.ttf",
+        ];
+        for p in paths {
+            let path = Path::new(p);
+            if path.exists() {
+                return Some(path.to_path_buf());
+            }
+        }
+    }
+
+    // Linux
+    #[cfg(target_os = "linux")]
+    {
+        let paths = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/takao-gothic/TakaoGothic.ttf",
+        ];
+        for p in paths {
+            let path = Path::new(p);
+            if path.exists() {
+                return Some(path.to_path_buf());
+            }
+        }
+    }
+
+    None
+}
+
+/// フォントをロード（日本語フォントがあれば優先）
+fn load_fonts(doc: &PdfDocumentReference) -> Result<FontSet> {
+    // 日本語フォントを検索
+    if let Some(font_path) = find_japanese_font() {
+        match load_ttf_font(doc, &font_path) {
+            Ok(font) => {
+                eprintln!("日本語フォント使用: {}", font_path.display());
+                return Ok(FontSet {
+                    regular: font.clone(),
+                    bold: font, // TTCは通常Regularのみ、Boldも同じに
+                    is_japanese: true,
+                });
+            }
+            Err(e) => {
+                eprintln!("警告: 日本語フォント読み込み失敗: {} - フォールバック使用", e);
+            }
+        }
+    }
+
+    // フォールバック: 組み込みフォント
+    let regular = doc.add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| PhotoAiError::PdfGeneration(format!("フォント追加エラー: {:?}", e)))?;
+    let bold = doc.add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| PhotoAiError::PdfGeneration(format!("フォント追加エラー: {:?}", e)))?;
+
+    Ok(FontSet {
+        regular,
+        bold,
+        is_japanese: false,
+    })
+}
+
+/// TTFフォントをロード
+fn load_ttf_font(doc: &PdfDocumentReference, font_path: &Path) -> Result<IndirectFontRef> {
+    let font_data = std::fs::read(font_path)?;
+    let cursor = Cursor::new(font_data);
+
+    let font = doc.add_external_font(cursor)
+        .map_err(|e| PhotoAiError::PdfGeneration(format!("フォント埋め込みエラー: {:?}", e)))?;
+
+    Ok(font)
+}
+
+/// テキストを処理（日本語フォントがなければASCII化）
+fn process_text(text: &str, is_japanese_font: bool) -> String {
+    if is_japanese_font {
+        text.to_string()
+    } else {
+        // ASCII文字のみ（日本語は?に置換）
+        text.chars()
+            .map(|c| if c.is_ascii() { c } else { '?' })
+            .collect()
+    }
+}
 
 /// 写真台帳PDFを生成
 pub fn generate_pdf(
@@ -38,23 +157,20 @@ pub fn generate_pdf(
         "Layer 1",
     );
 
-    // フォント（日本語は後で対応）
-    let font = doc.add_builtin_font(BuiltinFont::Helvetica)
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("フォント追加エラー: {:?}", e)))?;
-
-    let font_bold = doc.add_builtin_font(BuiltinFont::HelveticaBold)
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("フォント追加エラー: {:?}", e)))?;
+    // フォントをロード
+    let fonts = load_fonts(&doc)?;
 
     let mut current_page = doc.get_page(page1);
     let mut current_layer = current_page.get_layer(layer1);
 
     // タイトル
+    let title_text = process_text(title, fonts.is_japanese);
     current_layer.use_text(
-        title,
+        &title_text,
         16.0,
         Mm(A4_WIDTH_MM / 2.0 - 30.0),
         Mm(A4_HEIGHT_MM - MARGIN_MM - 5.0),
-        &font_bold,
+        &fonts.bold,
     );
 
     let mut photo_index = 0;
@@ -93,7 +209,7 @@ pub fn generate_pdf(
             10.0,
             Mm(info_x),
             Mm(info_y),
-            &font_bold,
+            &fonts.bold,
         );
 
         // ファイル名
@@ -102,28 +218,55 @@ pub fn generate_pdf(
             8.0,
             Mm(info_x),
             Mm(info_y - 12.0),
-            &font,
+            &fonts.regular,
         );
 
-        // 写真区分（ASCII文字のみ出力可能）
-        let category_ascii = to_ascii_placeholder(&result.photo_category);
+        // 写真区分
+        let category_label = process_text("写真区分: ", fonts.is_japanese);
+        let category_value = process_text(&result.photo_category, fonts.is_japanese);
         current_layer.use_text(
-            &format!("Category: {}", category_ascii),
+            &format!("{}{}", category_label, category_value),
             8.0,
             Mm(info_x),
             Mm(info_y - 22.0),
-            &font,
+            &fonts.regular,
         );
 
-        // 測定値
-        if !result.measurements.is_empty() {
-            let meas_ascii = to_ascii_placeholder(&result.measurements);
+        // 工種・種別・細別
+        if !result.work_type.is_empty() {
+            let work_label = process_text("工種: ", fonts.is_japanese);
+            let work_value = process_text(&result.work_type, fonts.is_japanese);
             current_layer.use_text(
-                &format!("Data: {}", meas_ascii),
+                &format!("{}{}", work_label, work_value),
                 8.0,
                 Mm(info_x),
                 Mm(info_y - 32.0),
-                &font,
+                &fonts.regular,
+            );
+        }
+
+        if !result.variety.is_empty() {
+            let variety_label = process_text("種別: ", fonts.is_japanese);
+            let variety_value = process_text(&result.variety, fonts.is_japanese);
+            current_layer.use_text(
+                &format!("{}{}", variety_label, variety_value),
+                8.0,
+                Mm(info_x),
+                Mm(info_y - 42.0),
+                &fonts.regular,
+            );
+        }
+
+        // 測定値
+        if !result.measurements.is_empty() {
+            let meas_label = process_text("測定値: ", fonts.is_japanese);
+            let meas_value = process_text(&result.measurements, fonts.is_japanese);
+            current_layer.use_text(
+                &format!("{}{}", meas_label, meas_value),
+                8.0,
+                Mm(info_x),
+                Mm(info_y - 52.0),
+                &fonts.regular,
             );
         }
 
@@ -133,8 +276,6 @@ pub fn generate_pdf(
         photo_index += 1;
         row_on_page += 1;
     }
-
-    // ページ番号は各ページ作成時に追加済み（printpdf 0.7の制限により後から追加不可）
 
     // 保存
     let file = File::create(output_path)?;
@@ -216,22 +357,26 @@ fn draw_row_border(layer: &PdfLayerReference, x_mm: f32, y_mm: f32) {
     layer.add_line(line);
 }
 
-/// 日本語をASCIIプレースホルダーに変換（暫定）
-fn to_ascii_placeholder(text: &str) -> String {
-    // 日本語フォント対応まではASCII文字のみ出力
-    text.chars()
-        .map(|c| if c.is_ascii() { c } else { '?' })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_to_ascii_placeholder() {
-        assert_eq!(to_ascii_placeholder("Hello"), "Hello");
-        assert_eq!(to_ascii_placeholder("品質管理"), "????");
-        assert_eq!(to_ascii_placeholder("160.4℃"), "160.4?");
+    fn test_process_text_with_japanese_font() {
+        assert_eq!(process_text("品質管理", true), "品質管理");
+        assert_eq!(process_text("160.4℃", true), "160.4℃");
+    }
+
+    #[test]
+    fn test_process_text_without_japanese_font() {
+        assert_eq!(process_text("Hello", false), "Hello");
+        assert_eq!(process_text("品質管理", false), "????");
+        assert_eq!(process_text("160.4℃", false), "160.4?");
+    }
+
+    #[test]
+    fn test_find_japanese_font() {
+        // This test just ensures the function doesn't panic
+        let _result = find_japanese_font();
     }
 }
