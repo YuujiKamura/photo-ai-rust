@@ -24,7 +24,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # PDF生成（0.8でフォントサブセット化対応）
-printpdf = "0.8"
+printpdf = { version = "0.8", features = ["jpeg"] }
 
 # Excel生成
 rust_xlsxwriter = "0.79"
