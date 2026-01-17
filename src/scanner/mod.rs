@@ -68,6 +68,25 @@ mod tests {
     use std::fs::{self, File};
     use std::io::Write;
 
+    /// Generate unique temp directory for each test to avoid parallel test conflicts
+    fn unique_temp_dir(test_name: &str) -> PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("photo-ai-{}-{}", test_name, timestamp))
+    }
+
+    /// Cleanup helper that ensures directory is removed even if test panics
+    struct TempDirGuard(PathBuf);
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
     #[test]
     fn test_is_image_extension() {
         assert!(is_image_extension("jpg"));
@@ -81,24 +100,24 @@ mod tests {
 
     #[test]
     fn test_scan_folder_not_found() {
-        let result = scan_folder(Path::new("/nonexistent/folder"));
+        let result = scan_folder(Path::new("/nonexistent/folder/that/does/not/exist"));
         assert!(result.is_err());
     }
 
     #[test]
     fn test_scan_folder_empty() {
-        let temp_dir = std::env::temp_dir().join("photo-ai-test-empty");
+        let temp_dir = unique_temp_dir("empty");
+        let _guard = TempDirGuard(temp_dir.clone());
         fs::create_dir_all(&temp_dir).unwrap();
 
         let result = scan_folder(&temp_dir).unwrap();
         assert!(result.is_empty());
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_scan_folder_with_images() {
-        let temp_dir = std::env::temp_dir().join("photo-ai-test-images");
+        let temp_dir = unique_temp_dir("images");
+        let _guard = TempDirGuard(temp_dir.clone());
         fs::create_dir_all(&temp_dir).unwrap();
 
         // Create dummy image files
@@ -112,13 +131,12 @@ mod tests {
         assert_eq!(result[0].file_name, "test1.jpg");
         assert_eq!(result[1].file_name, "test2.JPG");
         assert_eq!(result[2].file_name, "test3.png");
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 
     #[test]
     fn test_images_sorted_by_filename() {
-        let temp_dir = std::env::temp_dir().join("photo-ai-test-sort");
+        let temp_dir = unique_temp_dir("sort");
+        let _guard = TempDirGuard(temp_dir.clone());
         fs::create_dir_all(&temp_dir).unwrap();
 
         File::create(temp_dir.join("c.jpg")).unwrap();
@@ -129,7 +147,5 @@ mod tests {
         assert_eq!(result[0].file_name, "a.jpg");
         assert_eq!(result[1].file_name, "b.jpg");
         assert_eq!(result[2].file_name, "c.jpg");
-
-        fs::remove_dir_all(&temp_dir).ok();
     }
 }
