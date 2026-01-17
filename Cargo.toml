@@ -23,10 +23,8 @@ tokio = { version = "1", features = ["full", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# PDF生成
-printpdf = "0.7"
-flate2 = "1"
-lopdf = "0.34"
+# PDF生成（0.8でフォントサブセット化対応）
+printpdf = "0.8"
 
 # Excel生成
 rust_xlsxwriter = "0.79"

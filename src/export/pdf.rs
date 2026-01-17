@@ -1,29 +1,28 @@
 //! PDF生成モジュール
 //!
 //! ## 変更履歴
-//! - 2026-01-18: PNG圧縮（FlateDecode）対応実装
-//!   - flate2でRGBデータをDeflate圧縮
-//!   - lopdfで後処理してFlateDecode フィルター追加
+//! - 2026-01-18: printpdf 0.8アップグレード、フォントサブセット化対応
 
 use crate::analyzer::AnalysisResult;
 use crate::cli::PdfQuality;
 use crate::error::{PhotoAiError, Result};
 use super::layout::{self, mm_to_pt};
 use printpdf::*;
-use flate2::Compression;
-use flate2::write::ZlibEncoder;
-use std::fs::File;
-use std::io::{BufWriter, Cursor, Write};
 use std::path::{Path, PathBuf};
 
 use ::image as image_crate;
 use image_crate::imageops::FilterType;
 
 /// フォント情報
-struct FontSet {
-    regular: IndirectFontRef,
-    bold: IndirectFontRef,
-    is_japanese: bool,
+enum FontSet {
+    Japanese(FontId),
+    Builtin,
+}
+
+impl FontSet {
+    fn is_japanese(&self) -> bool {
+        matches!(self, FontSet::Japanese(_))
+    }
 }
 
 /// 日本語フォントのパスを検索
@@ -41,31 +40,21 @@ fn find_japanese_font() -> Option<PathBuf> {
     None
 }
 
-/// フォントをロード
-fn load_fonts(doc: &PdfDocumentReference) -> Result<FontSet> {
+/// フォントをロード（printpdf 0.8 API）
+fn load_fonts(doc: &mut PdfDocument) -> Result<FontSet> {
     if let Some(font_path) = find_japanese_font() {
-        if let Ok(font) = load_ttf_font(doc, &font_path) {
+        let font_data = std::fs::read(&font_path)?;
+        let mut warnings = Vec::new();
+        if let Some(parsed_font) = ParsedFont::from_bytes(&font_data, 0, &mut warnings) {
+            let font_id = doc.add_font(&parsed_font);
             eprintln!("日本語フォント使用: {}", font_path.display());
-            return Ok(FontSet {
-                regular: font.clone(),
-                bold: font,
-                is_japanese: true,
-            });
+            return Ok(FontSet::Japanese(font_id));
         }
     }
 
-    let regular = doc.add_builtin_font(BuiltinFont::Helvetica)
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("{:?}", e)))?;
-    let bold = doc.add_builtin_font(BuiltinFont::HelveticaBold)
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("{:?}", e)))?;
-
-    Ok(FontSet { regular, bold, is_japanese: false })
-}
-
-fn load_ttf_font(doc: &PdfDocumentReference, font_path: &Path) -> Result<IndirectFontRef> {
-    let font_data = std::fs::read(font_path)?;
-    doc.add_external_font(Cursor::new(font_data))
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("{:?}", e)))
+    // フォールバック: ビルトインフォント
+    eprintln!("ビルトインフォント使用");
+    Ok(FontSet::Builtin)
 }
 
 fn process_text(text: &str, is_japanese: bool) -> String {
@@ -76,12 +65,10 @@ fn process_text(text: &str, is_japanese: bool) -> String {
     }
 }
 
-/// pt → mm 変換ヘルパー
-fn pt_to_mm(pt: f32) -> Mm {
-    Mm(pt / layout::MM_TO_PT)
-}
+/// 統一フォントサイズ（12pt）
+const UNIFIED_FONT_SIZE: f32 = 12.0;
 
-/// 写真台帳PDFを生成（React版pdfGenerator.tsと同一ロジック）
+/// 写真台帳PDFを生成（printpdf 0.8 API）
 pub fn generate_pdf(
     results: &[AnalysisResult],
     output_path: &Path,
@@ -92,87 +79,117 @@ pub fn generate_pdf(
     let photos_per_page = photos_per_page.max(2).min(3) as usize;
 
     // ========== React版と同一の定数（pt単位） ==========
-    let a4_width_pt = mm_to_pt(layout::A4_WIDTH_MM);    // 595.35pt
-    let a4_height_pt = mm_to_pt(layout::A4_HEIGHT_MM);  // 842.0pt
-    let margin_pt = mm_to_pt(layout::MARGIN_MM);        // 28.35pt
-    let header_height_pt: f32 = 40.0;                   // React版: 40pt
-    let photo_info_gap_pt: f32 = 5.0;                   // React版: 5pt
+    let a4_width_pt = mm_to_pt(layout::A4_WIDTH_MM);
+    let a4_height_pt = mm_to_pt(layout::A4_HEIGHT_MM);
+    let margin_pt = mm_to_pt(layout::MARGIN_MM);
+    let header_height_pt: f32 = 40.0;
+    let photo_info_gap_pt: f32 = 5.0;
 
-    // 写真枠サイズ（layout.rsで定義、4:3比率）
+    // 写真枠サイズ
     let photo_width_pt = mm_to_pt(layout::PHOTO_WIDTH_MM);
     let photo_height_pt = mm_to_pt(layout::PHOTO_HEIGHT_MM);
     let info_width_pt = mm_to_pt(layout::INFO_WIDTH_MM);
     let photo_row_height_pt = photo_height_pt + photo_info_gap_pt * 2.0;
 
-    let (doc, page1, layer1) = PdfDocument::new(
-        title,
-        Mm(layout::A4_WIDTH_MM),
-        Mm(layout::A4_HEIGHT_MM),
-        "Layer 1",
-    );
-
-    let fonts = load_fonts(&doc)?;
-    let mut current_page = doc.get_page(page1);
-    let mut current_layer = current_page.get_layer(layer1);
+    // printpdf 0.8: ドキュメント作成
+    let mut doc = PdfDocument::new(title);
+    let fonts = load_fonts(&mut doc)?;
     let total_pages = (results.len() + photos_per_page - 1) / photos_per_page;
 
-    // ヘッダー描画
-    draw_header(&current_layer, title, 1, total_pages, &fonts, a4_width_pt, a4_height_pt, margin_pt);
+    // 画像をドキュメントに追加してIDを取得
+    let mut image_ids: Vec<Option<XObjectId>> = Vec::with_capacity(results.len());
+    let mut image_sizes: Vec<(u32, u32)> = Vec::with_capacity(results.len());
 
-    for (idx, result) in results.iter().enumerate() {
-        let page_num = idx / photos_per_page;
-        let slot = idx % photos_per_page;
-
-        // 新ページ
-        if idx > 0 && slot == 0 {
-            let (new_page, new_layer) = doc.add_page(
-                Mm(layout::A4_WIDTH_MM),
-                Mm(layout::A4_HEIGHT_MM),
-                "Layer 1",
-            );
-            current_page = doc.get_page(new_page);
-            current_layer = current_page.get_layer(new_layer);
-            draw_header(&current_layer, title, page_num + 1, total_pages, &fonts, a4_width_pt, a4_height_pt, margin_pt);
-        }
-
-        // ========== React版135行のY座標計算そのまま ==========
-        let row_y_pt = a4_height_pt - margin_pt - header_height_pt
-                     - ((slot + 1) as f32 * photo_row_height_pt)
-                     + photo_info_gap_pt;
-
-        // 写真埋め込み
+    for result in results.iter() {
         if !result.file_path.is_empty() {
-            if let Err(e) = embed_image_react_style(
-                &current_layer,
-                &result.file_path,
-                margin_pt,
-                row_y_pt,
-                photo_width_pt,
-                photo_height_pt,
-                quality,
-            ) {
-                eprintln!("警告: 写真埋め込み失敗 ({}): {}", result.file_name, e);
+            match load_and_add_image(&mut doc, &result.file_path, quality) {
+                Ok((id, w, h)) => {
+                    image_ids.push(Some(id));
+                    image_sizes.push((w, h));
+                }
+                Err(e) => {
+                    eprintln!("警告: 写真読み込み失敗 ({}): {}", result.file_name, e);
+                    image_ids.push(None);
+                    image_sizes.push((0, 0));
+                }
             }
+        } else {
+            image_ids.push(None);
+            image_sizes.push((0, 0));
+        }
+    }
+
+    // ページを生成
+    let mut pages = Vec::new();
+
+    for page_idx in 0..total_pages {
+        let start_idx = page_idx * photos_per_page;
+        let end_idx = (start_idx + photos_per_page).min(results.len());
+
+        let mut ops = Vec::new();
+
+        // ヘッダー描画
+        add_header_ops(
+            &mut ops,
+            title,
+            page_idx + 1,
+            total_pages,
+            &fonts,
+            a4_width_pt,
+            a4_height_pt,
+            margin_pt,
+        );
+
+        // 各写真スロット
+        for (slot, idx) in (start_idx..end_idx).enumerate() {
+            let result = &results[idx];
+
+            // Y座標計算（React版と同一）
+            let row_y_pt = a4_height_pt - margin_pt - header_height_pt
+                         - ((slot + 1) as f32 * photo_row_height_pt)
+                         + photo_info_gap_pt;
+
+            // 写真埋め込み
+            if let Some(ref img_id) = image_ids[idx] {
+                let (img_w, img_h) = image_sizes[idx];
+                add_image_ops(
+                    &mut ops,
+                    img_id,
+                    img_w,
+                    img_h,
+                    margin_pt,
+                    row_y_pt,
+                    photo_width_pt,
+                    photo_height_pt,
+                );
+            }
+
+            // 写真枠線
+            add_rect_ops(&mut ops, margin_pt, row_y_pt, photo_width_pt, photo_height_pt);
+
+            // 情報欄位置
+            let info_x_pt = margin_pt + photo_width_pt + photo_info_gap_pt;
+
+            // 情報欄枠線
+            add_rect_ops(&mut ops, info_x_pt, row_y_pt, info_width_pt, photo_height_pt);
+
+            // 情報欄テキスト
+            add_info_field_ops(
+                &mut ops,
+                result,
+                info_x_pt,
+                row_y_pt,
+                photo_height_pt,
+                &fonts,
+            );
         }
 
-        // 写真枠線
-        draw_rect(&current_layer, margin_pt, row_y_pt, photo_width_pt, photo_height_pt);
-
-        // ========== React版166行の情報欄位置 ==========
-        let info_x_pt = margin_pt + photo_width_pt + photo_info_gap_pt;
-
-        // 情報欄枠線
-        draw_rect(&current_layer, info_x_pt, row_y_pt, info_width_pt, photo_height_pt);
-
-        // 情報欄テキスト（React版169-185行）
-        draw_info_fields(
-            &current_layer,
-            result,
-            info_x_pt,
-            row_y_pt,
-            photo_height_pt,
-            &fonts,
+        let page = PdfPage::new(
+            Mm(layout::A4_WIDTH_MM),
+            Mm(layout::A4_HEIGHT_MM),
+            ops,
         );
+        pages.push(page);
     }
 
     // 出力先ディレクトリを確保
@@ -182,108 +199,66 @@ pub fn generate_pdf(
         }
     }
 
-    // 一時ファイルを出力先と同じディレクトリに作成
-    let temp_path = if let Some(parent) = output_path.parent() {
-        parent.join(format!(
-            "{}.tmp.pdf",
-            output_path.file_stem().unwrap_or_default().to_string_lossy()
-        ))
-    } else {
-        PathBuf::from(format!(
-            "{}.tmp.pdf",
-            output_path.file_stem().unwrap_or_default().to_string_lossy()
-        ))
+    // printpdf 0.8: サブセット化で保存
+    let save_options = PdfSaveOptions {
+        subset_fonts: true,
+        ..Default::default()
     };
+    let mut warnings = Vec::new();
+    let pdf_bytes = doc.with_pages(pages).save(&save_options, &mut warnings);
 
-    let file = File::create(&temp_path)?;
-    doc.save(&mut BufWriter::new(BufWriter::new(file)))
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("{:?}", e)))?;
-
-    // lopdfでFlateDecode フィルター追加
-    add_flate_filter_to_images(&temp_path, output_path)?;
-
-    // 一時ファイル削除
-    let _ = std::fs::remove_file(&temp_path);
-
-    Ok(())
-}
-
-/// lopdfで画像ストリームにFlateDecode フィルターを追加
-fn add_flate_filter_to_images(input_path: &Path, output_path: &Path) -> Result<()> {
-    let mut doc = lopdf::Document::load(input_path)
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("lopdf load: {}", e)))?;
-
-    let mut image_count = 0;
-
-    // 全オブジェクトを走査して画像XObjectを探す
-    let object_ids: Vec<_> = doc.objects.keys().cloned().collect();
-    for obj_id in object_ids {
-        if let Ok(obj) = doc.get_object_mut(obj_id) {
-            if let lopdf::Object::Stream(ref mut stream) = obj {
-                // XObject/Image かどうか確認
-                let is_image = stream.dict.get(b"Subtype")
-                    .ok()
-                    .and_then(|o| {
-                        if let lopdf::Object::Name(name) = o {
-                            Some(name.as_slice() == b"Image")
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(false);
-
-                if is_image {
-                    // /Filter がなければ /FlateDecode を追加
-                    if stream.dict.get(b"Filter").is_err() {
-                        stream.dict.set(
-                            "Filter",
-                            lopdf::Object::Name(b"FlateDecode".to_vec())
-                        );
-                        image_count += 1;
-                    }
-                }
-            }
-        }
+    // 警告があれば表示
+    for warning in warnings {
+        eprintln!("PDF警告: {:?}", warning);
     }
 
-    eprintln!("FlateDecode フィルター追加: {}画像", image_count);
-
-    doc.save(output_path)
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("lopdf save: {}", e)))?;
+    std::fs::write(output_path, pdf_bytes)?;
+    eprintln!("PDF保存完了: {}", output_path.display());
 
     Ok(())
 }
 
-/// 統一フォントサイズ（12pt）
-const UNIFIED_FONT_SIZE: f32 = 12.0;
+/// 画像を読み込んでドキュメントに追加
+fn load_and_add_image(
+    doc: &mut PdfDocument,
+    image_path: &str,
+    quality: PdfQuality,
+) -> Result<(XObjectId, u32, u32)> {
+    let path = Path::new(image_path);
+    if !path.exists() {
+        return Err(PhotoAiError::FileNotFound(image_path.to_string()));
+    }
 
-/// ヘッダー描画
-fn draw_header(
-    layer: &PdfLayerReference,
-    title: &str,
-    page_num: usize,
-    total_pages: usize,
-    fonts: &FontSet,
-    a4_width_pt: f32,
-    a4_height_pt: f32,
-    margin_pt: f32,
-) {
-    let title_text = process_text(title, fonts.is_japanese);
-    layer.use_text(
-        &title_text,
-        UNIFIED_FONT_SIZE,
-        pt_to_mm(margin_pt),
-        pt_to_mm(a4_height_pt - margin_pt - 20.0),
-        &fonts.bold,
-    );
+    let dynamic_image = image_crate::open(path)
+        .map_err(|e| PhotoAiError::PdfGeneration(format!("画像読み込みエラー: {}", e)))?;
 
-    layer.use_text(
-        &format!("Page {} / {}", page_num, total_pages),
-        UNIFIED_FONT_SIZE,
-        pt_to_mm(a4_width_pt - margin_pt - 80.0),
-        pt_to_mm(a4_height_pt - margin_pt - 20.0),
-        &fonts.regular,
-    );
+    // 品質設定に基づいてリサイズ
+    let resized = resize_image(dynamic_image, quality);
+    let (width, height) = (resized.width(), resized.height());
+
+    // JPEGエンコード（圧縮効率向上）
+    let mut jpeg_bytes = Vec::new();
+    let jpeg_quality = match quality {
+        PdfQuality::High => 90,
+        PdfQuality::Medium => 75,
+        PdfQuality::Low => 60,
+    };
+
+    let rgb_image = resized.to_rgb8();
+    let encoder = image_crate::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_bytes, jpeg_quality);
+    rgb_image.write_with_encoder(encoder)
+        .map_err(|e| PhotoAiError::PdfGeneration(format!("JPEG encode: {}", e)))?;
+
+    eprintln!("  画像: {}x{}, JPEG {} bytes", width, height, jpeg_bytes.len());
+
+    // printpdf 0.8: RawImageで追加
+    let mut warnings = Vec::new();
+    let raw_image = RawImage::decode_from_bytes(&jpeg_bytes, &mut warnings)
+        .map_err(|e| PhotoAiError::PdfGeneration(format!("RawImage decode: {:?}", e)))?;
+
+    let image_id = doc.add_image(&raw_image);
+
+    Ok((image_id, width, height))
 }
 
 /// 画像をリサイズ（品質設定に基づく）
@@ -294,7 +269,6 @@ fn resize_image(
     let max_width = quality.max_width();
     let (orig_w, orig_h) = (img.width(), img.height());
 
-    // 最大幅を超える場合のみリサイズ
     if orig_w <= max_width {
         return img;
     }
@@ -305,49 +279,105 @@ fn resize_image(
     img.resize(max_width, new_h, FilterType::Lanczos3)
 }
 
-/// 画像埋め込み（枠いっぱいにフィット、PNG/Flate圧縮）
-fn embed_image_react_style(
-    layer: &PdfLayerReference,
-    image_path: &str,
+/// テキスト描画オペレーション追加
+fn add_text_ops(ops: &mut Vec<Op>, text: &str, x_pt: f32, y_pt: f32, size: f32, fonts: &FontSet) {
+    ops.push(Op::StartTextSection);
+    ops.push(Op::SetTextCursor { pos: Point { x: Pt(x_pt), y: Pt(y_pt) } });
+
+    match fonts {
+        FontSet::Japanese(font_id) => {
+            ops.push(Op::SetFontSize { size: Pt(size), font: font_id.clone() });
+            ops.push(Op::WriteText {
+                items: vec![TextItem::Text(text.to_string())],
+                font: font_id.clone(),
+            });
+        }
+        FontSet::Builtin => {
+            ops.push(Op::SetFontSizeBuiltinFont { size: Pt(size), font: BuiltinFont::Helvetica });
+            ops.push(Op::WriteTextBuiltinFont {
+                items: vec![TextItem::Text(text.to_string())],
+                font: BuiltinFont::Helvetica,
+            });
+        }
+    }
+
+    ops.push(Op::EndTextSection);
+}
+
+/// テキスト描画オペレーション追加（Bold）
+fn add_text_ops_bold(ops: &mut Vec<Op>, text: &str, x_pt: f32, y_pt: f32, size: f32, fonts: &FontSet) {
+    ops.push(Op::StartTextSection);
+    ops.push(Op::SetTextCursor { pos: Point { x: Pt(x_pt), y: Pt(y_pt) } });
+
+    match fonts {
+        FontSet::Japanese(font_id) => {
+            // 日本語フォントはBold版がないので通常フォントを使用
+            ops.push(Op::SetFontSize { size: Pt(size), font: font_id.clone() });
+            ops.push(Op::WriteText {
+                items: vec![TextItem::Text(text.to_string())],
+                font: font_id.clone(),
+            });
+        }
+        FontSet::Builtin => {
+            ops.push(Op::SetFontSizeBuiltinFont { size: Pt(size), font: BuiltinFont::HelveticaBold });
+            ops.push(Op::WriteTextBuiltinFont {
+                items: vec![TextItem::Text(text.to_string())],
+                font: BuiltinFont::HelveticaBold,
+            });
+        }
+    }
+
+    ops.push(Op::EndTextSection);
+}
+
+/// ヘッダー描画オペレーション追加
+fn add_header_ops(
+    ops: &mut Vec<Op>,
+    title: &str,
+    page_num: usize,
+    total_pages: usize,
+    fonts: &FontSet,
+    a4_width_pt: f32,
+    a4_height_pt: f32,
+    margin_pt: f32,
+) {
+    let title_text = process_text(title, fonts.is_japanese());
+
+    // タイトル
+    ops.push(Op::SetFillColor { col: Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None }) });
+    add_text_ops_bold(
+        ops,
+        &title_text,
+        margin_pt,
+        a4_height_pt - margin_pt - 20.0,
+        UNIFIED_FONT_SIZE,
+        fonts,
+    );
+
+    // ページ番号
+    add_text_ops(
+        ops,
+        &format!("Page {} / {}", page_num, total_pages),
+        a4_width_pt - margin_pt - 80.0,
+        a4_height_pt - margin_pt - 20.0,
+        UNIFIED_FONT_SIZE,
+        fonts,
+    );
+}
+
+/// 画像描画オペレーション追加
+fn add_image_ops(
+    ops: &mut Vec<Op>,
+    image_id: &XObjectId,
+    img_width: u32,
+    img_height: u32,
     x_pt: f32,
     y_pt: f32,
     box_width_pt: f32,
     box_height_pt: f32,
-    quality: PdfQuality,
-) -> Result<()> {
-    let path = Path::new(image_path);
-    if !path.exists() {
-        return Err(PhotoAiError::FileNotFound(image_path.to_string()));
-    }
-
-    let dynamic_image = image_crate::open(path)
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("画像読み込みエラー: {}", e)))?;
-
-    // 品質設定に基づいてリサイズ
-    let resized_image = resize_image(dynamic_image, quality);
-    let (width_px, height_px) = (resized_image.width(), resized_image.height());
-
-    // RGBデータを取得
-    let rgb_image = resized_image.to_rgb8();
-    let raw_data = rgb_image.as_raw();
-
-    // flate2でDeflate圧縮（PNG相当）
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
-    encoder.write_all(raw_data)
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("Flate encode: {}", e)))?;
-    let compressed_data = encoder.finish()
-        .map_err(|e| PhotoAiError::PdfGeneration(format!("Flate finish: {}", e)))?;
-
-    let compression_ratio = raw_data.len() as f32 / compressed_data.len() as f32;
-    eprintln!(
-        "  圧縮: {} -> {} bytes ({:.1}x)",
-        raw_data.len(),
-        compressed_data.len(),
-        compression_ratio
-    );
-
+) {
     // アスペクト比を維持して枠いっぱいにフィット
-    let img_aspect = width_px as f32 / height_px as f32;
+    let img_aspect = img_width as f32 / img_height as f32;
     let box_aspect = box_width_pt / box_height_pt;
 
     let (draw_width_pt, draw_height_pt) = if img_aspect > box_aspect {
@@ -360,51 +390,40 @@ fn embed_image_react_style(
     let draw_x_pt = x_pt + (box_width_pt - draw_width_pt) / 2.0;
     let draw_y_pt = y_pt + (box_height_pt - draw_height_pt) / 2.0;
 
-    // 圧縮済みデータを埋め込み（filter: None → lopdfで後からFlateDecode追加）
-    let image = Image::from(ImageXObject {
-        width: Px(width_px as usize),
-        height: Px(height_px as usize),
-        color_space: ColorSpace::Rgb,
-        bits_per_component: ColorBits::Bit8,
-        interpolate: true,
-        image_data: compressed_data,
-        image_filter: None,  // lopdfで後処理
-        smask: None,
-        clipping_bbox: None,
+    ops.push(Op::UseXobject {
+        id: image_id.clone(),
+        transform: XObjectTransform {
+            translate_x: Some(Pt(draw_x_pt)),
+            translate_y: Some(Pt(draw_y_pt)),
+            scale_x: Some(draw_width_pt / img_width as f32),
+            scale_y: Some(draw_height_pt / img_height as f32),
+            ..Default::default()
+        },
     });
-
-    // スケール: 1px = 1pt として、目標サイズに合わせる
-    let scale_x = draw_width_pt / width_px as f32;
-    let scale_y = draw_height_pt / height_px as f32;
-
-    image.add_to_layer(layer.clone(), ImageTransform {
-        translate_x: Some(pt_to_mm(draw_x_pt)),
-        translate_y: Some(pt_to_mm(draw_y_pt)),
-        scale_x: Some(scale_x),
-        scale_y: Some(scale_y),
-        ..Default::default()
-    });
-
-    Ok(())
 }
 
-/// 矩形描画
-fn draw_rect(layer: &PdfLayerReference, x_pt: f32, y_pt: f32, width_pt: f32, height_pt: f32) {
-    let rect = Line {
-        points: vec![
-            (Point::new(pt_to_mm(x_pt), pt_to_mm(y_pt)), false),
-            (Point::new(pt_to_mm(x_pt + width_pt), pt_to_mm(y_pt)), false),
-            (Point::new(pt_to_mm(x_pt + width_pt), pt_to_mm(y_pt + height_pt)), false),
-            (Point::new(pt_to_mm(x_pt), pt_to_mm(y_pt + height_pt)), false),
-        ],
-        is_closed: true,
-    };
-    layer.set_outline_color(Color::Rgb(Rgb::new(0.7, 0.7, 0.7, None)));
-    layer.set_outline_thickness(0.5);
-    layer.add_line(rect);
+/// 矩形描画オペレーション追加
+fn add_rect_ops(ops: &mut Vec<Op>, x_pt: f32, y_pt: f32, width_pt: f32, height_pt: f32) {
+    ops.push(Op::SetOutlineColor { col: Color::Rgb(Rgb { r: 0.7, g: 0.7, b: 0.7, icc_profile: None }) });
+    ops.push(Op::SetOutlineThickness { pt: Pt(0.5) });
+
+    let points = vec![
+        LinePoint { p: Point { x: Pt(x_pt), y: Pt(y_pt) }, bezier: false },
+        LinePoint { p: Point { x: Pt(x_pt + width_pt), y: Pt(y_pt) }, bezier: false },
+        LinePoint { p: Point { x: Pt(x_pt + width_pt), y: Pt(y_pt + height_pt) }, bezier: false },
+        LinePoint { p: Point { x: Pt(x_pt), y: Pt(y_pt + height_pt) }, bezier: false },
+    ];
+
+    ops.push(Op::DrawPolygon {
+        polygon: Polygon {
+            rings: vec![PolygonRing { points }],
+            mode: PaintMode::Stroke,
+            winding_order: WindingOrder::NonZero,
+        },
+    });
 }
 
-/// フィールド値を取得（LAYOUT_FIELDSのkeyに基づく）
+/// フィールド値を取得
 fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
     match key {
         "date" => if result.date.is_empty() { "-" } else { &result.date },
@@ -438,9 +457,9 @@ impl Default for TextFitConfig {
     }
 }
 
-/// テキストをフィットさせて描画（自動縮小・改行・省略）
-fn draw_fitted_text(
-    layer: &PdfLayerReference,
+/// テキスト描画オペレーション追加（自動調整）
+fn add_fitted_text_ops(
+    ops: &mut Vec<Op>,
     text: &str,
     x_pt: f32,
     y_pt: f32,
@@ -453,87 +472,74 @@ fn draw_fitted_text(
 
     let char_count = text.chars().count();
 
-    // 文字数に基づいてフォントサイズを決定
     let font_size = if char_count <= config.max_width_chars {
         config.base_font_size
     } else if char_count <= config.max_width_chars * 2 {
-        // 文字数が多い場合は縮小
         let ratio = config.max_width_chars as f32 / char_count as f32;
         (config.base_font_size * ratio).max(config.min_font_size)
     } else {
         config.min_font_size
     };
 
-    // 1行あたりの最大文字数を計算
     let chars_per_line = ((config.max_width_chars as f32 * config.base_font_size / font_size) as usize).max(10);
-
-    // 最大文字数を超える場合は改行または省略
     let total_max_chars = chars_per_line * config.max_lines;
 
     if char_count <= chars_per_line {
-        // 1行に収まる
-        layer.use_text(text, font_size, pt_to_mm(x_pt), pt_to_mm(y_pt), &fonts.regular);
+        add_text_ops(ops, text, x_pt, y_pt, font_size, fonts);
     } else if char_count <= total_max_chars {
-        // 2行に分割
         let (line1, line2) = text.split_at(text.char_indices().nth(chars_per_line).map(|(i, _)| i).unwrap_or(text.len()));
-        layer.use_text(line1, font_size, pt_to_mm(x_pt), pt_to_mm(y_pt), &fonts.regular);
-        layer.use_text(line2, font_size, pt_to_mm(x_pt), pt_to_mm(y_pt - 10.0), &fonts.regular);
+        add_text_ops(ops, line1, x_pt, y_pt, font_size, fonts);
+        add_text_ops(ops, line2, x_pt, y_pt - 10.0, font_size, fonts);
     } else {
-        // 省略記号で切り詰め
         let max_chars = total_max_chars - 1;
         let truncated: String = text.chars().take(max_chars).chain(std::iter::once('…')).collect();
         let (line1, line2) = truncated.split_at(truncated.char_indices().nth(chars_per_line).map(|(i, _)| i).unwrap_or(truncated.len()));
-        layer.use_text(line1, font_size, pt_to_mm(x_pt), pt_to_mm(y_pt), &fonts.regular);
-        layer.use_text(line2, font_size, pt_to_mm(x_pt), pt_to_mm(y_pt - 10.0), &fonts.regular);
+        add_text_ops(ops, line1, x_pt, y_pt, font_size, fonts);
+        add_text_ops(ops, line2, x_pt, y_pt - 10.0, font_size, fonts);
     }
 }
 
-/// 情報欄テキスト描画（layout.rsのLAYOUT_FIELDSを使用）
-fn draw_info_fields(
-    layer: &PdfLayerReference,
+/// 情報欄テキスト描画オペレーション追加
+fn add_info_field_ops(
+    ops: &mut Vec<Op>,
     result: &AnalysisResult,
     info_x_pt: f32,
     row_y_pt: f32,
     photo_height_pt: f32,
     fonts: &FontSet,
 ) {
-    // LAYOUT_FIELDSを使用してフィールドを描画
     let mut y_offset = 0u8;
     let text_config = TextFitConfig::default();
+
+    ops.push(Op::SetFillColor { col: Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None }) });
 
     for field in layout::LAYOUT_FIELDS.iter() {
         let y_pt = row_y_pt + photo_height_pt - 15.0 - (y_offset as f32 * 18.0);
 
         if y_pt > row_y_pt + 5.0 {
-            let label_text = process_text(field.label, fonts.is_japanese);
+            let label_text = process_text(field.label, fonts.is_japanese());
             let value = get_field_value(result, field.key);
             let value_text = if value.is_empty() { "-" } else { value };
-            let value_text = process_text(value_text, fonts.is_japanese);
+            let value_text = process_text(value_text, fonts.is_japanese());
 
             // ラベル
-            layer.use_text(&format!("{}:", label_text), UNIFIED_FONT_SIZE, pt_to_mm(info_x_pt + 5.0), pt_to_mm(y_pt), &fonts.regular);
+            add_text_ops(ops, &format!("{}:", label_text), info_x_pt + 5.0, y_pt, UNIFIED_FONT_SIZE, fonts);
+
             // 値（自動調整）
-            draw_fitted_text(layer, &value_text, info_x_pt + 45.0, y_pt, fonts, &text_config);
+            add_fitted_text_ops(ops, &value_text, info_x_pt + 45.0, y_pt, fonts, &text_config);
         }
 
         y_offset += field.row_span;
     }
 
     // ファイル名
-    layer.use_text(
-        &result.file_name,
-        UNIFIED_FONT_SIZE,
-        pt_to_mm(info_x_pt + 5.0),
-        pt_to_mm(row_y_pt + 5.0),
-        &fonts.regular,
-    );
+    add_text_ops(ops, &result.file_name, info_x_pt + 5.0, row_y_pt + 5.0, UNIFIED_FONT_SIZE, fonts);
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn test_aspect_ratio_calculation() {
-        // 横長画像（4:3）を縦長ボックス（1:2）にフィット
         let img_aspect: f64 = 4.0 / 3.0;
         let box_aspect: f64 = 100.0 / 200.0;
 
