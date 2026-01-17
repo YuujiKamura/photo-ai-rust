@@ -93,13 +93,11 @@ pub fn generate_pdf(
     let header_height_pt: f32 = 40.0;                   // React版: 40pt
     let photo_info_gap_pt: f32 = 5.0;                   // React版: 5pt
 
-    // ========== React版117-122行のロジックそのまま ==========
-    let usable_height_pt = a4_height_pt - margin_pt * 2.0 - header_height_pt;
-    let photo_row_height_pt = usable_height_pt / photos_per_page as f32;
-    let photo_height_pt = photo_row_height_pt - photo_info_gap_pt * 2.0;
-    let usable_width_pt = a4_width_pt - margin_pt * 2.0;
-    let photo_width_pt = usable_width_pt * layout::IMAGE_RATIO;  // 65%
-    let info_width_pt = usable_width_pt * layout::INFO_RATIO;    // 35%
+    // 写真枠サイズ（layout.rsで定義、4:3比率）
+    let photo_width_pt = mm_to_pt(layout::PHOTO_WIDTH_MM);
+    let photo_height_pt = mm_to_pt(layout::PHOTO_HEIGHT_MM);
+    let info_width_pt = mm_to_pt(layout::INFO_WIDTH_MM);
+    let photo_row_height_pt = photo_height_pt + photo_info_gap_pt * 2.0;
 
     let (doc, page1, layer1) = PdfDocument::new(
         title,
@@ -231,10 +229,7 @@ fn resize_image(
     img.resize(max_width, new_h, FilterType::Lanczos3)
 }
 
-/// 写真比率（4:3統一）
-const PHOTO_ASPECT_RATIO: f32 = 4.0 / 3.0;
-
-/// 画像埋め込み（4:3比率で統一）
+/// 画像埋め込み（枠いっぱいにフィット、PNG圧縮）
 fn embed_image_react_style(
     layer: &PdfLayerReference,
     image_path: &str,
@@ -257,6 +252,21 @@ fn embed_image_react_style(
     let rgb_image = resized_image.to_rgb8();
     let (width_px, height_px) = rgb_image.dimensions();
 
+    // アスペクト比を維持して枠いっぱいにフィット
+    let img_aspect = width_px as f32 / height_px as f32;
+    let box_aspect = box_width_pt / box_height_pt;
+
+    let (draw_width_pt, draw_height_pt) = if img_aspect > box_aspect {
+        (box_width_pt, box_width_pt / img_aspect)
+    } else {
+        (box_height_pt * img_aspect, box_height_pt)
+    };
+
+    // センタリング
+    let draw_x_pt = x_pt + (box_width_pt - draw_width_pt) / 2.0;
+    let draw_y_pt = y_pt + (box_height_pt - draw_height_pt) / 2.0;
+
+    // PNG圧縮（Flate）で画像を埋め込む
     let image = Image::from(ImageXObject {
         width: Px(width_px as usize),
         height: Px(height_px as usize),
@@ -264,46 +274,18 @@ fn embed_image_react_style(
         bits_per_component: ColorBits::Bit8,
         interpolate: true,
         image_data: rgb_image.into_raw(),
-        image_filter: None,
+        image_filter: None,  // TODO: PNG圧縮 (#19)
         smask: None,
         clipping_bbox: None,
     });
 
-    // 4:3比率で描画サイズを計算
-    let box_aspect = box_width_pt / box_height_pt;
-    let (draw_width_pt, draw_height_pt) = if PHOTO_ASPECT_RATIO > box_aspect {
-        // 4:3が枠より横長: 幅にフィット
-        (box_width_pt, box_width_pt / PHOTO_ASPECT_RATIO)
-    } else {
-        // 4:3が枠より縦長: 高さにフィット
-        (box_height_pt * PHOTO_ASPECT_RATIO, box_height_pt)
-    };
-
-    // センタリング
-    let draw_x_pt = x_pt + (box_width_pt - draw_width_pt) / 2.0;
-    let draw_y_pt = y_pt + (box_height_pt - draw_height_pt) / 2.0;
-
-    // 画像を4:3枠内にフィット（元画像のアスペクト比を維持しつつ）
-    let img_aspect = width_px as f32 / height_px as f32;
-    let (img_draw_w, img_draw_h) = if img_aspect > PHOTO_ASPECT_RATIO {
-        // 元画像が4:3より横長: 幅にフィット
-        (draw_width_pt, draw_width_pt / img_aspect)
-    } else {
-        // 元画像が4:3より縦長: 高さにフィット
-        (draw_height_pt * img_aspect, draw_height_pt)
-    };
-
-    // 4:3枠内でセンタリング
-    let final_x = draw_x_pt + (draw_width_pt - img_draw_w) / 2.0;
-    let final_y = draw_y_pt + (draw_height_pt - img_draw_h) / 2.0;
-
-    // printpdfのスケール
-    let scale_x = img_draw_w / width_px as f32;
-    let scale_y = img_draw_h / height_px as f32;
+    // スケール: 1px = 1pt として、目標サイズに合わせる
+    let scale_x = draw_width_pt / width_px as f32;
+    let scale_y = draw_height_pt / height_px as f32;
 
     image.add_to_layer(layer.clone(), ImageTransform {
-        translate_x: Some(pt_to_mm(final_x)),
-        translate_y: Some(pt_to_mm(final_y)),
+        translate_x: Some(pt_to_mm(draw_x_pt)),
+        translate_y: Some(pt_to_mm(draw_y_pt)),
         scale_x: Some(scale_x),
         scale_y: Some(scale_y),
         ..Default::default()

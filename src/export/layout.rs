@@ -24,7 +24,13 @@ pub const USABLE_WIDTH_MM: f32 = A4_WIDTH_MM - MARGIN_MM * 2.0;  // 190mm
 pub const PHOTO_WIDTH_MM: f32 = USABLE_WIDTH_MM * IMAGE_RATIO;   // 123.5mm
 pub const INFO_WIDTH_MM: f32 = USABLE_WIDTH_MM * INFO_RATIO;     // 66.5mm
 
-/// 写真高さ: 3枚配置から計算（mm）
+/// 写真アスペクト比（4:3）
+pub const PHOTO_ASPECT_RATIO: f32 = 4.0 / 3.0;
+
+/// 写真高さ: 4:3比率から計算（mm）
+pub const PHOTO_HEIGHT_MM: f32 = PHOTO_WIDTH_MM / PHOTO_ASPECT_RATIO;  // 92.625mm
+
+/// 写真高さ（旧: ページ分割基準、互換性のため残す）
 pub const PHOTO_HEIGHT_MM_3UP: f32 = (A4_HEIGHT_MM - MARGIN_MM * 2.0 - PHOTO_GAP_MM * 2.0) / 3.0;  // 85.67mm
 pub const PHOTO_HEIGHT_MM_2UP: f32 = (A4_HEIGHT_MM - MARGIN_MM * 2.0 - PHOTO_GAP_MM) / 2.0;        // 128.5mm
 
