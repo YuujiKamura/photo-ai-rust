@@ -12,7 +12,7 @@ const MARGIN_MM: f32 = 10.0;
 pub fn generate_pdf(
     results: &[AnalysisResult],
     output_path: &Path,
-    photos_per_page: u8,
+    _photos_per_page: u8,
     title: &str,
 ) -> Result<()> {
     let (doc, page1, layer1) = PdfDocument::new(

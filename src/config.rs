@@ -52,6 +52,7 @@ impl Config {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_api_key(&self) -> Result<String> {
         // 環境変数を優先
         if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {

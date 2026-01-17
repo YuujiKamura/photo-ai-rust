@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum PhotoAiError {
     #[error("設定エラー: {0}")]
     Config(String),

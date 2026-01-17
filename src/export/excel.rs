@@ -6,7 +6,7 @@ use std::path::Path;
 pub fn generate_excel(
     results: &[AnalysisResult],
     output_path: &Path,
-    title: &str,
+    _title: &str,
 ) -> Result<()> {
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet();

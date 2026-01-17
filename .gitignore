@@ -1,1 +1,6 @@
 /target
+/temp-images
+*.json
+!master/*.json
+*.xlsx
+*.pdf

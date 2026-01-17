@@ -4,14 +4,32 @@ use super::types::AnalysisResult;
 use std::path::PathBuf;
 use std::process::Command;
 
-const STEP1_PROMPT: &str = r#"Output ONLY a JSON array. No markdown, no explanation, no text before or after.
+const STEP1_PROMPT: &str = r#"あなたは工事写真帳を作成する現場監督です。複数の写真を同時に解析し、一貫性のある分類を行ってください。
 
-Required JSON format:
-[{"fileName":"photo-1.jpg","hasBoard":false,"detectedText":"","measurements":"","sceneDescription":"description here","photoCategory":"その他"}]
+## 写真区分（フォトカテゴリ）
+以下から最も適切なものを選択：
+着工前, 完成, 施工状況, 安全管理, 使用材料, 品質管理, 出来形管理, 段階確認, 材料検収, その他
 
-Categories: 着工前/完成/施工状況/安全管理/使用材料/品質管理/出来形管理/段階確認/材料検収/その他
+## 出力形式（厳密にこのJSON配列形式で出力）
+```json
+[
+  {
+    "fileName": "ファイル名",
+    "hasBoard": true/false,
+    "detectedText": "黒板・看板から読み取った全テキスト",
+    "measurements": "数値データ（温度、寸法、密度等）単位付き",
+    "sceneDescription": "写真に写っているものの客観的な説明",
+    "photoCategory": "写真区分から選択"
+  }
+]
+```
 
-IMPORTANT: Output raw JSON array only. Do not use markdown code blocks."#;
+## 注意
+- 黒板のテキストは正確にOCR
+- 数値は単位も含めて正確に（例: "160.4℃", "厚さ50mm"）
+- 同じ場所・同じ作業の写真は一貫した分類を
+- 推測せず、見えるものだけを記載
+- JSON配列のみ出力。説明文は不要"#;
 
 pub async fn analyze_batch(images: &[ImageInfo], verbose: bool) -> Result<Vec<AnalysisResult>> {
     // 画像をtemp-imagesにコピー
@@ -37,10 +55,12 @@ pub async fn analyze_batch(images: &[ImageInfo], verbose: bool) -> Result<Vec<An
         .collect::<Vec<_>>()
         .join("\n");
 
-    let full_prompt = format!(
+    // プロンプト構築（改行をスペースに置換してcmd経由で渡す）
+    let raw_prompt = format!(
         "Read the following image files and analyze them: {}\n\n{}\n\n対象写真:\n{}",
         image_list, STEP1_PROMPT, photo_list
     );
+    let full_prompt = raw_prompt.replace('\n', " ").replace('"', "\\\"");
 
     if verbose {
         println!("  プロンプト長: {} chars", full_prompt.len());
@@ -100,7 +120,7 @@ fn copy_to_temp(images: &[ImageInfo], temp_dir: &PathBuf) -> Result<Vec<PathBuf>
     Ok(local_paths)
 }
 
-fn parse_response(response: &str, images: &[ImageInfo]) -> Result<Vec<AnalysisResult>> {
+fn parse_response(response: &str, _images: &[ImageInfo]) -> Result<Vec<AnalysisResult>> {
     // JSONブロックを抽出
     let json_str = if let Some(caps) = response.find("```json") {
         let start = caps + 7;
