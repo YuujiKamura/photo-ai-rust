@@ -56,7 +56,20 @@ async fn main() -> Result<()> {
             println!("📄 photo-ai-rust - エクスポート\n");
 
             let content = std::fs::read_to_string(&input)?;
-            let results: Vec<analyzer::AnalysisResult> = serde_json::from_str(&content)?;
+            let mut results: Vec<analyzer::AnalysisResult> = serde_json::from_str(&content)?;
+
+            // JSONファイルの親ディレクトリを基準に相対パスを解決
+            let base_dir = input.parent().unwrap_or(std::path::Path::new("."));
+            for result in &mut results {
+                if !result.file_path.is_empty() {
+                    let path = std::path::Path::new(&result.file_path);
+                    if path.is_relative() {
+                        if let Ok(abs_path) = base_dir.join(path).canonicalize() {
+                            result.file_path = abs_path.to_string_lossy().to_string();
+                        }
+                    }
+                }
+            }
 
             let output_dir = output.unwrap_or_else(|| std::path::PathBuf::from("."));
 
