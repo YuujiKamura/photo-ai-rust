@@ -29,6 +29,9 @@ printpdf = "0.7"
 # Excel生成
 rust_xlsxwriter = "0.79"
 
+# Excel読み込み
+calamine = "0.26"
+
 # エラー処理
 anyhow = "1"
 thiserror = "2"

@@ -12,10 +12,15 @@
 //!               └─ 細別（表層工、上層路盤工...）
 //!                   └─ 備考キー or { matchPatterns: [...] }
 //! ```
+//!
+//! ## マスタ形式
+//! - JSON (.json): 上記の階層構造を直接記述
+//! - Excel (.xlsx/.xls): フラット形式で記述 → 内部でJSON構造に変換
 
 use crate::analyzer::AnalysisResult;
 use crate::error::{PhotoAiError, Result};
-use serde_json::Value;
+use calamine::{open_workbook, Reader, Xlsx};
+use serde_json::{json, Map, Value};
 use std::path::Path;
 
 /// 照合結果
@@ -39,11 +44,152 @@ struct TraverseContext {
 }
 
 /// マスタJSONを読み込み
-fn load_master(master_path: &Path) -> Result<Value> {
+fn load_master_json(master_path: &Path) -> Result<Value> {
     let content = std::fs::read_to_string(master_path)?;
     let master: Value = serde_json::from_str(&content)
         .map_err(|e| PhotoAiError::InvalidMaster(format!("JSONパースエラー: {}", e)))?;
     Ok(master)
+}
+
+/// Excelマスタを読み込み、JSON構造に変換
+///
+/// ## Excel形式
+/// | 写真区分 | 工種 | 種別 | 細別 | 備考 | matchPatterns |
+/// |---------|------|------|------|------|---------------|
+/// | 品質管理写真 | 舗装工 | 舗装打換え工 | 表層工 | アスファルト混合物温度測定 | 温度管理,到着温度,敷均し温度 |
+fn load_master_excel(master_path: &Path) -> Result<Value> {
+    let mut workbook: Xlsx<_> = open_workbook(master_path)
+        .map_err(|e| PhotoAiError::InvalidMaster(format!("Excel読み込みエラー: {}", e)))?;
+
+    // 最初のシートを取得
+    let sheet_name = workbook
+        .sheet_names()
+        .first()
+        .cloned()
+        .ok_or_else(|| PhotoAiError::InvalidMaster("シートが見つかりません".to_string()))?;
+
+    let range = workbook
+        .worksheet_range(&sheet_name)
+        .map_err(|e| PhotoAiError::InvalidMaster(format!("シート読み込みエラー: {}", e)))?;
+
+    // ヘッダー行を取得してカラムインデックスを特定
+    let headers: Vec<String> = range
+        .rows()
+        .next()
+        .ok_or_else(|| PhotoAiError::InvalidMaster("ヘッダー行がありません".to_string()))?
+        .iter()
+        .map(|cell| cell.to_string().trim().to_string())
+        .collect();
+
+    let col_photo_category = find_column(&headers, &["写真区分"])?;
+    let col_work_type = find_column(&headers, &["工種"])?;
+    let col_variety = find_column(&headers, &["種別"])?;
+    let col_detail = find_column(&headers, &["細別"])?;
+    let col_remark = find_column(&headers, &["備考"]).ok();
+    let col_patterns = find_column(&headers, &["matchPatterns", "マッチパターン", "パターン"])?;
+
+    // 階層構造を構築
+    let mut root: Map<String, Value> = Map::new();
+
+    for row in range.rows().skip(1) {
+        let photo_category = get_cell_string(row, col_photo_category);
+        let work_type = get_cell_string(row, col_work_type);
+        let variety = get_cell_string(row, col_variety);
+        let detail = get_cell_string(row, col_detail);
+        let remark = col_remark.map_or(String::new(), |i| get_cell_string(row, i));
+        let patterns_str = get_cell_string(row, col_patterns);
+
+        // 空行はスキップ
+        if photo_category.is_empty() || patterns_str.is_empty() {
+            continue;
+        }
+
+        // matchPatterns をカンマ区切りでパース
+        let patterns: Vec<Value> = patterns_str
+            .split(',')
+            .map(|s| Value::String(s.trim().to_string()))
+            .filter(|v| !v.as_str().unwrap_or("").is_empty())
+            .collect();
+
+        if patterns.is_empty() {
+            continue;
+        }
+
+        // 階層構造に挿入
+        let category_obj = root
+            .entry(photo_category)
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .unwrap();
+
+        let work_type_obj = category_obj
+            .entry(work_type)
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .unwrap();
+
+        let variety_obj = work_type_obj
+            .entry(variety)
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .unwrap();
+
+        let detail_obj = variety_obj
+            .entry(detail)
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .unwrap();
+
+        // 備考がある場合は備考キー下に、なければ直接matchPatternsを設定
+        if !remark.is_empty() {
+            detail_obj.insert(
+                remark,
+                json!({ "matchPatterns": patterns }),
+            );
+        } else {
+            detail_obj.insert("matchPatterns".to_string(), Value::Array(patterns));
+        }
+    }
+
+    Ok(json!({ "直接工事費": root }))
+}
+
+/// ヘッダー行からカラムインデックスを検索
+fn find_column(headers: &[String], names: &[&str]) -> Result<usize> {
+    for name in names {
+        if let Some(idx) = headers.iter().position(|h| h == *name) {
+            return Ok(idx);
+        }
+    }
+    Err(PhotoAiError::InvalidMaster(format!(
+        "カラムが見つかりません: {:?}",
+        names
+    )))
+}
+
+/// セルから文字列を取得
+fn get_cell_string(row: &[calamine::Data], idx: usize) -> String {
+    row.get(idx)
+        .map(|cell| cell.to_string().trim().to_string())
+        .unwrap_or_default()
+}
+
+/// ファイル拡張子に応じてマスタを読み込み
+fn load_master(master_path: &Path) -> Result<Value> {
+    let ext = master_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    match ext.as_str() {
+        "xlsx" | "xls" => load_master_excel(master_path),
+        "json" => load_master_json(master_path),
+        _ => Err(PhotoAiError::InvalidMaster(format!(
+            "未対応のファイル形式: {} (json, xlsx, xlsのみ対応)",
+            ext
+        ))),
+    }
 }
 
 /// 階層を再帰的に走査し、matchPatternsを持つエントリを収集
@@ -377,5 +523,133 @@ mod tests {
         let matched = match_entry(&result, &entries);
         // 写真区分が一致しないのでマッチしない
         assert!(matched.is_none());
+    }
+
+    #[test]
+    fn test_load_master_excel() {
+        use rust_xlsxwriter::Workbook;
+
+        // テスト用Excelファイルを作成
+        let temp_dir = std::env::temp_dir();
+        let excel_path = temp_dir.join("test_master.xlsx");
+
+        let mut workbook = Workbook::new();
+        let worksheet = workbook.add_worksheet();
+
+        // ヘッダー行
+        worksheet.write_string(0, 0, "写真区分").unwrap();
+        worksheet.write_string(0, 1, "工種").unwrap();
+        worksheet.write_string(0, 2, "種別").unwrap();
+        worksheet.write_string(0, 3, "細別").unwrap();
+        worksheet.write_string(0, 4, "備考").unwrap();
+        worksheet.write_string(0, 5, "matchPatterns").unwrap();
+
+        // データ行1
+        worksheet.write_string(1, 0, "品質管理写真").unwrap();
+        worksheet.write_string(1, 1, "舗装工").unwrap();
+        worksheet.write_string(1, 2, "舗装打換え工").unwrap();
+        worksheet.write_string(1, 3, "表層工").unwrap();
+        worksheet.write_string(1, 4, "アスファルト混合物温度測定").unwrap();
+        worksheet.write_string(1, 5, "温度管理,到着温度,敷均し温度").unwrap();
+
+        // データ行2
+        worksheet.write_string(2, 0, "品質管理写真").unwrap();
+        worksheet.write_string(2, 1, "舗装工").unwrap();
+        worksheet.write_string(2, 2, "舗装打換え工").unwrap();
+        worksheet.write_string(2, 3, "上層路盤工").unwrap();
+        worksheet.write_string(2, 4, "現場密度測定").unwrap();
+        worksheet.write_string(2, 5, "密度測定,RI計器").unwrap();
+
+        workbook.save(&excel_path).unwrap();
+
+        // Excelから読み込み
+        let master = load_master_excel(&excel_path).unwrap();
+
+        // 構造を検証
+        let root = master.get("直接工事費").unwrap();
+        let category = root.get("品質管理写真").unwrap();
+        let work_type = category.get("舗装工").unwrap();
+        let variety = work_type.get("舗装打換え工").unwrap();
+        let detail = variety.get("表層工").unwrap();
+        let remark = detail.get("アスファルト混合物温度測定").unwrap();
+        let patterns = remark.get("matchPatterns").unwrap().as_array().unwrap();
+
+        assert!(patterns.iter().any(|p| p.as_str() == Some("温度管理")));
+        assert!(patterns.iter().any(|p| p.as_str() == Some("到着温度")));
+
+        // クリーンアップ
+        std::fs::remove_file(&excel_path).ok();
+    }
+
+    #[test]
+    fn test_excel_and_json_produce_same_entries() {
+        use rust_xlsxwriter::Workbook;
+
+        // テスト用Excelファイルを作成
+        let temp_dir = std::env::temp_dir();
+        let excel_path = temp_dir.join("test_compare.xlsx");
+
+        let mut workbook = Workbook::new();
+        let worksheet = workbook.add_worksheet();
+
+        // ヘッダー行
+        worksheet.write_string(0, 0, "写真区分").unwrap();
+        worksheet.write_string(0, 1, "工種").unwrap();
+        worksheet.write_string(0, 2, "種別").unwrap();
+        worksheet.write_string(0, 3, "細別").unwrap();
+        worksheet.write_string(0, 4, "備考").unwrap();
+        worksheet.write_string(0, 5, "matchPatterns").unwrap();
+
+        // データ行（JSONテストと同じ内容）
+        worksheet.write_string(1, 0, "品質管理写真").unwrap();
+        worksheet.write_string(1, 1, "舗装工").unwrap();
+        worksheet.write_string(1, 2, "舗装打換え工").unwrap();
+        worksheet.write_string(1, 3, "表層工").unwrap();
+        worksheet.write_string(1, 4, "アスファルト混合物温度測定").unwrap();
+        worksheet.write_string(1, 5, "温度管理,合材温度,到着温度,敷均し温度").unwrap();
+
+        workbook.save(&excel_path).unwrap();
+
+        // Excel版とJSON版の両方からエントリを収集
+        let excel_master = load_master_excel(&excel_path).unwrap();
+        let json_master = create_test_master();
+
+        let excel_root = excel_master.get("直接工事費").unwrap();
+        let json_root = json_master.get("直接工事費").unwrap();
+
+        let mut excel_entries = Vec::new();
+        let mut json_entries = Vec::new();
+        let initial_ctx = TraverseContext {
+            photo_category: String::new(),
+            work_type: String::new(),
+            variety: String::new(),
+            detail: String::new(),
+        };
+
+        collect_match_entries(excel_root, &initial_ctx, 0, &mut excel_entries);
+        collect_match_entries(json_root, &initial_ctx, 0, &mut json_entries);
+
+        // Excelから読み込んだエントリが1つあること
+        assert_eq!(excel_entries.len(), 1);
+
+        // 温度測定のエントリを比較
+        let excel_temp = excel_entries.iter().find(|(ctx, _, _)| ctx.detail == "表層工");
+        let json_temp = json_entries.iter().find(|(ctx, _, _)| ctx.detail == "表層工");
+
+        assert!(excel_temp.is_some());
+        assert!(json_temp.is_some());
+
+        let (excel_ctx, excel_remark, excel_patterns) = excel_temp.unwrap();
+        let (json_ctx, json_remark, json_patterns) = json_temp.unwrap();
+
+        assert_eq!(excel_ctx.photo_category, json_ctx.photo_category);
+        assert_eq!(excel_ctx.work_type, json_ctx.work_type);
+        assert_eq!(excel_ctx.variety, json_ctx.variety);
+        assert_eq!(excel_ctx.detail, json_ctx.detail);
+        assert_eq!(excel_remark, json_remark);
+        assert_eq!(excel_patterns.len(), json_patterns.len());
+
+        // クリーンアップ
+        std::fs::remove_file(&excel_path).ok();
     }
 }
