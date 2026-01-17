@@ -5,3 +5,4 @@
 *.xlsx
 *.pdf
 .claude/settings.local.json
+test-photos/
