@@ -4,5 +4,10 @@
 !master/*.json
 *.xlsx
 *.pdf
-.claude/settings.local.json
 test-photos/
+
+# CCPM (Claude Code PM)
+.claude/settings.local.json
+.claude/prds/*.md
+.claude/epics/*.md
+.claude/context/*.md
