@@ -8,6 +8,7 @@
 
 use crate::error::{PhotoAiError, Result};
 use crate::scanner::ImageInfo;
+use crate::ai_provider::AiProvider;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -21,7 +22,11 @@ use photo_ai_common::{
 };
 
 /// Step1: 画像認識を実行
-pub async fn analyze_batch_step1(images: &[ImageInfo], verbose: bool) -> Result<Vec<RawImageData>> {
+pub async fn analyze_batch_step1(
+    images: &[ImageInfo],
+    verbose: bool,
+    provider: AiProvider,
+) -> Result<Vec<RawImageData>> {
     // 画像をtemp-imagesにコピー
     let temp_dir = get_temp_dir()?;
     let local_paths = copy_to_temp(images, &temp_dir)?;
@@ -52,7 +57,7 @@ pub async fn analyze_batch_step1(images: &[ImageInfo], verbose: bool) -> Result<
     }
 
     // Claude CLI呼び出し
-    let response = run_claude_cli(&full_prompt, verbose)?;
+    let response = run_ai_cli(&full_prompt, Some(&local_paths), verbose, provider)?;
 
     if verbose {
         println!("  [Step1] レスポンス長: {} chars", response.len());
@@ -67,6 +72,7 @@ pub async fn analyze_batch_step2(
     raw_data: &[RawImageData],
     master: &HierarchyMaster,
     verbose: bool,
+    provider: AiProvider,
 ) -> Result<Vec<Step2Result>> {
     // 共通プロンプト生成を使用
     let step2_prompt = build_step2_prompt(raw_data, master);
@@ -77,7 +83,7 @@ pub async fn analyze_batch_step2(
     }
 
     // Claude CLI呼び出し（画像なし）
-    let response = run_claude_cli(&full_prompt, verbose)?;
+    let response = run_ai_cli(&full_prompt, None, verbose, provider)?;
 
     if verbose {
         println!("  [Step2] レスポンス長: {} chars", response.len());
@@ -129,9 +135,13 @@ pub fn merge_results(
 }
 
 /// 2段階解析を実行（後方互換性のため維持）
-pub async fn analyze_batch(images: &[ImageInfo], verbose: bool) -> Result<Vec<AnalysisResult>> {
+pub async fn analyze_batch(
+    images: &[ImageInfo],
+    verbose: bool,
+    provider: AiProvider,
+) -> Result<Vec<AnalysisResult>> {
     // Step1のみ実行（マスタなし）
-    let raw_data = analyze_batch_step1(images, verbose).await?;
+    let raw_data = analyze_batch_step1(images, verbose, provider).await?;
 
     // マスタなしの場合はStep1結果をそのまま変換
     let info_map: std::collections::HashMap<&str, &ImageInfo> = images
@@ -172,12 +182,13 @@ pub async fn analyze_batch_with_master(
     images: &[ImageInfo],
     master: &HierarchyMaster,
     verbose: bool,
+    provider: AiProvider,
 ) -> Result<Vec<AnalysisResult>> {
     // Step1: 画像認識
     if verbose {
         println!("  Step1: 画像認識開始...");
     }
-    let raw_data = analyze_batch_step1(images, verbose).await?;
+    let raw_data = analyze_batch_step1(images, verbose, provider).await?;
     if verbose {
         println!("  Step1: 完了 ({}件)", raw_data.len());
     }
@@ -202,7 +213,7 @@ pub async fn analyze_batch_with_master(
     if verbose {
         println!("  Step2: マスタ照合開始...");
     }
-    let step2_results = analyze_batch_step2(&raw_data, &filtered_master, verbose).await?;
+    let step2_results = analyze_batch_step2(&raw_data, &filtered_master, verbose, provider).await?;
     if verbose {
         println!("  Step2: 完了 ({}件)", step2_results.len());
     }
@@ -234,6 +245,89 @@ fn copy_to_temp(images: &[ImageInfo], temp_dir: &std::path::Path) -> Result<Vec<
     }
 
     Ok(local_paths)
+}
+
+fn run_ai_cli(
+    prompt: &str,
+    image_paths: Option<&[PathBuf]>,
+    verbose: bool,
+    provider: AiProvider,
+) -> Result<String> {
+    match provider {
+        AiProvider::Claude => run_claude_cli(prompt, verbose),
+        AiProvider::Codex => run_codex_cli(prompt, image_paths, verbose),
+    }
+}
+
+fn run_codex_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -> Result<String> {
+    use std::io::Write;
+    use std::process::Stdio;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let temp_dir = std::env::temp_dir();
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let output_path = temp_dir.join(format!("photo-ai-codex-{}.txt", ts));
+
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        c.args(["/c", "codex"]);
+        c
+    };
+
+    #[cfg(not(windows))]
+    let mut cmd = Command::new("codex");
+
+    cmd.arg("exec")
+        .arg("--output-last-message")
+        .arg(&output_path)
+        .arg("-");
+
+    if let Some(paths) = image_paths {
+        for path in paths {
+            cmd.arg("-i").arg(path);
+        }
+    }
+
+    if verbose {
+        println!("  [Codex] prompt length: {}", prompt.len());
+    }
+
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| PhotoAiError::ApiCall(format!("Codex CLI実行エラー: {}", e)))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|e| PhotoAiError::ApiCall(format!("Codex CLI stdin書き込みエラー: {}", e)))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| PhotoAiError::ApiCall(format!("Codex CLI実行エラー: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(PhotoAiError::ApiCall(format!(
+            "Codex CLI failed (code {:?}): {}{}",
+            output.status.code(),
+            stderr,
+            if stdout.is_empty() { String::new() } else { format!("\nstdout: {}", stdout) }
+        )));
+    }
+
+    let response = std::fs::read_to_string(&output_path)
+        .map_err(|e| PhotoAiError::ApiCall(format!("Codex出力読み込みエラー: {}", e)))?;
+    let _ = std::fs::remove_file(&output_path);
+    Ok(response)
 }
 
 fn run_claude_cli(prompt: &str, verbose: bool) -> Result<String> {

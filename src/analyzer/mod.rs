@@ -11,11 +11,13 @@ use crate::error::Result;
 use crate::scanner::ImageInfo;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
+use crate::ai_provider::AiProvider;
 
 pub async fn analyze_images(
     images: &[ImageInfo],
     batch_size: usize,
     verbose: bool,
+    provider: AiProvider,
 ) -> Result<Vec<AnalysisResult>> {
     let mut results = Vec::new();
     let total_batches = images.len().div_ceil(batch_size);
@@ -40,7 +42,7 @@ pub async fn analyze_images(
             });
         }
 
-        let batch_results = claude_cli::analyze_batch(batch, verbose).await?;
+        let batch_results = claude_cli::analyze_batch(batch, verbose, provider).await?;
         results.extend(batch_results);
 
         pb.inc(1);
@@ -60,6 +62,7 @@ pub async fn analyze_images_with_cache(
     folder: &Path,
     batch_size: usize,
     verbose: bool,
+    provider: AiProvider,
 ) -> Result<Vec<AnalysisResult>> {
     // キャッシュを読み込み
     let mut cache = CacheFile::load(folder);
@@ -78,7 +81,7 @@ pub async fn analyze_images_with_cache(
         let images_to_analyze: Vec<ImageInfo> = uncached_images.iter().map(|(img, _)| img.clone()).collect();
         let hashes: Vec<String> = uncached_images.iter().map(|(_, hash)| hash.clone()).collect();
 
-        let new_results = analyze_images(&images_to_analyze, batch_size, verbose).await?;
+        let new_results = analyze_images(&images_to_analyze, batch_size, verbose, provider).await?;
 
         // 新規結果をキャッシュに追加
         for (i, result) in new_results.iter().enumerate() {
@@ -121,6 +124,7 @@ pub async fn analyze_images_with_master(
     master: &photo_ai_common::HierarchyMaster,
     batch_size: usize,
     verbose: bool,
+    provider: AiProvider,
 ) -> Result<Vec<AnalysisResult>> {
     let mut results = Vec::new();
     let total_batches = images.len().div_ceil(batch_size);
@@ -145,7 +149,7 @@ pub async fn analyze_images_with_master(
             });
         }
 
-        let batch_results = claude_cli::analyze_batch_with_master(batch, master, verbose).await?;
+        let batch_results = claude_cli::analyze_batch_with_master(batch, master, verbose, provider).await?;
         results.extend(batch_results);
 
         pb.inc(1);
