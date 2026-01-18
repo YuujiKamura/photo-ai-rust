@@ -29,6 +29,10 @@ pub const PHOTO_CATEGORIES: &[&str] = &[
     "新規入場者教育状況", "新規入場者教育実施状況",
     "保安施設設置状況", "点灯確認状況", "安全巡視状況",
     "安全訓練実施状況", "避難訓練実施状況",
+    // 災害・事故
+    "災害発生状況", "事故発生状況", "被害状況",
+    // 環境対策
+    "環境対策状況", "騒音対策状況", "粉塵対策状況",
     // その他
     "その他"
 ];
@@ -63,7 +67,6 @@ pub fn build_step1_prompt(images: &[(&str, Option<&str>)]) -> String {
 {categories}
 
 ## 出力形式（厳密にこのJSON配列形式で出力）
-```json
 [
   {{
     "fileName": "ファイル名",
@@ -74,7 +77,6 @@ pub fn build_step1_prompt(images: &[(&str, Option<&str>)]) -> String {
     "photoCategory": "写真区分から選択"
   }}
 ]
-```
 
 ## 注意
 - 黒板のテキストは正確にOCR
