@@ -25,6 +25,14 @@ pub fn SettingsPanel(
                             set_api_key.set(event_target_value(&ev));
                         }
                     />
+                    <a
+                        href="https://aistudio.google.com/app/apikey"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="api-key-link"
+                    >
+                        "APIキーを取得 →"
+                    </a>
                 </div>
 
                 <div class="form-group">
