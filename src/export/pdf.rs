@@ -1,6 +1,7 @@
 //! PDF生成モジュール
 //!
 //! ## 変更履歴
+//! - 2026-01-18: テキスト自動調整を有効化（min_font_size: 8pt）
 //! - 2026-01-18: printpdf 0.8アップグレード、フォントサブセット化対応
 
 use crate::analyzer::AnalysisResult;
@@ -456,7 +457,7 @@ impl Default for TextFitConfig {
         Self {
             max_width_chars: 15,
             base_font_size: UNIFIED_FONT_SIZE,
-            min_font_size: UNIFIED_FONT_SIZE,
+            min_font_size: 8.0, // 自動縮小の下限
             max_lines: 2,
         }
     }
