@@ -237,25 +237,97 @@ fn copy_to_temp(images: &[ImageInfo], temp_dir: &std::path::Path) -> Result<Vec<
 }
 
 fn run_claude_cli(prompt: &str, verbose: bool) -> Result<String> {
-    // Claude CLI呼び出し（Windowsではcmd /c経由）
-    #[cfg(windows)]
-    let output = Command::new("cmd")
-        .args(["/c", "claude", "-p", prompt, "--output-format", "text"])
-        .output()
-        .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?;
+    const MAX_CMD_LENGTH: usize = 7000;
+    let escaped = prompt.replace('"', "\\\"").replace('\n', " ");
+    let test_cmd = format!("claude -p \"{}\" --output-format text", escaped);
 
-    #[cfg(not(windows))]
-    let output = Command::new("claude")
-        .args(["-p", prompt, "--output-format", "text"])
-        .output()
-        .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?;
+    if verbose {
+        println!("  [Claude] prompt length: {}, cmd length: {}", prompt.len(), test_cmd.len());
+    }
+
+    let output = if test_cmd.len() > MAX_CMD_LENGTH {
+        // 長いプロンプトはstdin経由で送信（Windowsのcmd制限回避）
+        if verbose {
+            println!("  [Claude] stdin経由で送信");
+        }
+
+        #[cfg(windows)]
+        {
+            use std::io::Write;
+            use std::process::Stdio;
+
+            let mut child = Command::new("cmd")
+                .args(["/c", "claude", "--output-format", "text"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?;
+
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin
+                    .write_all(prompt.as_bytes())
+                    .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI stdin書き込みエラー: {}", e)))?;
+            }
+
+            child
+                .wait_with_output()
+                .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?
+        }
+
+        #[cfg(not(windows))]
+        {
+            use std::io::Write;
+            use std::process::Stdio;
+
+            let mut child = Command::new("claude")
+                .args(["--output-format", "text"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?;
+
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin
+                    .write_all(prompt.as_bytes())
+                    .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI stdin書き込みエラー: {}", e)))?;
+            }
+
+            child
+                .wait_with_output()
+                .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?
+        }
+    } else {
+        // Claude CLI呼び出し（Windowsではcmd /c経由）
+        #[cfg(windows)]
+        let output = Command::new("cmd")
+            .args(["/c", "claude", "-p", prompt, "--output-format", "text"])
+            .output()
+            .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?;
+
+        #[cfg(not(windows))]
+        let output = Command::new("claude")
+            .args(["-p", prompt, "--output-format", "text"])
+            .output()
+            .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?;
+
+        output
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout_tail = if stdout.is_empty() {
+            String::new()
+        } else {
+            format!("\nstdout: {}", stdout)
+        };
         return Err(PhotoAiError::ApiCall(format!(
-            "Claude CLI failed (code {:?}): {}",
+            "Claude CLI failed (code {:?}): {}{}",
             output.status.code(),
-            stderr
+            stderr,
+            stdout_tail
         )));
     }
 
