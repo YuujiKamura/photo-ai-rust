@@ -1,199 +1,236 @@
 // excel-bridge.js
 // Excel生成 (ExcelJS使用)
+// GASPhotoAIManager/shared/generators/excelCore.ts をベースに移植
 //
 // ExcelJSはグローバル変数として読み込まれている前提
-// <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+// <script src="https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js"></script>
+
+// ============================================
+// レイアウト定数 (layoutConfig.ts から移植)
+// ============================================
+
+const MM_TO_PT = 2.835;
+
+// A4サイズ
+const A4_WIDTH_MM = 210;
+const A4_HEIGHT_MM = 297;
+const MARGIN_MM = 10;
+const PHOTO_GAP_MM = 10;
+
+// 比率
+const IMAGE_RATIO = 0.65;
+const INFO_RATIO = 0.35;
+
+// 計算値
+const USABLE_WIDTH_MM = A4_WIDTH_MM - MARGIN_MM * 2;  // 190mm
+const PHOTO_WIDTH_MM = USABLE_WIDTH_MM * IMAGE_RATIO;  // 123.5mm
+const PHOTO_HEIGHT_MM = (A4_HEIGHT_MM - MARGIN_MM * 2 - PHOTO_GAP_MM * 2) / 3;  // 85.67mm
+
+// Excel用設定
+const SCALE = 1.1;
+const PHOTO_ROWS = 10;  // 写真部分の行数
+const GAP_ROWS = 1;     // 余白行数
+const ROWS_PER_BLOCK = PHOTO_ROWS + GAP_ROWS;  // 11行/ブロック
+
+const PHOTO_HEIGHT_PT = PHOTO_HEIGHT_MM * MM_TO_PT;
+const ROW_HEIGHT_PT = Math.floor((PHOTO_HEIGHT_PT / PHOTO_ROWS) * SCALE);  // 26pt
+
+// 列幅
+const COL_A_WIDTH = 56.1;  // 写真列
+const COL_B_WIDTH = 11;    // ラベル列
+const COL_C_WIDTH = 28.6;  // 値列
+
+// ============================================
+// フィールド定義 (LAYOUT_FIELDS)
+// ============================================
+
+const LAYOUT_FIELDS = [
+  { key: 'date', label: '日時', rowSpan: 1 },
+  { key: 'photoCategory', label: '区分', rowSpan: 1 },
+  { key: 'workType', label: '工種', rowSpan: 1 },
+  { key: 'variety', label: '種別', rowSpan: 1 },
+  { key: 'detail', label: '細別', rowSpan: 1 },
+  { key: 'station', label: '測点', rowSpan: 1 },
+  { key: 'remarks', label: '備考', rowSpan: 2 },
+  { key: 'measurements', label: '測定値', rowSpan: 3 },
+];
+
+// 2枚/ページ用のフィールド（測点と備考のみ）
+const LAYOUT_FIELDS_2UP = LAYOUT_FIELDS.filter(
+  f => f.key === 'station' || f.key === 'remarks'
+);
+
+// ============================================
+// メイン関数
+// ============================================
 
 /**
- * 写真データからExcelファイルを生成
+ * 写真データからExcelファイルを生成（写真台帳形式）
  * @param {string} photosJson - JsPhotoEntry[] のJSON文字列
  * @param {string} optionsJson - { title: string, photosPerPage: number } のJSON文字列
  * @returns {Promise<Uint8Array>} Excelバイナリ
  */
 export async function generateExcel(photosJson, optionsJson) {
-  // 入力データのパース
   const photos = JSON.parse(photosJson);
   const options = JSON.parse(optionsJson);
 
-  // ExcelJSの存在確認
   if (typeof ExcelJS === 'undefined') {
     throw new Error('ExcelJS is not loaded. Please include ExcelJS library.');
   }
 
-  // ワークブック作成
+  const photosPerPage = options.photosPerPage || 3;
+  const title = options.title || '写真台帳';
+
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Photo AI';
   workbook.created = new Date();
 
-  // ワークシート作成
-  const sheetTitle = options.title || '写真台帳';
-  const sheet = workbook.addWorksheet(sheetTitle);
+  const totalPages = Math.ceil(photos.length / photosPerPage);
 
-  // 列幅設定
-  sheet.columns = [
-    { key: 'photo', width: 25 },       // A: 写真
-    { key: 'fileName', width: 20 },    // B: ファイル名
-    { key: 'date', width: 12 },        // C: 日付
-    { key: 'workType', width: 15 },    // D: 工種
-    { key: 'variety', width: 15 },     // E: 種別
-    { key: 'detail', width: 15 },      // F: 細別
-    { key: 'station', width: 12 },     // G: 測点
-    { key: 'photoCategory', width: 15 }, // H: 写真区分
-    { key: 'measurements', width: 15 }, // I: 計測値
-    { key: 'remarks', width: 30 },     // J: 備考
-  ];
+  // ページごとにシートを作成
+  for (let pageNum = 0; pageNum < totalPages; pageNum++) {
+    const pagePhotos = photos.slice(
+      pageNum * photosPerPage,
+      (pageNum + 1) * photosPerPage
+    );
+    const sheetName = `${pageNum + 1}`;
 
-  // ヘッダー行の設定
-  const headerRow = sheet.addRow([
-    '写真',
-    'ファイル名',
-    '日付',
-    '工種',
-    '種別',
-    '細別',
-    '測点',
-    '写真区分',
-    '計測値',
-    '備考',
-  ]);
-
-  // ヘッダー行のスタイル設定
-  headerRow.height = 25;
-  headerRow.eachCell((cell) => {
-    cell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF4472C4' }, // 青色背景
-    };
-    cell.font = {
-      bold: true,
-      color: { argb: 'FFFFFFFF' }, // 白色文字
-      size: 11,
-    };
-    cell.alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-    };
-    cell.border = {
-      top: { style: 'thin', color: { argb: 'FF000000' } },
-      bottom: { style: 'thin', color: { argb: 'FF000000' } },
-      left: { style: 'thin', color: { argb: 'FF000000' } },
-      right: { style: 'thin', color: { argb: 'FF000000' } },
-    };
-  });
-
-  // データ行の追加
-  for (let i = 0; i < photos.length; i++) {
-    const photo = photos[i];
-    const rowNumber = i + 2; // ヘッダーが1行目なので2行目から
-
-    // データ行を追加
-    const dataRow = sheet.addRow([
-      '', // 写真列は後で画像を埋め込む
-      photo.fileName || '',
-      photo.date || '',
-      photo.workType || '',
-      photo.variety || '',
-      photo.detail || '',
-      photo.station || '',
-      photo.photoCategory || '',
-      photo.measurements || '',
-      photo.remarks || '',
-    ]);
-
-    // 行高さを画像用に調整（約100ピクセル）
-    dataRow.height = 75;
-
-    // データ行のスタイル設定
-    dataRow.eachCell((cell, colNumber) => {
-      cell.alignment = {
-        horizontal: colNumber === 1 ? 'center' : 'left',
-        vertical: 'middle',
-        wrapText: true,
-      };
-      cell.border = {
-        top: { style: 'thin', color: { argb: 'FF000000' } },
-        bottom: { style: 'thin', color: { argb: 'FF000000' } },
-        left: { style: 'thin', color: { argb: 'FF000000' } },
-        right: { style: 'thin', color: { argb: 'FF000000' } },
-      };
-      cell.font = {
-        size: 10,
-      };
+    const sheet = workbook.addWorksheet(sheetName, {
+      pageSetup: {
+        paperSize: 9, // A4
+        orientation: 'portrait',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 1,
+        horizontalCentered: true,
+        verticalCentered: true,
+        margins: {
+          left: MARGIN_MM / 25.4,
+          right: MARGIN_MM / 25.4,
+          top: MARGIN_MM / 25.4,
+          bottom: MARGIN_MM / 25.4,
+          header: 0.2,
+          footer: 0.2
+        }
+      },
+      views: [{ showGridLines: false }]
     });
 
-    // 偶数行に薄い背景色
-    if (i % 2 === 1) {
-      dataRow.eachCell((cell) => {
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFF2F2F2' }, // 薄いグレー
-        };
-      });
-    }
+    // 列幅設定
+    sheet.columns = [
+      { width: COL_A_WIDTH },
+      { width: COL_B_WIDTH },
+      { width: COL_C_WIDTH }
+    ];
 
-    // 画像の埋め込み
-    if (photo.imageDataUrl) {
-      try {
-        const imageId = await addImageToWorkbook(workbook, photo.imageDataUrl);
-        if (imageId !== null) {
-          sheet.addImage(imageId, {
-            tl: { col: 0, row: rowNumber - 1 }, // 左上位置
-            ext: { width: 140, height: 90 },    // サイズ（ピクセル）
-          });
-        }
-      } catch (err) {
-        console.warn(`Failed to embed image for ${photo.fileName}:`, err.message);
-        // 画像埋め込み失敗時はスキップ（エラーにしない）
+    let currentRow = 1;
+
+    // 写真を配置
+    for (let i = 0; i < pagePhotos.length; i++) {
+      const photo = pagePhotos[i];
+      const startRow = currentRow;
+      const endRow = startRow + ROWS_PER_BLOCK - 1;
+
+      // 行高さ設定
+      for (let r = startRow; r <= endRow; r++) {
+        sheet.getRow(r).height = ROW_HEIGHT_PT;
       }
+
+      // 画像セル（列A）- マージ
+      const photoEndRow = endRow - GAP_ROWS;
+      sheet.mergeCells(startRow, 1, photoEndRow, 1);
+      const imgCell = sheet.getCell(startRow, 1);
+      imgCell.border = {
+        top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+        left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+        right: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+        bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } }
+      };
+
+      // 画像を追加
+      if (photo.imageDataUrl) {
+        try {
+          const imageId = addImageToWorkbook(workbook, photo.imageDataUrl);
+          if (imageId !== null) {
+            sheet.addImage(imageId, {
+              tl: { col: 0, row: startRow - 1 },
+              br: { col: 1, row: startRow - 1 + PHOTO_ROWS },
+              editAs: 'absolute'
+            });
+          }
+        } catch (err) {
+          console.warn(`Failed to embed image for ${photo.fileName}:`, err.message);
+        }
+      }
+
+      // 情報フィールド（列B & C）
+      const fields = photosPerPage === 2 ? LAYOUT_FIELDS_2UP : LAYOUT_FIELDS;
+      let fieldRow = startRow;
+
+      for (const field of fields) {
+        let value = '';
+        if (field.key === 'date') {
+          value = photo.date || '';
+        } else {
+          value = photo[field.key] || '';
+        }
+
+        createFieldCell(sheet, fieldRow, field.label, value, field.rowSpan);
+        fieldRow += field.rowSpan;
+      }
+
+      currentRow = endRow + 1;
     }
   }
 
-  // フィルター設定（ヘッダー行）
-  sheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: 10 },
-  };
-
-  // 印刷設定
-  sheet.pageSetup = {
-    orientation: 'landscape',
-    fitToPage: true,
-    fitToWidth: 1,
-    fitToHeight: 0,
-    paperSize: 9, // A4
-    margins: {
-      left: 0.5,
-      right: 0.5,
-      top: 0.75,
-      bottom: 0.75,
-      header: 0.3,
-      footer: 0.3,
-    },
-  };
-
-  // ヘッダー行を固定（スクロール時に常に表示）
-  sheet.views = [
-    {
-      state: 'frozen',
-      xSplit: 0,
-      ySplit: 1,
-    },
-  ];
-
-  // バッファに書き出し
+  // Bufferとして返す
   const buffer = await workbook.xlsx.writeBuffer();
   return new Uint8Array(buffer);
 }
 
 /**
- * Base64 Data URLから画像をワークブックに追加
- * @param {ExcelJS.Workbook} workbook
- * @param {string} dataUrl - base64 data URL (data:image/jpeg;base64,...)
- * @returns {Promise<number|null>} 画像ID または null
+ * フィールドセルを作成
  */
-async function addImageToWorkbook(workbook, dataUrl) {
+function createFieldCell(sheet, row, label, value, rowSpan) {
+  // ラベルセル（列B）
+  const labelCell = sheet.getCell(row, 2);
+  labelCell.value = label;
+  labelCell.font = { bold: true, size: 9, color: { argb: 'FF555555' } };
+  labelCell.alignment = { vertical: 'middle', horizontal: 'center' };
+  labelCell.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFF5F5F5' }
+  };
+  labelCell.border = {
+    top: { style: 'hair', color: { argb: 'FFAAAAAA' } },
+    left: { style: 'hair', color: { argb: 'FFAAAAAA' } },
+    right: { style: 'hair', color: { argb: 'FFAAAAAA' } },
+    bottom: { style: 'hair', color: { argb: 'FFAAAAAA' } }
+  };
+
+  // 値セル（列C）
+  const valueCell = sheet.getCell(row, 3);
+  valueCell.value = value;
+  valueCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+  valueCell.font = { size: 11 };
+  valueCell.border = {
+    top: { style: 'hair', color: { argb: 'FFCCCCCC' } },
+    right: { style: 'hair', color: { argb: 'FFCCCCCC' } },
+    bottom: { style: 'hair', color: { argb: 'FFCCCCCC' } }
+  };
+
+  // 複数行の場合はマージ
+  if (rowSpan > 1) {
+    sheet.mergeCells(row, 2, row + rowSpan - 1, 2);
+    sheet.mergeCells(row, 3, row + rowSpan - 1, 3);
+  }
+}
+
+/**
+ * Base64 Data URLから画像をワークブックに追加
+ */
+function addImageToWorkbook(workbook, dataUrl) {
   if (!dataUrl || !dataUrl.startsWith('data:image/')) {
     return null;
   }
@@ -224,10 +261,7 @@ async function addImageToWorkbook(workbook, dataUrl) {
 }
 
 /**
- * 簡易的なExcel生成（画像なし、テスト用）
- * @param {Object[]} photos - 写真データ配列
- * @param {Object} options - オプション
- * @returns {Promise<Uint8Array>}
+ * 簡易的なExcel生成（テスト用・後方互換）
  */
 export async function generateExcelSimple(photos, options) {
   if (typeof ExcelJS === 'undefined') {
@@ -237,10 +271,8 @@ export async function generateExcelSimple(photos, options) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(options.title || '写真台帳');
 
-  // シンプルなヘッダー
   sheet.addRow(['No.', 'ファイル名', '日付', '工種', '備考']);
 
-  // データ追加
   photos.forEach((photo, index) => {
     sheet.addRow([
       index + 1,
