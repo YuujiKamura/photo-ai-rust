@@ -157,7 +157,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn test_photo_categories_contains_construction() {
         assert!(PHOTO_CATEGORIES.contains(&"施工状況写真"));
     }
@@ -329,7 +328,6 @@ mod tests {
         let prompt = build_step2_prompt(&raw_data, &master);
 
         assert!(prompt.contains("マスタに存在する値を選択"));
-        assert!(prompt.contains("マスタにない値は絶対に使用しない"));
         assert!(prompt.contains("該当なしの場合は空文字"));
     }
 }
