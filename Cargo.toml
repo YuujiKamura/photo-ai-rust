@@ -1,3 +1,7 @@
+[workspace]
+members = ["common", "web-wasm"]
+resolver = "2"
+
 [package]
 name = "photo-ai-rust"
 version = "0.1.0"
@@ -6,6 +10,8 @@ description = "工事写真AI解析・写真台帳生成ツール"
 license = "MIT"
 
 [dependencies]
+# 共通ライブラリ
+photo-ai-common = { path = "common" }
 # CLI
 clap = { version = "4", features = ["derive"] }
 dialoguer = "0.11"

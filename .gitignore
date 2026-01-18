@@ -1,4 +1,7 @@
 /target
+common/target
+common/Cargo.lock
+web-wasm/target
 /temp-images
 *.json
 !master/*.json

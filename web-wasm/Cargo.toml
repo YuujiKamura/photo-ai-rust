@@ -1,0 +1,64 @@
+[package]
+name = "photo-ai-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "Photo AI Web App (Leptos + WASM)"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# 共通ライブラリ
+photo-ai-common = { path = "../common", features = ["wasm"] }
+
+# Leptos Framework
+leptos = { version = "0.7", features = ["csr"] }
+
+# WASM
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "HtmlInputElement",
+    "File",
+    "FileList",
+    "FileReader",
+    "Blob",
+    "BlobPropertyBag",
+    "Url",
+    "DragEvent",
+    "DataTransfer",
+    "DataTransferItem",
+    "DataTransferItemList",
+    "Headers",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+]}
+
+# シリアライズ
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde-wasm-bindgen = "0.6"
+
+# 非同期
+futures = "0.3"
+
+# Base64エンコード
+base64 = "0.22"
+
+# ユーティリティ
+gloo = "0.11"
+console_error_panic_hook = "0.1"
+
+[profile.release]
+lto = true
+opt-level = "z"
+codegen-units = 1
