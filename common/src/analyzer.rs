@@ -3,6 +3,7 @@
 //! Step1結果からの工種自動判定と、Step1+Step2結果のマージ処理
 
 use crate::types::{AnalysisResult, RawImageData, Step2Result};
+use crate::prompts::PHOTO_CATEGORIES;
 use std::collections::{HashMap, HashSet};
 
 /// 画像メタデータ（CLI/WASM共通）
@@ -111,7 +112,7 @@ pub fn merge_results(
                 description: step2
                     .map(|s| s.description.clone())
                     .unwrap_or_else(|| raw.scene_description.clone()),
-                photo_category: raw.photo_category.clone(),
+                photo_category: normalize_photo_category(&raw.photo_category),
                 work_type: step2.map(|s| s.work_type.clone()).unwrap_or_default(),
                 variety: step2.map(|s| s.variety.clone()).unwrap_or_default(),
                 detail: step2.map(|s| s.detail.clone()).unwrap_or_default(),
@@ -121,6 +122,17 @@ pub fn merge_results(
             }
         })
         .collect()
+}
+
+fn normalize_photo_category(value: &str) -> String {
+    if value.is_empty() {
+        return String::new();
+    }
+    if PHOTO_CATEGORIES.contains(&value) {
+        value.to_string()
+    } else {
+        String::new()
+    }
 }
 
 #[cfg(test)]

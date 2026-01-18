@@ -219,7 +219,8 @@ pub async fn analyze_batch_with_master(
     }
 
     // 結果マージ
-    let results = merge_results(&raw_data, &step2_results, images);
+    let mut results = merge_results(&raw_data, &step2_results, images);
+    sanitize_remarks(&mut results, master);
     Ok(results)
 }
 
@@ -445,6 +446,21 @@ fn parse_step1_response(response: &str) -> Result<Vec<RawImageData>> {
 fn parse_step2_response(response: &str) -> Result<Vec<Step2Result>> {
     common_parse_step2(response)
         .map_err(|e| PhotoAiError::ApiParse(format!("Step2 JSONパースエラー: {}", e)))
+}
+
+fn sanitize_remarks(results: &mut [AnalysisResult], master: &HierarchyMaster) {
+    let mut allowed = std::collections::HashSet::new();
+    for row in master.rows() {
+        if !row.shooting_content.is_empty() {
+            allowed.insert(row.shooting_content.as_str());
+        }
+    }
+
+    for result in results.iter_mut() {
+        if !result.remarks.is_empty() && !allowed.contains(result.remarks.as_str()) {
+            result.remarks.clear();
+        }
+    }
 }
 
 #[cfg(test)]
