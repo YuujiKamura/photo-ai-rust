@@ -1,7 +1,6 @@
 //! Excel生成（共通ライブラリ）
 //!
 //! layout.rs の定義を使用して写真台帳形式のExcelを生成
-//! CLI版とWASM版で共用
 
 use crate::layout::{
     ExcelLayout, LAYOUT_FIELDS,

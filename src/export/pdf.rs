@@ -7,7 +7,8 @@
 use crate::analyzer::AnalysisResult;
 use crate::cli::PdfQuality;
 use crate::error::{PhotoAiError, Result};
-use super::layout::{self, mm_to_pt};
+use photo_ai_common::export::pdf_core;
+use photo_ai_common::PdfLayout;
 use printpdf::*;
 use std::path::{Path, PathBuf};
 
@@ -78,25 +79,14 @@ pub fn generate_pdf(
     title: &str,
     quality: PdfQuality,
 ) -> Result<()> {
-    let photos_per_page = photos_per_page.clamp(2, 3) as usize;
-
-    // ========== React版と同一の定数（pt単位） ==========
-    let a4_width_pt = mm_to_pt(layout::A4_WIDTH_MM);
-    let a4_height_pt = mm_to_pt(layout::A4_HEIGHT_MM);
-    let margin_pt = mm_to_pt(layout::MARGIN_MM);
-    let header_height_pt: f32 = 40.0;
-    let photo_info_gap_pt: f32 = 5.0;
-
-    // 写真枠サイズ
-    let photo_width_pt = mm_to_pt(layout::PHOTO_WIDTH_MM);
-    let photo_height_pt = mm_to_pt(layout::PHOTO_HEIGHT_MM);
-    let info_width_pt = mm_to_pt(layout::INFO_WIDTH_MM);
-    let photo_row_height_pt = photo_height_pt + photo_info_gap_pt * 2.0;
+    let photos_per_page = photos_per_page.clamp(2, 3);
+    let layout = PdfLayout::for_photos_per_page(photos_per_page);
+    let layout_core = pdf_core::PdfLayoutCore::from_layout(&layout);
 
     // printpdf 0.8: ドキュメント作成
     let mut doc = PdfDocument::new(title);
     let fonts = load_fonts(&mut doc)?;
-    let total_pages = results.len().div_ceil(photos_per_page);
+    let total_pages = results.len().div_ceil(layout_core.photos_per_page);
 
     // 画像をドキュメントに追加してIDを取得
     let mut image_ids: Vec<Option<XObjectId>> = Vec::with_capacity(results.len());
@@ -125,31 +115,20 @@ pub fn generate_pdf(
     let mut pages = Vec::new();
 
     for page_idx in 0..total_pages {
-        let start_idx = page_idx * photos_per_page;
-        let end_idx = (start_idx + photos_per_page).min(results.len());
+        let start_idx = page_idx * layout_core.photos_per_page;
+        let end_idx = (start_idx + layout_core.photos_per_page).min(results.len());
 
         let mut ops = Vec::new();
 
         // ヘッダー描画
-        add_header_ops(
-            &mut ops,
-            title,
-            page_idx + 1,
-            total_pages,
-            &fonts,
-            a4_width_pt,
-            a4_height_pt,
-            margin_pt,
-        );
+        add_header_ops(&mut ops, title, page_idx + 1, total_pages, &fonts, &layout_core);
 
         // 各写真スロット
         for (slot, idx) in (start_idx..end_idx).enumerate() {
             let result = &results[idx];
 
             // Y座標計算（React版と同一）
-            let row_y_pt = a4_height_pt - margin_pt - header_height_pt
-                         - ((slot + 1) as f32 * photo_row_height_pt)
-                         + photo_info_gap_pt;
+            let row_y_pt = layout_core.row_y_pt(slot);
 
             // 写真埋め込み
             if let Some(ref img_id) = image_ids[idx] {
@@ -159,21 +138,33 @@ pub fn generate_pdf(
                     img_id,
                     img_w,
                     img_h,
-                    margin_pt,
+                    layout_core.margin_pt,
                     row_y_pt,
-                    photo_width_pt,
-                    photo_height_pt,
+                    layout_core.photo_width_pt,
+                    layout_core.photo_height_pt,
                 );
             }
 
             // 写真枠線
-            add_rect_ops(&mut ops, margin_pt, row_y_pt, photo_width_pt, photo_height_pt);
+            add_rect_ops(
+                &mut ops,
+                layout_core.margin_pt,
+                row_y_pt,
+                layout_core.photo_width_pt,
+                layout_core.photo_height_pt,
+            );
 
             // 情報欄位置
-            let info_x_pt = margin_pt + photo_width_pt + photo_info_gap_pt;
+            let info_x_pt = layout_core.info_x_pt();
 
             // 情報欄枠線
-            add_rect_ops(&mut ops, info_x_pt, row_y_pt, info_width_pt, photo_height_pt);
+            add_rect_ops(
+                &mut ops,
+                info_x_pt,
+                row_y_pt,
+                layout_core.info_width_pt,
+                layout_core.photo_height_pt,
+            );
 
             // 情報欄テキスト
             add_info_field_ops(
@@ -181,14 +172,14 @@ pub fn generate_pdf(
                 result,
                 info_x_pt,
                 row_y_pt,
-                photo_height_pt,
+                layout_core.photo_height_pt,
                 &fonts,
             );
         }
 
         let page = PdfPage::new(
-            Mm(layout::A4_WIDTH_MM),
-            Mm(layout::A4_HEIGHT_MM),
+            Mm(layout.page_width_mm),
+            Mm(layout.page_height_mm),
             ops,
         );
         pages.push(page);
@@ -340,9 +331,7 @@ fn add_header_ops(
     page_num: usize,
     total_pages: usize,
     fonts: &FontSet,
-    a4_width_pt: f32,
-    a4_height_pt: f32,
-    margin_pt: f32,
+    layout: &pdf_core::PdfLayoutCore,
 ) {
     let title_text = process_text(title, fonts.is_japanese());
 
@@ -351,8 +340,8 @@ fn add_header_ops(
     add_text_ops_bold(
         ops,
         &title_text,
-        margin_pt,
-        a4_height_pt - margin_pt - 20.0,
+        layout.margin_pt,
+        layout.page_height_pt - layout.margin_pt - 20.0,
         UNIFIED_FONT_SIZE,
         fonts,
     );
@@ -361,8 +350,8 @@ fn add_header_ops(
     add_text_ops(
         ops,
         &format!("Page {} / {}", page_num, total_pages),
-        a4_width_pt - margin_pt - 80.0,
-        a4_height_pt - margin_pt - 20.0,
+        layout.page_width_pt - layout.margin_pt - 80.0,
+        layout.page_height_pt - layout.margin_pt - 20.0,
         UNIFIED_FONT_SIZE,
         fonts,
     );
@@ -429,21 +418,6 @@ fn add_rect_ops(ops: &mut Vec<Op>, x_pt: f32, y_pt: f32, width_pt: f32, height_p
             winding_order: WindingOrder::NonZero,
         },
     });
-}
-
-/// フィールド値を取得
-fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
-    match key {
-        "date" => if result.date.is_empty() { "-" } else { &result.date },
-        "photoCategory" => &result.photo_category,
-        "workType" => &result.work_type,
-        "variety" => &result.variety,
-        "detail" => &result.detail,
-        "station" => &result.station,
-        "remarks" => &result.remarks,
-        "measurements" => &result.measurements,
-        _ => "-",
-    }
 }
 
 /// テキスト自動調整設定
@@ -521,14 +495,12 @@ fn add_info_field_ops(
 
     ops.push(Op::SetFillColor { col: Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None }) });
 
-    for field in layout::LAYOUT_FIELDS.iter() {
+    for field in pdf_core::build_pdf_info_fields(result).iter() {
         let y_pt = row_y_pt + photo_height_pt - 15.0 - (y_offset as f32 * 18.0);
 
         if y_pt > row_y_pt + 5.0 {
             let label_text = process_text(field.label, fonts.is_japanese());
-            let value = get_field_value(result, field.key);
-            let value_text = if value.is_empty() { "-" } else { value };
-            let value_text = process_text(value_text, fonts.is_japanese());
+            let value_text = process_text(&field.value, fonts.is_japanese());
 
             // ラベル
             add_text_ops(ops, &format!("{}:", label_text), info_x_pt + 5.0, y_pt, UNIFIED_FONT_SIZE, fonts);

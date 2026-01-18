@@ -4,7 +4,7 @@
 
 use crate::error::{PhotoAiError, Result};
 use photo_ai_common::AnalysisResult;
-use photo_ai_common::excel::{generate_excel_buffer, ImageData};
+use photo_ai_common::export::excel_core::{generate_excel_buffer, ImageData};
 use std::path::Path;
 
 /// ファイルパスから画像を読み込む
