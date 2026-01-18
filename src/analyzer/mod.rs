@@ -18,14 +18,15 @@ pub async fn analyze_images(
     let mut results = Vec::new();
     let total_batches = (images.len() + batch_size - 1) / batch_size;
 
-    // プログレスバーの設定
+    // プログレスバーの設定（推定残り時間・処理速度表示）
     let pb = ProgressBar::new(total_batches as u64);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} バッチ ({msg})")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} バッチ | 残り {eta} | {msg}")
             .unwrap()
             .progress_chars("=>-"),
     );
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
     // バッチに分割
     for (batch_idx, batch) in images.chunks(batch_size).enumerate() {

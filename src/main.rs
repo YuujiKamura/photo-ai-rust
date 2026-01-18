@@ -14,9 +14,9 @@ async fn main() -> Result<()> {
             println!("📸 photo-ai-rust - 写真解析\n");
 
             // 1. 画像スキャン
-            println!("- 写真をスキャン中...");
+            println!("[1/3] 写真をスキャン中...");
             let images = scanner::scan_folder(&folder)?;
-            println!("✔ {}枚の写真を検出", images.len());
+            println!("✔ {}枚の写真を検出\n", images.len());
 
             if images.is_empty() {
                 return Err(error::PhotoAiError::NoImagesFound(
@@ -25,23 +25,23 @@ async fn main() -> Result<()> {
             }
 
             // 2. Claude CLI解析
-            println!("- AI解析中...{}", if use_cache { " (キャッシュ有効)" } else { "" });
+            println!("[2/3] AI解析中...{}", if use_cache { " (キャッシュ有効)" } else { "" });
             let raw_results = if use_cache {
                 analyzer::analyze_images_with_cache(&images, &folder, batch_size, cli.verbose).await?
             } else {
                 analyzer::analyze_images(&images, batch_size, cli.verbose).await?
             };
-            println!("✔ 解析完了");
+            println!("✔ 解析完了\n");
 
             // 3. マスタ照合
             if let Some(master_path) = master {
-                println!("- マスタ照合中...");
+                println!("[3/3] マスタ照合中...");
                 let _matched = matcher::match_with_master(&raw_results, &master_path)?;
-                println!("✔ マスタ照合完了");
+                println!("✔ マスタ照合完了\n");
             }
 
             // 4. 結果保存
-            println!("- 結果を保存中...");
+            println!("[3/3] 結果を保存中...");
             let json = serde_json::to_string_pretty(&raw_results)?;
             std::fs::write(&output, json)?;
             println!("✔ 結果を保存: {}", output.display());
@@ -89,22 +89,32 @@ async fn main() -> Result<()> {
         Commands::Run { folder, output, format, batch_size, master, pdf_quality, use_cache } => {
             println!("🚀 photo-ai-rust - 一括処理\n");
 
-            // Analyze
+            // 1. Scan
+            println!("[1/4] 写真をスキャン中...");
             let images = scanner::scan_folder(&folder)?;
+            println!("✔ {}枚の写真を検出\n", images.len());
+
+            // 2. Analyze
+            println!("[2/4] AI解析中...{}", if use_cache { " (キャッシュ有効)" } else { "" });
             let raw_results = if use_cache {
                 analyzer::analyze_images_with_cache(&images, &folder, batch_size, cli.verbose).await?
             } else {
                 analyzer::analyze_images(&images, batch_size, cli.verbose).await?
             };
+            println!("✔ 解析完了\n");
 
-            // Match with master if provided
+            // 3. Match with master if provided
             let results = if let Some(master_path) = master {
-                matcher::match_with_master(&raw_results, &master_path)?
+                println!("[3/4] マスタ照合中...");
+                let matched = matcher::match_with_master(&raw_results, &master_path)?;
+                println!("✔ マスタ照合完了\n");
+                matched
             } else {
                 raw_results
             };
 
-            // Export
+            // 4. Export
+            println!("[4/4] エクスポート中...");
             let output_dir = output.unwrap_or_else(|| folder.clone());
             export::export_results(&results, &format, &output_dir, 3, "工事写真帳", pdf_quality)?;
 
