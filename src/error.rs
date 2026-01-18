@@ -39,6 +39,9 @@ pub enum PhotoAiError {
     #[error("マスタファイルが不正: {0}")]
     InvalidMaster(String),
 
+    #[error("マスタ読み込みエラー: {0}")]
+    MasterLoad(String),
+
     #[error("画像が見つかりません: {0}")]
     NoImagesFound(String),
 
