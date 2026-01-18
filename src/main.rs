@@ -142,7 +142,7 @@ async fn main() -> Result<()> {
             }
 
             // 1. Scan
-            println!("[1/4] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
+            println!("[1/5] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
             let images = scanner::scan_folder_full(&folder, recursive, !include_all)?;
             println!("✔ {}枚の写真を検出\n", images.len());
 
@@ -161,13 +161,20 @@ async fn main() -> Result<()> {
                 master_path.as_deref(),
                 use_cache,
                 cli.ai_provider,
-                "[2/4]",
+                "[2/5]",
             ).await?;
             println!("✔ 解析完了\n");
 
-            // 3. Export
-            println!("[3/4] エクスポート中...");
+            // 3. 結果保存
             let output_dir = output.unwrap_or_else(|| folder.clone());
+            println!("[3/5] 結果を保存中...");
+            let json_path = output_dir.join("result.json");
+            let json = serde_json::to_string_pretty(&results)?;
+            std::fs::write(&json_path, &json)?;
+            println!("✔ 結果を保存: {}", json_path.display());
+
+            // 4. Export
+            println!("[4/5] エクスポート中...");
             export::export_results(&results, &format, &output_dir, 3, "工事写真帳", pdf_quality)?;
 
             println!("\n✅ 完了");
