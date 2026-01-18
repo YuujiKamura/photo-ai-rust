@@ -3,6 +3,9 @@
 ## 許可されたコマンド
 
 ```
+Write(*)
+Edit(*)
+Read(*)
 Bash(cargo:*)
 Bash(rustc:*)
 Bash(rustup:*)
