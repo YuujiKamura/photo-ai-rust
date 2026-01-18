@@ -12,6 +12,7 @@ use photo_ai_common::{
     build_step1_prompt, build_step2_prompt,
     parse_step1_response, parse_step2_response,
     detect_work_types, merge_results, ImageMeta,
+    extract_json,
 };
 
 const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent";
@@ -358,12 +359,62 @@ pub async fn analyze_photo(
         .map(|p| p.text.clone())
         .ok_or_else(|| JsValue::from_str("Empty response"))?;
 
-    let mut result: AnalysisResult = serde_json::from_str(&text)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    parse_analysis_result(&text, file_name)
+        .map_err(|e| JsValue::from_str(&e))
+}
 
-    result.file_name = file_name.to_string();
+fn parse_analysis_result(response_text: &str, fallback_file_name: &str) -> Result<AnalysisResult, String> {
+    let json_str = extract_json(response_text).unwrap_or(response_text);
+    let value: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("JSON parse error: {}", e))?;
 
-    Ok(result)
+    let obj = if let Some(arr) = value.as_array() {
+        arr.first().cloned().unwrap_or_else(|| serde_json::Value::Null)
+    } else {
+        value
+    };
+
+    let Some(map) = obj.as_object() else {
+        return Err("JSON object not found".to_string());
+    };
+
+    Ok(AnalysisResult {
+        file_name: get_string(map, "fileName").unwrap_or_else(|| fallback_file_name.to_string()),
+        work_type: get_string(map, "workType").unwrap_or_default(),
+        variety: get_string(map, "variety").unwrap_or_default(),
+        detail: get_string(map, "detail").unwrap_or_default(),
+        photo_category: get_string(map, "photoCategory").unwrap_or_default(),
+        station: get_string(map, "station").unwrap_or_default(),
+        remarks: get_string(map, "remarks").unwrap_or_default(),
+        description: get_string(map, "description").unwrap_or_default(),
+        has_board: get_bool(map, "hasBoard").unwrap_or(false),
+        detected_text: get_string(map, "detectedText").unwrap_or_default(),
+        measurements: get_string(map, "measurements").unwrap_or_default(),
+        reasoning: get_string(map, "reasoning").unwrap_or_default(),
+        ..Default::default()
+    })
+}
+
+fn get_string(map: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
+    let value = map.get(key)?;
+    if let Some(s) = value.as_str() {
+        return Some(s.to_string());
+    }
+    if value.is_null() {
+        return None;
+    }
+    Some(value.to_string())
+}
+
+fn get_bool(map: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<bool> {
+    let value = map.get(key)?;
+    if let Some(b) = value.as_bool() {
+        return Some(b);
+    }
+    if let Some(s) = value.as_str() {
+        return Some(matches!(s.to_lowercase().as_str(), "true" | "1" | "yes"));
+    }
+    None
 }
 
 /// バッチ解析（5枚単位）

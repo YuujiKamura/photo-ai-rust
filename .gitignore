@@ -18,3 +18,6 @@ web-wasm/dist/
 web-wasm/node_modules/
 web-wasm/package.json
 web-wasm/package-lock.json
+/node_modules/
+!package.json
+!package-lock.json

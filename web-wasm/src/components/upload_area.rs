@@ -74,25 +74,20 @@ where
             input.set_type("file");
             input.set_accept("image/*");
             input.set_multiple(true);
+            input.set_attribute("style", "display:none;").ok();
 
             let handle_files = handle_files.clone();
+            let input_clone = input.clone();
             let closure = Closure::wrap(Box::new(move |_: web_sys::Event| {
-                let input: web_sys::HtmlInputElement = web_sys::window()
-                    .unwrap()
-                    .document()
-                    .unwrap()
-                    .query_selector("input[type=file]")
-                    .unwrap()
-                    .unwrap()
-                    .dyn_into()
-                    .unwrap();
-                if let Some(files) = input.files() {
+                if let Some(files) = input_clone.files() {
                     handle_files(files);
                 }
+                input_clone.remove();
             }) as Box<dyn FnMut(_)>);
 
             input.set_onchange(Some(closure.as_ref().unchecked_ref()));
             closure.forget();
+            document.body().unwrap().append_child(&input).ok();
             input.click();
         }
     };
@@ -148,6 +143,8 @@ where
                     data_url,
                     status: PhotoStatus::Pending,
                     analysis: None,
+                    pair_id: None,
+                    pair_order: None,
                 };
                 on_photo_added(vec![photo]);
             }
