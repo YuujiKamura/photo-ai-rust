@@ -13,15 +13,34 @@ pub struct ImageInfo {
 
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "JPG", "JPEG", "PNG"];
 
+/// 除外フォルダパターン（デフォルトで除外）
+const EXCLUDE_PATTERNS: &[&str] = &["非使用", "hisiyou", "不要", "excluded"];
+
 pub fn scan_folder(folder: &Path) -> Result<Vec<ImageInfo>> {
-    scan_folder_with_options(folder, false)
+    scan_folder_full(folder, false, true)
 }
 
 pub fn scan_folder_recursive(folder: &Path) -> Result<Vec<ImageInfo>> {
-    scan_folder_with_options(folder, true)
+    scan_folder_full(folder, true, true)
 }
 
 pub fn scan_folder_with_options(folder: &Path, recursive: bool) -> Result<Vec<ImageInfo>> {
+    scan_folder_full(folder, recursive, true)
+}
+
+/// フォルダが除外パターンに一致するか
+fn is_excluded_folder(path: &Path) -> bool {
+    path.components().any(|c| {
+        if let std::path::Component::Normal(name) = c {
+            let name_str = name.to_string_lossy().to_lowercase();
+            EXCLUDE_PATTERNS.iter().any(|p| name_str.contains(&p.to_lowercase()))
+        } else {
+            false
+        }
+    })
+}
+
+pub fn scan_folder_full(folder: &Path, recursive: bool, exclude: bool) -> Result<Vec<ImageInfo>> {
     if !folder.exists() {
         return Err(PhotoAiError::FolderNotFound(folder.display().to_string()));
     }
@@ -39,6 +58,11 @@ pub fn scan_folder_with_options(folder: &Path, recursive: bool) -> Result<Vec<Im
         let path = entry.path();
 
         if !path.is_file() {
+            continue;
+        }
+
+        // 除外フォルダチェック
+        if exclude && is_excluded_folder(path) {
             continue;
         }
 
