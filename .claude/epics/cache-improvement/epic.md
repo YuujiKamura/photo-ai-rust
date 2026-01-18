@@ -1,7 +1,7 @@
 ---
 name: cache-improvement
 description: 解析キャッシュの改善
-status: backlog
+status: done
 created: 2026-01-18
 github_issue: 30
 ---
