@@ -29,17 +29,84 @@ impl FontSet {
 
 /// 日本語フォントのパスを検索（明朝体優先）
 fn find_japanese_font() -> Option<PathBuf> {
+    // 日本語フォント候補（明朝体優先）
+    let font_names = [
+        // 明朝体
+        "NotoSerifCJKjp-Regular.otf",
+        "NotoSerifCJK-Regular.ttc",
+        "IPAMincho.ttf",
+        "ipaexm.ttf",
+        // ゴシック体
+        "NotoSansCJKjp-Regular.otf",
+        "NotoSansCJK-Regular.ttc",
+        "IPAGothic.ttf",
+        "ipaexg.ttf",
+    ];
+
     #[cfg(windows)]
     {
         let windows_fonts = Path::new("C:\\Windows\\Fonts");
-        // 明朝体を優先
+        // Windows特有のフォント（明朝体優先）
         for font in ["YuMincho.ttc", "msmincho.ttc", "meiryo.ttc", "YuGothM.ttc", "msgothic.ttc"] {
             let path = windows_fonts.join(font);
             if path.exists() {
                 return Some(path);
             }
         }
+        // Noto/IPAフォント
+        for font in &font_names {
+            let path = windows_fonts.join(font);
+            if path.exists() {
+                return Some(path);
+            }
+        }
     }
+
+    #[cfg(target_os = "macos")]
+    {
+        let font_dirs = [
+            Path::new("/System/Library/Fonts"),
+            Path::new("/Library/Fonts"),
+            Path::new(&format!("{}/Library/Fonts", std::env::var("HOME").unwrap_or_default())),
+        ];
+        // macOS特有のフォント
+        for dir in &font_dirs {
+            for font in ["ヒラギノ明朝 ProN.ttc", "Hiragino Mincho ProN.ttc", "ヒラギノ角ゴシック.ttc"] {
+                let path = dir.join(font);
+                if path.exists() {
+                    return Some(path);
+                }
+            }
+            for font in &font_names {
+                let path = dir.join(font);
+                if path.exists() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let font_dirs = [
+            Path::new("/usr/share/fonts/opentype/noto"),
+            Path::new("/usr/share/fonts/truetype/noto"),
+            Path::new("/usr/share/fonts/opentype/ipafont-mincho"),
+            Path::new("/usr/share/fonts/truetype/ipafont"),
+            Path::new("/usr/share/fonts/OTF"),
+            Path::new("/usr/share/fonts/TTF"),
+            Path::new(&format!("{}/.local/share/fonts", std::env::var("HOME").unwrap_or_default())),
+        ];
+        for dir in &font_dirs {
+            for font in &font_names {
+                let path = dir.join(font);
+                if path.exists() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+
     None
 }
 
