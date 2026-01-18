@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Web版 単体テスト</title>
+  <style>
+    body { font-family: monospace; padding: 20px; }
+    .pass { color: green; }
+    .fail { color: red; }
+    .test { margin: 5px 0; }
+  </style>
+</head>
+<body>
+  <h1>Web版 単体テスト</h1>
+  <div id="results"></div>
+
+  <script type="module">
+    // Rust版の定数（src/export/pdf.rs より）
+    const RUST_CONSTANTS = {
+      A4_WIDTH: 595.28,
+      A4_HEIGHT: 841.89,
+      MARGIN: 40.0,
+      HEADER_HEIGHT: 40.0,
+      GAP: 5.0,
+      IMAGE_RATIO: 0.65,
+      INFO_RATIO: 0.35,
+      UNIFIED_FONT_SIZE: 12.0
+    };
+
+    // Web版の定数（index.html より）
+    const WEB_CONSTANTS = {
+      A4_WIDTH: 595.28,
+      A4_HEIGHT: 841.89,
+      MARGIN: 40,
+      HEADER_HEIGHT: 40,
+      GAP: 5,
+      IMAGE_RATIO: 0.65,
+      INFO_RATIO: 0.35,
+      UNIFIED_FONT_SIZE: 12
+    };
+
+    const results = [];
+
+    function test(name, condition) {
+      results.push({ name, pass: condition });
+    }
+
+    function assertEqual(name, actual, expected) {
+      const pass = actual === expected;
+      results.push({
+        name: `${name}: ${actual} === ${expected}`,
+        pass
+      });
+    }
+
+    // 定数の整合性テスト
+    test('A4_WIDTH matches', RUST_CONSTANTS.A4_WIDTH === WEB_CONSTANTS.A4_WIDTH);
+    test('A4_HEIGHT matches', RUST_CONSTANTS.A4_HEIGHT === WEB_CONSTANTS.A4_HEIGHT);
+    test('MARGIN matches', RUST_CONSTANTS.MARGIN === WEB_CONSTANTS.MARGIN);
+    test('HEADER_HEIGHT matches', RUST_CONSTANTS.HEADER_HEIGHT === WEB_CONSTANTS.HEADER_HEIGHT);
+    test('GAP matches', RUST_CONSTANTS.GAP === WEB_CONSTANTS.GAP);
+    test('IMAGE_RATIO matches', RUST_CONSTANTS.IMAGE_RATIO === WEB_CONSTANTS.IMAGE_RATIO);
+    test('INFO_RATIO matches', RUST_CONSTANTS.INFO_RATIO === WEB_CONSTANTS.INFO_RATIO);
+    test('UNIFIED_FONT_SIZE matches', RUST_CONSTANTS.UNIFIED_FONT_SIZE === WEB_CONSTANTS.UNIFIED_FONT_SIZE);
+
+    // エイリアス変換テスト（Rust版 matcher/alias.rs の pavement_preset と同じ）
+    const PAVEMENT_ALIASES = {
+      photo_category: {
+        '品質': '品質管理写真',
+        '品質管理': '品質管理写真',
+        '出来形': '出来形管理写真',
+        '出来形管理': '出来形管理写真',
+        '施工状況': '施工状況写真',
+        '施工中': '施工状況写真',
+        '安全': '安全管理写真',
+        '安全管理': '安全管理写真',
+        '材料': '使用材料写真',
+        '使用材料': '使用材料写真'
+      },
+      work_type: {
+        '舗装': '舗装工',
+        'As': '舗装工',
+        'アスファルト': '舗装工'
+      },
+      variety: {
+        '打換え': '舗装打換え工',
+        '打換': '舗装打換え工',
+        'オーバーレイ': '舗装オーバーレイ工'
+      },
+      detail: {
+        '表層': '表層工',
+        '基層': '基層工',
+        '上層路盤': '上層路盤工',
+        '下層路盤': '下層路盤工'
+      }
+    };
+
+    function applyAlias(value, aliases) {
+      if (!value) return value;
+      // 完全一致
+      if (aliases[value]) return aliases[value];
+      // 部分一致（最長マッチ）
+      let bestMatch = null;
+      for (const [pattern, replacement] of Object.entries(aliases)) {
+        if (value.includes(pattern)) {
+          if (!bestMatch || pattern.length > bestMatch[0].length) {
+            bestMatch = [pattern, replacement];
+          }
+        }
+      }
+      return bestMatch ? bestMatch[1] : value;
+    }
+
+    // エイリアス変換テスト
+    assertEqual('品質 → 品質管理写真',
+      applyAlias('品質', PAVEMENT_ALIASES.photo_category),
+      '品質管理写真');
+    assertEqual('舗装 → 舗装工',
+      applyAlias('舗装', PAVEMENT_ALIASES.work_type),
+      '舗装工');
+    assertEqual('打換え → 舗装打換え工',
+      applyAlias('打換え', PAVEMENT_ALIASES.variety),
+      '舗装打換え工');
+    assertEqual('表層 → 表層工',
+      applyAlias('表層', PAVEMENT_ALIASES.detail),
+      '表層工');
+
+    // 部分一致テスト
+    assertEqual('品質管理（部分一致）→ 品質管理写真',
+      applyAlias('品質管理', PAVEMENT_ALIASES.photo_category),
+      '品質管理写真');
+
+    // マスタ照合テスト用データ（Rust版 matcher/mod.rs のテストと同じ）
+    const TEST_MASTER = {
+      "直接工事費": {
+        "品質管理写真": {
+          "舗装工": {
+            "舗装打換え工": {
+              "表層工": {
+                "アスファルト混合物温度測定": {
+                  "matchPatterns": ["温度管理", "合材温度", "到着温度", "敷均し温度"]
+                }
+              },
+              "上層路盤工": {
+                "現場密度測定": {
+                  "matchPatterns": ["密度測定", "RI計器", "砂置換法"]
+                }
+              }
+            }
+          }
+        }
+      }
+    };
+
+    // マスタエントリ収集
+    function collectMatchEntries(obj, ctx = {}, depth = 0, entries = []) {
+      if (typeof obj !== 'object' || obj === null) return entries;
+
+      for (const [key, value] of Object.entries(obj)) {
+        if (key === 'matchPatterns' && Array.isArray(value)) {
+          entries.push({ ...ctx, patterns: value });
+          continue;
+        }
+
+        const newCtx = { ...ctx };
+        if (depth === 0) newCtx.photoCategory = key;
+        else if (depth === 1) newCtx.workType = key;
+        else if (depth === 2) newCtx.variety = key;
+        else if (depth === 3) newCtx.detail = key;
+        else if (depth === 4) newCtx.remark = key;
+
+        if (typeof value === 'object' && value !== null) {
+          if (value.matchPatterns && Array.isArray(value.matchPatterns)) {
+            entries.push({ ...newCtx, remark: key, patterns: value.matchPatterns });
+            if (Object.keys(value).length === 1) continue;
+          }
+          collectMatchEntries(value, newCtx, depth + 1, entries);
+        }
+      }
+      return entries;
+    }
+
+    const entries = collectMatchEntries(TEST_MASTER["直接工事費"]);
+    test('マスタエントリ数 = 2', entries.length === 2);
+
+    // 温度測定エントリ確認
+    const tempEntry = entries.find(e => e.detail === '表層工');
+    test('温度測定エントリが存在', !!tempEntry);
+    test('温度測定: photoCategory = 品質管理写真', tempEntry?.photoCategory === '品質管理写真');
+    test('温度測定: workType = 舗装工', tempEntry?.workType === '舗装工');
+    test('温度測定: variety = 舗装打換え工', tempEntry?.variety === '舗装打換え工');
+    test('温度測定: パターンに「温度管理」を含む', tempEntry?.patterns?.includes('温度管理'));
+
+    // マッチングテスト
+    function matchEntry(searchText, photoCategory, entries) {
+      let bestMatch = null;
+      let bestScore = 0;
+
+      const searchLower = searchText.toLowerCase();
+
+      for (const entry of entries) {
+        // 写真区分チェック
+        const categoryMatch = !photoCategory ||
+          entry.photoCategory?.includes(photoCategory) ||
+          photoCategory.includes(entry.photoCategory || '');
+
+        if (!categoryMatch) continue;
+
+        const matchedPatterns = entry.patterns.filter(p =>
+          searchLower.includes(p.toLowerCase())
+        );
+
+        if (matchedPatterns.length > bestScore) {
+          bestScore = matchedPatterns.length;
+          bestMatch = { ...entry, matchedPatterns };
+        }
+      }
+
+      return bestMatch;
+    }
+
+    // 温度マッチング
+    const tempMatch = matchEntry('到着温度 160.4℃', '品質管理', entries);
+    test('温度マッチング: 結果あり', !!tempMatch);
+    test('温度マッチング: workType = 舗装工', tempMatch?.workType === '舗装工');
+    test('温度マッチング: detail = 表層工', tempMatch?.detail === '表層工');
+    test('温度マッチング: 「到着温度」にマッチ', tempMatch?.matchedPatterns?.includes('到着温度'));
+
+    // 密度マッチング
+    const densityMatch = matchEntry('RI計器による密度測定', '品質管理', entries);
+    test('密度マッチング: 結果あり', !!densityMatch);
+    test('密度マッチング: detail = 上層路盤工', densityMatch?.detail === '上層路盤工');
+    test('密度マッチング: 2パターン以上マッチ', (densityMatch?.matchedPatterns?.length || 0) >= 2);
+
+    // マッチなし
+    const noMatch = matchEntry('関係ないテキスト', '施工状況', entries);
+    test('マッチなし: 結果null', noMatch === null);
+
+    // 結果表示
+    const resultsDiv = document.getElementById('results');
+    let passed = 0, failed = 0;
+
+    for (const r of results) {
+      const div = document.createElement('div');
+      div.className = `test ${r.pass ? 'pass' : 'fail'}`;
+      div.textContent = `${r.pass ? '✓' : '✗'} ${r.name}`;
+      resultsDiv.appendChild(div);
+      if (r.pass) passed++; else failed++;
+    }
+
+    const summary = document.createElement('h2');
+    summary.textContent = `結果: ${passed}/${passed + failed} 合格`;
+    summary.className = failed === 0 ? 'pass' : 'fail';
+    resultsDiv.insertBefore(summary, resultsDiv.firstChild);
+
+    // コンソールにも出力
+    console.log(`テスト結果: ${passed}/${passed + failed} 合格`);
+    if (failed > 0) {
+      console.error('失敗したテスト:');
+      results.filter(r => !r.pass).forEach(r => console.error(`  - ${r.name}`));
+    }
+  </script>
+</body>
+</html>
