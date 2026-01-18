@@ -1,5 +1,5 @@
 use clap::Parser;
-use photo_ai_rust::{cli, config, error, scanner, analyzer, matcher, export, station};
+use photo_ai_rust::{ai_provider::AiProvider, cli, config, error, scanner, analyzer, matcher, export, station};
 use cli::{Cli, Commands};
 use config::Config;
 use error::Result;
@@ -14,6 +14,7 @@ async fn run_analysis(
     verbose: bool,
     master: Option<&Path>,
     use_cache: bool,
+    provider: AiProvider,
     step_prefix: &str,
 ) -> Result<Vec<analyzer::AnalysisResult>> {
     if let Some(master_path) = master {
@@ -21,13 +22,13 @@ async fn run_analysis(
         let hierarchy = HierarchyMaster::from_csv(master_path)
             .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
         println!("  マスタ読み込み: {}件", hierarchy.rows().len());
-        analyzer::analyze_images_with_master(images, &hierarchy, batch_size, verbose).await
+        analyzer::analyze_images_with_master(images, &hierarchy, batch_size, verbose, provider).await
     } else if use_cache {
         println!("{} AI解析中... (キャッシュ有効)", step_prefix);
-        analyzer::analyze_images_with_cache(images, folder, batch_size, verbose).await
+        analyzer::analyze_images_with_cache(images, folder, batch_size, verbose, provider).await
     } else {
         println!("{} AI解析中...", step_prefix);
-        analyzer::analyze_images(images, batch_size, verbose).await
+        analyzer::analyze_images(images, batch_size, verbose, provider).await
     }
 }
 
@@ -79,6 +80,7 @@ async fn main() -> Result<()> {
                 cli.verbose,
                 master_path.as_deref(),
                 use_cache,
+                cli.ai_provider,
                 "[2/3]",
             ).await?;
             println!("✔ 解析完了\n");
@@ -158,6 +160,7 @@ async fn main() -> Result<()> {
                 cli.verbose,
                 master_path.as_deref(),
                 use_cache,
+                cli.ai_provider,
                 "[2/4]",
             ).await?;
             println!("✔ 解析完了\n");

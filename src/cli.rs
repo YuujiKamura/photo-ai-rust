@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use crate::ai_provider::AiProvider;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -11,6 +12,10 @@ pub struct Cli {
     /// 詳細ログを出力
     #[arg(short, long, global = true)]
     pub verbose: bool,
+
+    /// AIプロバイダ (claude/codex)
+    #[arg(long, default_value = "claude", global = true)]
+    pub ai_provider: AiProvider,
 }
 
 #[derive(Subcommand)]
