@@ -117,10 +117,11 @@ OCRテキスト: {}
 {raw_data_str}
 
 ## 出力ルール
-1. workType, variety, detail は必ずマスタに存在する値を選択
-2. マスタにない値は絶対に使用しない
-3. remarks はマスタの「備考」から選択（該当なしは空文字）
-4. 該当なしの場合は空文字""
+1. photoCategory は写真種別（マスタの写真種別と一致）を選択
+2. workType, variety, detail は必ずマスタに存在する値を選択
+3. 選んだ photoCategory と一致する行の組み合わせのみ使用
+4. remarks はマスタの「備考」から選択（該当なしは空文字）
+5. 該当なしの場合は空文字""
 
 ## 出力形式（JSON配列）
 ```json

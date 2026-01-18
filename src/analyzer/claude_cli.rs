@@ -449,39 +449,88 @@ fn parse_step2_response(response: &str) -> Result<Vec<Step2Result>> {
 }
 
 fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMaster) {
-    let work_types = master.get_work_types();
-    let mut allowed = std::collections::HashSet::new();
-    for row in master.rows() {
-        if !row.remarks.is_empty() {
-            allowed.insert(row.remarks.as_str());
-        }
-    }
-
     for result in results.iter_mut() {
-        if !work_types.contains(&result.work_type.as_str()) {
-            result.work_type.clear();
+        // 未舗装部舗装工は自動選択しない（デフォルトは舗装打換え工）
+        if result.work_type == "舗装工" && result.variety == "未舗装部舗装工" {
+            result.variety = "舗装打換え工".to_string();
         }
 
-        if !result.work_type.is_empty() {
-            let varieties = master.get_varieties(&result.work_type);
-            if !varieties.contains(&result.variety.as_str()) {
+        // 1) photoCategory (写真種別) と workType の整合
+        if !result.photo_category.is_empty() {
+            let has_work = master.rows().iter().any(|row| {
+                row.photo_type == result.photo_category && row.work_type == result.work_type
+            });
+            if !has_work {
+                result.work_type.clear();
                 result.variety.clear();
+                result.detail.clear();
+                result.remarks.clear();
+                continue;
+            }
+        }
+
+        // 2) workType の存在チェック
+        if !result.work_type.is_empty() {
+            let work_types = master.get_work_types();
+            if !work_types.contains(&result.work_type.as_str()) {
+                result.work_type.clear();
+                result.variety.clear();
+                result.detail.clear();
+                result.remarks.clear();
+                continue;
+            }
+        }
+
+        // 3) variety の整合
+        if !result.work_type.is_empty() && !result.variety.is_empty() {
+            let has_variety = master.rows().iter().any(|row| {
+                row.work_type == result.work_type
+                    && row.variety == result.variety
+                    && (result.photo_category.is_empty()
+                        || row.photo_type == result.photo_category)
+            });
+            if !has_variety {
+                result.variety.clear();
+                result.detail.clear();
+                result.remarks.clear();
             }
         } else {
             result.variety.clear();
+            result.detail.clear();
+            result.remarks.clear();
         }
 
-        if !result.work_type.is_empty() && !result.variety.is_empty() {
-            let details = master.get_details(&result.work_type, &result.variety);
-            if !details.contains(&result.detail.as_str()) {
+        // 4) detail の整合
+        if !result.work_type.is_empty() && !result.variety.is_empty() && !result.detail.is_empty() {
+            let has_detail = master.rows().iter().any(|row| {
+                row.work_type == result.work_type
+                    && row.variety == result.variety
+                    && row.detail == result.detail
+                    && (result.photo_category.is_empty()
+                        || row.photo_type == result.photo_category)
+            });
+            if !has_detail {
                 result.detail.clear();
+                result.remarks.clear();
             }
         } else {
             result.detail.clear();
+            result.remarks.clear();
         }
 
-        if !result.remarks.is_empty() && !allowed.contains(result.remarks.as_str()) {
-            result.remarks.clear();
+        // 5) remarks の整合（同一の photoCategory/work/var/detail の行に存在する備考のみ許可）
+        if !result.remarks.is_empty() {
+            let has_remarks = master.rows().iter().any(|row| {
+                row.remarks == result.remarks
+                    && row.work_type == result.work_type
+                    && row.variety == result.variety
+                    && row.detail == result.detail
+                    && (result.photo_category.is_empty()
+                        || row.photo_type == result.photo_category)
+            });
+            if !has_remarks {
+                result.remarks.clear();
+            }
         }
     }
 }
