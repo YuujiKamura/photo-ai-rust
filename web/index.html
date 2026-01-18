@@ -264,20 +264,70 @@
     }
 
     function renderPhotos() {
-      photosGrid.innerHTML = photos.map((p, i) => `
-        <div class="photo-card ${p.result ? 'done' : ''}" id="photo-${i}">
-          <img src="data:${p.mimeType};base64,${p.base64}" alt="${p.fileName}" />
-          <div class="info">
-            <div class="filename">${p.fileName}</div>
-            ${p.result ? `
-              <div class="field">区分: <span>${p.result.photoCategory || '-'}</span></div>
-              <div class="field">工種: <span>${p.result.workType || '-'}</span></div>
-              <div class="field">種別: <span>${p.result.variety || '-'}</span></div>
-              <div class="field">測点: <span>${p.result.station || '-'}</span></div>
-            ` : '<div class="field" style="color:#999;">未解析</div>'}
-          </div>
-        </div>
-      `).join('');
+      // Clear existing content
+      photosGrid.textContent = '';
+
+      photos.forEach((p, i) => {
+        const photoCard = document.createElement('div');
+        photoCard.className = 'photo-card' + (p.result ? ' done' : '');
+        photoCard.id = `photo-${i}`;
+
+        const img = document.createElement('img');
+        img.src = `data:${p.mimeType};base64,${p.base64}`;
+        img.alt = p.fileName;
+        photoCard.appendChild(img);
+
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'info';
+        photoCard.appendChild(infoDiv);
+
+        const filenameDiv = document.createElement('div');
+        filenameDiv.className = 'filename';
+        filenameDiv.textContent = p.fileName;
+        infoDiv.appendChild(filenameDiv);
+
+        if (p.result) {
+          const fieldPhotoCategory = document.createElement('div');
+          fieldPhotoCategory.className = 'field';
+          fieldPhotoCategory.textContent = '区分: ';
+          const spanPhotoCategory = document.createElement('span');
+          spanPhotoCategory.textContent = p.result.photoCategory || '-';
+          fieldPhotoCategory.appendChild(spanPhotoCategory);
+          infoDiv.appendChild(fieldPhotoCategory);
+
+          const fieldWorkType = document.createElement('div');
+          fieldWorkType.className = 'field';
+          fieldWorkType.textContent = '工種: ';
+          const spanWorkType = document.createElement('span');
+          spanWorkType.textContent = p.result.workType || '-';
+          fieldWorkType.appendChild(spanWorkType);
+          infoDiv.appendChild(fieldWorkType);
+
+          const fieldVariety = document.createElement('div');
+          fieldVariety.className = 'field';
+          fieldVariety.textContent = '種別: ';
+          const spanVariety = document.createElement('span');
+          spanVariety.textContent = p.result.variety || '-';
+          fieldVariety.appendChild(spanVariety);
+          infoDiv.appendChild(fieldVariety);
+
+          const fieldStation = document.createElement('div');
+          fieldStation.className = 'field';
+          fieldStation.textContent = '測点: ';
+          const spanStation = document.createElement('span');
+          spanStation.textContent = p.result.station || '-';
+          fieldStation.appendChild(spanStation);
+          infoDiv.appendChild(fieldStation);
+        } else {
+          const fieldPending = document.createElement('div');
+          fieldPending.className = 'field';
+          fieldPending.style.color = '#999';
+          fieldPending.textContent = '未解析';
+          infoDiv.appendChild(fieldPending);
+        }
+
+        photosGrid.appendChild(photoCard);
+      });
     }
 
     function updateButtons() {
