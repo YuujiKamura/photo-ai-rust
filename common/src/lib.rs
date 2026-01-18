@@ -16,7 +16,7 @@ pub mod parser;
 pub mod analyzer;
 pub mod prompts;
 #[cfg(feature = "excel")]
-pub mod excel;
+pub mod export;
 
 pub use types::{AnalysisResult, RawImageData, Step2Result};
 pub use layout::{PdfLayout, ExcelLayout};

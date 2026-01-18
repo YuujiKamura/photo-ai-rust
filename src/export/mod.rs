@@ -1,6 +1,5 @@
 pub mod pdf;
 pub mod excel;
-pub mod layout;
 
 use crate::analyzer::AnalysisResult;
 use crate::cli::{ExportFormat, PdfQuality};
