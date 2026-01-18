@@ -132,6 +132,63 @@
     const INFO_RATIO = 0.35;
     const UNIFIED_FONT_SIZE = 12; // Rust版と統一
 
+    // エイリアス変換（Rust版 matcher/alias.rs pavement_preset と同一）
+    const PAVEMENT_ALIASES = {
+      photoCategory: {
+        '品質': '品質管理写真',
+        '品質管理': '品質管理写真',
+        '出来形': '出来形管理写真',
+        '出来形管理': '出来形管理写真',
+        '施工状況': '施工状況写真',
+        '施工中': '施工状況写真',
+        '安全': '安全管理写真',
+        '安全管理': '安全管理写真',
+        '材料': '使用材料写真',
+        '使用材料': '使用材料写真'
+      },
+      workType: {
+        '舗装': '舗装工',
+        'As': '舗装工',
+        'アスファルト': '舗装工'
+      },
+      variety: {
+        '打換え': '舗装打換え工',
+        '打換': '舗装打換え工',
+        'オーバーレイ': '舗装オーバーレイ工'
+      },
+      detail: {
+        '表層': '表層工',
+        '基層': '基層工',
+        '上層路盤': '上層路盤工',
+        '下層路盤': '下層路盤工'
+      }
+    };
+
+    function applyAlias(value, aliases) {
+      if (!value) return value;
+      if (aliases[value]) return aliases[value];
+      // 部分一致（最長マッチ）
+      let bestMatch = null;
+      for (const [pattern, replacement] of Object.entries(aliases)) {
+        if (value.includes(pattern)) {
+          if (!bestMatch || pattern.length > bestMatch[0].length) {
+            bestMatch = [pattern, replacement];
+          }
+        }
+      }
+      return bestMatch ? bestMatch[1] : value;
+    }
+
+    function applyAliases(result) {
+      return {
+        ...result,
+        photoCategory: applyAlias(result.photoCategory, PAVEMENT_ALIASES.photoCategory),
+        workType: applyAlias(result.workType, PAVEMENT_ALIASES.workType),
+        variety: applyAlias(result.variety, PAVEMENT_ALIASES.variety),
+        detail: applyAlias(result.detail, PAVEMENT_ALIASES.detail)
+      };
+    }
+
     // State
     let photos = [];
     let genAI = null;
@@ -271,7 +328,7 @@
           const batchResults = await analyzeBatch(batch);
           for (const result of batchResults) {
             const photo = photos.find(p => p.fileName === result.fileName);
-            if (photo) photo.result = result;
+            if (photo) photo.result = applyAliases(result); // エイリアス変換適用
           }
           renderPhotos();
           log(`バッチ ${i + 1} 完了`, 'success');
