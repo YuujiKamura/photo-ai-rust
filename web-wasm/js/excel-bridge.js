@@ -286,3 +286,42 @@ export async function generateExcelSimple(photos, options) {
   const buffer = await workbook.xlsx.writeBuffer();
   return new Uint8Array(buffer);
 }
+
+// ============================================
+// CLI エントリポイント (Node.js用)
+// ============================================
+
+// Node.js環境かどうかを判定
+const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
+
+if (isNode) {
+  // Node.jsで実行された場合
+  const args = process.argv.slice(2);
+
+  if (args.length >= 2) {
+    const inputJson = args[0];
+    const outputPath = args[1];
+
+    import('fs').then(async (fs) => {
+      const ExcelJSModule = await import('exceljs');
+      globalThis.ExcelJS = ExcelJSModule.default || ExcelJSModule;
+
+      try {
+        const inputData = JSON.parse(fs.readFileSync(inputJson, 'utf-8'));
+        const photos = inputData.photos || inputData;
+        const options = inputData.options || { title: '写真台帳', photosPerPage: 3 };
+
+        const buffer = await generateExcel(
+          JSON.stringify(photos),
+          JSON.stringify(options)
+        );
+
+        fs.writeFileSync(outputPath, Buffer.from(buffer));
+        console.log(`✔ Excel generated: ${outputPath}`);
+      } catch (err) {
+        console.error(`❌ Excel generation failed: ${err.message}`);
+        process.exit(1);
+      }
+    });
+  }
+}

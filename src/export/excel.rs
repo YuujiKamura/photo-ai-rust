@@ -1,10 +1,18 @@
+//! Excel生成（CLI版）
+//!
+//! layout.rs の定義を使用して写真台帳形式のExcelを生成
+
 use crate::analyzer::AnalysisResult;
 use crate::error::{PhotoAiError, Result};
-use super::layout::{LAYOUT_FIELDS, LABEL_COL_WIDTH, VALUE_COL_WIDTH};
+use super::layout::{
+    ExcelLayout, LAYOUT_FIELDS,
+    PHOTO_ROWS, ROW_HEIGHT_PT,
+    PHOTO_COL_WIDTH, LABEL_COL_WIDTH, VALUE_COL_WIDTH,
+};
 use rust_xlsxwriter::*;
 use std::path::Path;
 
-/// フィールド値を取得（LAYOUT_FIELDSのkeyに基づく）
+/// フィールド値を取得
 fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
     match key {
         "date" => if result.date.is_empty() { "-" } else { &result.date },
@@ -22,51 +30,121 @@ fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
 pub fn generate_excel(
     results: &[AnalysisResult],
     output_path: &Path,
-    _title: &str,
+    title: &str,
 ) -> Result<()> {
+    generate_excel_with_options(results, output_path, title, 3)
+}
+
+pub fn generate_excel_with_options(
+    results: &[AnalysisResult],
+    output_path: &Path,
+    _title: &str,
+    photos_per_page: u8,
+) -> Result<()> {
+    let layout = ExcelLayout::for_photos_per_page(photos_per_page);
     let mut workbook = Workbook::new();
-    let worksheet = workbook.add_worksheet();
 
-    // タイトル行のフォーマット
-    let header_format = Format::new()
+    // フォーマット定義
+    let label_format = Format::new()
         .set_bold()
-        .set_background_color(Color::RGB(0xE0E0E0))
-        .set_border(FormatBorder::Thin);
+        .set_font_size(9.0)
+        .set_font_color(Color::RGB(0x555555))
+        .set_background_color(Color::RGB(0xF5F5F5))
+        .set_align(FormatAlign::Center)
+        .set_align(FormatAlign::VerticalCenter)
+        .set_border(FormatBorder::Hair)
+        .set_border_color(Color::RGB(0xAAAAAA));
 
-    // ヘッダー: ファイル名 + LAYOUT_FIELDSのラベル
-    worksheet.write_string_with_format(0, 0, "ファイル名", &header_format)
-        .map_err(|e| PhotoAiError::ExcelGeneration(format!("ヘッダー書き込みエラー: {}", e)))?;
+    let value_format = Format::new()
+        .set_font_size(11.0)
+        .set_align(FormatAlign::Left)
+        .set_align(FormatAlign::VerticalCenter)
+        .set_text_wrap()
+        .set_border(FormatBorder::Hair)
+        .set_border_color(Color::RGB(0xCCCCCC));
 
-    for (col, field) in LAYOUT_FIELDS.iter().enumerate() {
-        worksheet.write_string_with_format(0, (col + 1) as u16, field.label, &header_format)
-            .map_err(|e| PhotoAiError::ExcelGeneration(format!("ヘッダー書き込みエラー: {}", e)))?;
-    }
+    let photo_cell_format = Format::new()
+        .set_border(FormatBorder::Thin)
+        .set_border_color(Color::RGB(0xCCCCCC));
 
-    // データ行
-    for (row, result) in results.iter().enumerate() {
-        let row_num = (row + 1) as u32;
+    // ページごとにシートを作成
+    let total_pages = results.len().div_ceil(photos_per_page as usize);
 
-        // ファイル名
-        worksheet.write_string(row_num, 0, &result.file_name)
-            .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
+    for page_num in 0..total_pages {
+        let start_idx = page_num * photos_per_page as usize;
+        let end_idx = std::cmp::min(start_idx + photos_per_page as usize, results.len());
+        let page_photos = &results[start_idx..end_idx];
 
-        // LAYOUT_FIELDSの各フィールド
-        for (col, field) in LAYOUT_FIELDS.iter().enumerate() {
-            let value = get_field_value(result, field.key);
-            worksheet.write_string(row_num, (col + 1) as u16, value)
-                .map_err(|e| PhotoAiError::ExcelGeneration(format!("データ書き込みエラー: {}", e)))?;
-        }
-    }
+        let sheet_name = format!("{}", page_num + 1);
+        let worksheet = workbook.add_worksheet();
+        worksheet.set_name(&sheet_name)
+            .map_err(|e| PhotoAiError::ExcelGeneration(format!("シート名設定エラー: {}", e)))?;
 
-    // 列幅調整（layout.rsの定数を使用）
-    worksheet.set_column_width(0, 20.0)  // ファイル名
-        .map_err(|e| PhotoAiError::ExcelGeneration(format!("列幅設定エラー: {}", e)))?;
-
-    // ラベル列とデータ列の幅
-    for col in 1..=(LAYOUT_FIELDS.len() as u16) {
-        let width = if col % 2 == 1 { LABEL_COL_WIDTH as f64 } else { VALUE_COL_WIDTH as f64 };
-        worksheet.set_column_width(col, width)
+        // 列幅設定
+        worksheet.set_column_width(0, PHOTO_COL_WIDTH as f64)
             .map_err(|e| PhotoAiError::ExcelGeneration(format!("列幅設定エラー: {}", e)))?;
+        worksheet.set_column_width(1, LABEL_COL_WIDTH as f64)
+            .map_err(|e| PhotoAiError::ExcelGeneration(format!("列幅設定エラー: {}", e)))?;
+        worksheet.set_column_width(2, VALUE_COL_WIDTH as f64)
+            .map_err(|e| PhotoAiError::ExcelGeneration(format!("列幅設定エラー: {}", e)))?;
+
+        let mut current_row: u32 = 0;
+
+        for photo in page_photos {
+            let start_row = current_row;
+            let rows_per_block = layout.rows_per_block as u32;
+            let photo_rows = PHOTO_ROWS as u32;
+
+            // 行高さ設定
+            for r in start_row..(start_row + rows_per_block) {
+                worksheet.set_row_height(r, ROW_HEIGHT_PT as f64)
+                    .map_err(|e| PhotoAiError::ExcelGeneration(format!("行高さ設定エラー: {}", e)))?;
+            }
+
+            // 写真セル（A列）- マージ
+            let photo_end_row = start_row + photo_rows - 1;
+            worksheet.merge_range(start_row, 0, photo_end_row, 0, "", &photo_cell_format)
+                .map_err(|e| PhotoAiError::ExcelGeneration(format!("セルマージエラー: {}", e)))?;
+
+            // 画像埋め込み
+            if !photo.file_path.is_empty() && Path::new(&photo.file_path).exists() {
+                let image = Image::new(&photo.file_path)
+                    .map_err(|e| PhotoAiError::ExcelGeneration(format!("画像読み込みエラー: {}", e)))?;
+
+                // セル内にフィットさせる
+                worksheet.insert_image_fit_to_cell(start_row, 0, &image, false)
+                    .map_err(|e| PhotoAiError::ExcelGeneration(format!("画像埋め込みエラー: {}", e)))?;
+            }
+
+            // 情報フィールド（B列:ラベル、C列:値）
+            let mut field_row = start_row;
+            for field in LAYOUT_FIELDS.iter() {
+                let value = get_field_value(photo, field.key);
+                let row_span = field.row_span as u32;
+
+                // ラベルセル（B列）
+                if row_span > 1 {
+                    worksheet.merge_range(field_row, 1, field_row + row_span - 1, 1, field.label, &label_format)
+                        .map_err(|e| PhotoAiError::ExcelGeneration(format!("ラベルマージエラー: {}", e)))?;
+                } else {
+                    worksheet.write_string_with_format(field_row, 1, field.label, &label_format)
+                        .map_err(|e| PhotoAiError::ExcelGeneration(format!("ラベル書き込みエラー: {}", e)))?;
+                }
+
+                // 値セル（C列）
+                if row_span > 1 {
+                    worksheet.merge_range(field_row, 2, field_row + row_span - 1, 2, value, &value_format)
+                        .map_err(|e| PhotoAiError::ExcelGeneration(format!("値マージエラー: {}", e)))?;
+                } else {
+                    worksheet.write_string_with_format(field_row, 2, value, &value_format)
+                        .map_err(|e| PhotoAiError::ExcelGeneration(format!("値書き込みエラー: {}", e)))?;
+                }
+
+                field_row += row_span;
+            }
+
+            current_row = start_row + rows_per_block;
+        }
     }
 
     // 保存
