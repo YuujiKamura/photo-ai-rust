@@ -259,20 +259,60 @@
     }
 
     function renderPhotos() {
-      photosGrid.innerHTML = photos.map((p, i) => `
-        <div class="photo-card ${p.result ? 'done' : ''}" id="photo-${i}">
-          <img src="data:${p.mimeType};base64,${p.base64}" alt="${p.fileName}" />
-          <div class="info">
-            <div class="filename">${p.fileName}</div>
-            ${p.result ? `
-              <div class="field">区分: <span>${p.result.photoCategory || '-'}</span></div>
-              <div class="field">工種: <span>${p.result.workType || '-'}</span></div>
-              <div class="field">種別: <span>${p.result.variety || '-'}</span></div>
-              <div class="field">測点: <span>${p.result.station || '-'}</span></div>
-            ` : '<div class="field" style="color:#999;">未解析</div>'}
-          </div>
-        </div>
-      `).join('');
+      // Clear existing content
+      photosGrid.textContent = '';
+      const fragment = document.createDocumentFragment();
+
+      photos.forEach((p, i) => {
+        const photoCard = document.createElement('div');
+        photoCard.className = 'photo-card' + (p.result ? ' done' : '');
+        photoCard.id = `photo-${i}`;
+
+        const img = document.createElement('img');
+        // Validate mimeType to prevent XSS
+        const safeMimeType = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(p.mimeType)
+          ? p.mimeType : 'image/jpeg';
+        img.src = `data:${safeMimeType};base64,${p.base64}`;
+        img.alt = p.fileName;
+        photoCard.appendChild(img);
+
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'info';
+        photoCard.appendChild(infoDiv);
+
+        const filenameDiv = document.createElement('div');
+        filenameDiv.className = 'filename';
+        filenameDiv.textContent = p.fileName;
+        infoDiv.appendChild(filenameDiv);
+
+        if (p.result) {
+          const fields = [
+            { label: '区分', value: p.result.photoCategory },
+            { label: '工種', value: p.result.workType },
+            { label: '種別', value: p.result.variety },
+            { label: '測点', value: p.result.station }
+          ];
+
+          for (const field of fields) {
+            const fieldDiv = document.createElement('div');
+            fieldDiv.className = 'field';
+            const span = document.createElement('span');
+            span.textContent = field.value || '-';
+            fieldDiv.append(`${field.label}: `, span);
+            infoDiv.appendChild(fieldDiv);
+          }
+        } else {
+          const fieldPending = document.createElement('div');
+          fieldPending.className = 'field';
+          fieldPending.style.color = '#999';
+          fieldPending.textContent = '未解析';
+          infoDiv.appendChild(fieldPending);
+        }
+
+        fragment.appendChild(photoCard);
+      });
+
+      photosGrid.appendChild(fragment);
     }
 
     function updateButtons() {
