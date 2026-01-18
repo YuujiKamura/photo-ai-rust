@@ -266,6 +266,7 @@
     function renderPhotos() {
       // Clear existing content
       photosGrid.textContent = '';
+      const fragment = document.createDocumentFragment();
 
       photos.forEach((p, i) => {
         const photoCard = document.createElement('div');
@@ -273,7 +274,10 @@
         photoCard.id = `photo-${i}`;
 
         const img = document.createElement('img');
-        img.src = `data:${p.mimeType};base64,${p.base64}`;
+        // Validate mimeType to prevent XSS
+        const safeMimeType = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(p.mimeType)
+          ? p.mimeType : 'image/jpeg';
+        img.src = `data:${safeMimeType};base64,${p.base64}`;
         img.alt = p.fileName;
         photoCard.appendChild(img);
 
@@ -287,37 +291,21 @@
         infoDiv.appendChild(filenameDiv);
 
         if (p.result) {
-          const fieldPhotoCategory = document.createElement('div');
-          fieldPhotoCategory.className = 'field';
-          fieldPhotoCategory.textContent = '区分: ';
-          const spanPhotoCategory = document.createElement('span');
-          spanPhotoCategory.textContent = p.result.photoCategory || '-';
-          fieldPhotoCategory.appendChild(spanPhotoCategory);
-          infoDiv.appendChild(fieldPhotoCategory);
+          const fields = [
+            { label: '区分', value: p.result.photoCategory },
+            { label: '工種', value: p.result.workType },
+            { label: '種別', value: p.result.variety },
+            { label: '測点', value: p.result.station }
+          ];
 
-          const fieldWorkType = document.createElement('div');
-          fieldWorkType.className = 'field';
-          fieldWorkType.textContent = '工種: ';
-          const spanWorkType = document.createElement('span');
-          spanWorkType.textContent = p.result.workType || '-';
-          fieldWorkType.appendChild(spanWorkType);
-          infoDiv.appendChild(fieldWorkType);
-
-          const fieldVariety = document.createElement('div');
-          fieldVariety.className = 'field';
-          fieldVariety.textContent = '種別: ';
-          const spanVariety = document.createElement('span');
-          spanVariety.textContent = p.result.variety || '-';
-          fieldVariety.appendChild(spanVariety);
-          infoDiv.appendChild(fieldVariety);
-
-          const fieldStation = document.createElement('div');
-          fieldStation.className = 'field';
-          fieldStation.textContent = '測点: ';
-          const spanStation = document.createElement('span');
-          spanStation.textContent = p.result.station || '-';
-          fieldStation.appendChild(spanStation);
-          infoDiv.appendChild(fieldStation);
+          for (const field of fields) {
+            const fieldDiv = document.createElement('div');
+            fieldDiv.className = 'field';
+            const span = document.createElement('span');
+            span.textContent = field.value || '-';
+            fieldDiv.append(`${field.label}: `, span);
+            infoDiv.appendChild(fieldDiv);
+          }
         } else {
           const fieldPending = document.createElement('div');
           fieldPending.className = 'field';
@@ -326,8 +314,10 @@
           infoDiv.appendChild(fieldPending);
         }
 
-        photosGrid.appendChild(photoCard);
+        fragment.appendChild(photoCard);
       });
+
+      photosGrid.appendChild(fragment);
     }
 
     function updateButtons() {
