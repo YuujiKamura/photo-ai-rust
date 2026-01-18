@@ -87,9 +87,10 @@ async fn main() -> Result<()> {
 
             // 3. 結果保存
             println!("[3/3] 結果を保存中...");
+            let output_path = output.unwrap_or_else(|| folder.join("result.json"));
             let json = serde_json::to_string_pretty(&results)?;
-            std::fs::write(&output, json)?;
-            println!("✔ 結果を保存: {}", output.display());
+            std::fs::write(&output_path, json)?;
+            println!("✔ 結果を保存: {}", output_path.display());
 
             println!("\n✅ 解析完了");
         }

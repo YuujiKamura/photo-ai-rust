@@ -26,9 +26,9 @@ pub enum Commands {
         #[arg(required = true)]
         folder: PathBuf,
 
-        /// 出力JSONファイル
-        #[arg(short, long, default_value = "result.json")]
-        output: PathBuf,
+        /// 出力JSONファイル（デフォルト: 入力フォルダ/result.json）
+        #[arg(short, long)]
+        output: Option<PathBuf>,
 
         /// バッチサイズ（一度に解析する枚数）
         #[arg(short, long, default_value = "5")]
