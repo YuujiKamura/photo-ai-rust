@@ -104,10 +104,11 @@ export async function generatePdf(photosJson, layoutJson, optionsJson) {
       const entryIndex = i - startIndex;
       const yOffset = pageHeight - margin - (entryIndex + 1) * entryHeight + entryHeight - photoHeight - 20;
 
+      const imageDataUrl = photo.imageDataUrl || photo.filePath;
       // 写真を埋め込み
-      if (photo.imageDataUrl) {
+      if (imageDataUrl) {
         try {
-          const image = await embedImage(pdfDoc, photo.imageDataUrl);
+          const image = await embedImage(pdfDoc, imageDataUrl);
           if (image) {
             // アスペクト比を維持してサイズを調整
             const imgDims = image.scale(1);

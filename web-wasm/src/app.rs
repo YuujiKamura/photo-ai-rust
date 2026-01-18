@@ -1,6 +1,8 @@
 //! メインアプリケーションコンポーネント
 
 use leptos::prelude::*;
+use wasm_bindgen_futures::spawn_local;
+use web_sys::console;
 use crate::components::{
     header::Header,
     settings_panel::SettingsPanel,
@@ -9,6 +11,8 @@ use crate::components::{
     progress_bar::ProgressBar,
     export_buttons::ExportButtons,
 };
+use crate::export::{excel_wasm, pdf_wasm};
+use crate::export::js_bindings::{download_excel_js, download_pdf_js};
 use photo_ai_common::AnalysisResult;
 
 /// アプリケーションの状態
@@ -52,6 +56,19 @@ impl PhotoStatus {
     }
 }
 
+fn build_export_results(photos: &[PhotoItem]) -> Vec<AnalysisResult> {
+    photos
+        .iter()
+        .filter_map(|photo| {
+            photo.analysis.clone().map(|mut analysis| {
+                analysis.file_name = photo.file_name.clone();
+                analysis.file_path = photo.data_url.clone();
+                analysis
+            })
+        })
+        .collect()
+}
+
 /// メインアプリケーションコンポーネント
 #[component]
 pub fn App() -> impl IntoView {
@@ -76,12 +93,64 @@ pub fn App() -> impl IntoView {
 
     // PDF出力ハンドラ
     let on_export_pdf = move |_| {
-        // TODO: PDF生成
+        let photo_items = photos.get();
+        let title_value = title.get();
+        let per_page = photos_per_page.get();
+
+        let results = build_export_results(&photo_items);
+        if results.is_empty() {
+            console::warn_1(&"No analyzed photos available for PDF export.".into());
+            return;
+        }
+
+        let export_title = if title_value.trim().is_empty() {
+            "工事写真台帳".to_string()
+        } else {
+            title_value
+        };
+
+        spawn_local(async move {
+            match pdf_wasm::generate_pdf(&results, &export_title, per_page).await {
+                Ok(data) => {
+                    let filename = format!("{}.pdf", export_title);
+                    download_pdf_js(&data, &filename);
+                }
+                Err(err) => {
+                    console::error_1(&format!("PDF export failed: {}", err).into());
+                }
+            }
+        });
     };
 
     // Excel出力ハンドラ
     let on_export_excel = move |_| {
-        // TODO: Excel生成
+        let photo_items = photos.get();
+        let title_value = title.get();
+        let per_page = photos_per_page.get();
+
+        let results = build_export_results(&photo_items);
+        if results.is_empty() {
+            console::warn_1(&"No analyzed photos available for Excel export.".into());
+            return;
+        }
+
+        let export_title = if title_value.trim().is_empty() {
+            "工事写真台帳".to_string()
+        } else {
+            title_value
+        };
+
+        spawn_local(async move {
+            match excel_wasm::generate_excel(&results, &export_title, per_page).await {
+                Ok(data) => {
+                    let filename = format!("{}.xlsx", export_title);
+                    download_excel_js(&data, &filename);
+                }
+                Err(err) => {
+                    console::error_1(&format!("Excel export failed: {}", err).into());
+                }
+            }
+        });
     };
 
     view! {

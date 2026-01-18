@@ -16,6 +16,8 @@ use wasm_bindgen::prelude::*;
 pub struct JsPhotoEntry {
     pub file_name: String,
     pub file_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_data_url: Option<String>,
     pub date: String,
     pub work_type: String,
     pub variety: String,
@@ -49,9 +51,16 @@ pub struct JsLayoutConfig {
 
 impl From<&photo_ai_common::AnalysisResult> for JsPhotoEntry {
     fn from(result: &photo_ai_common::AnalysisResult) -> Self {
+        let image_data_url = if result.file_path.is_empty() {
+            None
+        } else {
+            Some(result.file_path.clone())
+        };
+
         Self {
             file_name: result.file_name.clone(),
             file_path: result.file_path.clone(),
+            image_data_url,
             date: result.date.clone(),
             work_type: result.work_type.clone(),
             variety: result.variety.clone(),
@@ -242,6 +251,7 @@ mod tests {
         let entry = JsPhotoEntry {
             file_name: "test.jpg".to_string(),
             file_path: "/path/test.jpg".to_string(),
+            image_data_url: Some("data:image/jpeg;base64,aaa".to_string()),
             date: "2025-01-18".to_string(),
             work_type: "舗装工".to_string(),
             variety: "表層工".to_string(),
@@ -260,9 +270,31 @@ mod tests {
         // camelCase変換の確認
         assert!(json.contains("\"fileName\":"));
         assert!(json.contains("\"filePath\":"));
+        assert!(json.contains("\"imageDataUrl\":"));
         assert!(json.contains("\"workType\":"));
         assert!(json.contains("\"photoCategory\":"));
         assert!(json.contains("\"hasBoard\":"));
         assert!(json.contains("\"detectedText\":"));
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", test))]
+mod wasm_tests {
+    use super::*;
+    use photo_ai_common::AnalysisResult;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    fn wasm_photos_to_json_includes_image_data_url() {
+        let results = vec![AnalysisResult {
+            file_name: "photo1.jpg".to_string(),
+            file_path: "data:image/jpeg;base64,aaaa".to_string(),
+            ..Default::default()
+        }];
+
+        let json = photos_to_json(&results).expect("JSON conversion failed");
+        assert!(json.contains("\"imageDataUrl\":"));
     }
 }

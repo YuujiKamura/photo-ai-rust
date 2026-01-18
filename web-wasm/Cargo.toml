@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # 共通ライブラリ
-photo-ai-common = { path = "../common", features = ["wasm"] }
+photo-ai-common = { path = "../common", default-features = false, features = ["wasm"] }
 
 # Leptos Framework
 leptos = { version = "0.7", features = ["csr"] }

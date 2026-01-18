@@ -8,6 +8,7 @@ mod export;
 use wasm_bindgen::prelude::*;
 use leptos::prelude::*;
 
+#[cfg(not(test))]
 #[wasm_bindgen(start)]
 pub fn main() {
     console_error_panic_hook::set_once();
