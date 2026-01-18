@@ -183,6 +183,50 @@ impl HierarchyMaster {
     pub fn rows(&self) -> &[HierarchyRow] {
         &self.rows
     }
+
+    /// 指定した工種のみに絞ったマスタを返す
+    pub fn filter_by_work_types(&self, work_types: &[String]) -> Self {
+        if work_types.is_empty() {
+            return self.clone();
+        }
+
+        let filtered_rows: Vec<HierarchyRow> = self.rows
+            .iter()
+            .filter(|row| work_types.contains(&row.work_type))
+            .cloned()
+            .collect();
+
+        let mut work_types_set = HashSet::new();
+        let mut work_type_to_varieties: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut variety_to_details: HashMap<(String, String), HashSet<String>> = HashMap::new();
+
+        for row in &filtered_rows {
+            if !row.work_type.is_empty() {
+                work_types_set.insert(row.work_type.clone());
+
+                if !row.variety.is_empty() {
+                    work_type_to_varieties
+                        .entry(row.work_type.clone())
+                        .or_default()
+                        .insert(row.variety.clone());
+
+                    if !row.detail.is_empty() {
+                        variety_to_details
+                            .entry((row.work_type.clone(), row.variety.clone()))
+                            .or_default()
+                            .insert(row.detail.clone());
+                    }
+                }
+            }
+        }
+
+        Self {
+            rows: filtered_rows,
+            work_types: work_types_set,
+            work_type_to_varieties,
+            variety_to_details,
+        }
+    }
 }
 
 /// CSV行をパース（ダブルクォート対応）

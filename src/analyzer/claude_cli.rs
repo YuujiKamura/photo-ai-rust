@@ -326,11 +326,27 @@ pub async fn analyze_batch_with_master(
         println!("  Step1: 完了 ({}件)", raw_data.len());
     }
 
-    // Step2: マスタ照合
+    // Step1結果から工種を自動判定してマスタをフィルタ
+    let detected_types = detect_work_types(&raw_data);
+    let filtered_master = if detected_types.is_empty() {
+        if verbose {
+            println!("  工種判定: 該当なし → 全マスタ使用 ({}件)", master.rows().len());
+        }
+        master.clone()
+    } else {
+        let filtered = master.filter_by_work_types(&detected_types);
+        if verbose {
+            println!("  工種判定: {:?} → マスタ絞込み ({}件 → {}件)",
+                detected_types, master.rows().len(), filtered.rows().len());
+        }
+        filtered
+    };
+
+    // Step2: マスタ照合（フィルタ済みマスタを使用）
     if verbose {
         println!("  Step2: マスタ照合開始...");
     }
-    let step2_results = analyze_batch_step2(&raw_data, master, verbose).await?;
+    let step2_results = analyze_batch_step2(&raw_data, &filtered_master, verbose).await?;
     if verbose {
         println!("  Step2: 完了 ({}件)", step2_results.len());
     }
@@ -338,6 +354,64 @@ pub async fn analyze_batch_with_master(
     // 結果マージ
     let results = merge_results(&raw_data, &step2_results, images);
     Ok(results)
+}
+
+/// Step1結果から工種を自動判定
+pub fn detect_work_types(raw_data: &[RawImageData]) -> Vec<String> {
+    use std::collections::HashSet;
+    let mut types = HashSet::new();
+
+    for r in raw_data {
+        let cat = r.photo_category.as_str();
+        let text = r.detected_text.as_str();
+        let scene = r.scene_description.as_str();
+
+        // 舗装工の判定
+        if cat.contains("温度") || cat.contains("転圧") || cat.contains("舗設")
+            || cat.contains("敷均し") || cat.contains("乳剤") || cat.contains("路盤")
+            || text.contains("舗装") || text.contains("表層") || text.contains("基層")
+            || scene.contains("アスファルト") || scene.contains("フィニッシャー")
+            || scene.contains("ローラー")
+        {
+            types.insert("舗装工".to_string());
+        }
+
+        // 区画線工の判定
+        if cat.contains("区画線") || text.contains("区画線") || text.contains("ライン")
+            || scene.contains("白線") || scene.contains("区画線")
+        {
+            types.insert("区画線工".to_string());
+        }
+
+        // 構造物撤去工の判定
+        if cat.contains("取壊し") || text.contains("撤去") || text.contains("取壊")
+            || scene.contains("解体") || scene.contains("撤去")
+        {
+            types.insert("構造物撤去工".to_string());
+        }
+
+        // 道路土工の判定
+        if cat.contains("掘削") || cat.contains("路床") || text.contains("掘削")
+            || scene.contains("掘削") || scene.contains("バックホウ")
+        {
+            types.insert("道路土工".to_string());
+        }
+
+        // 排水構造物工の判定
+        if text.contains("側溝") || text.contains("集水") || text.contains("人孔")
+            || scene.contains("側溝") || scene.contains("マンホール")
+        {
+            types.insert("排水構造物工".to_string());
+        }
+
+        // 人孔改良工の判定
+        if text.contains("人孔改良") || text.contains("マンホール蓋")
+        {
+            types.insert("人孔改良工".to_string());
+        }
+    }
+
+    types.into_iter().collect()
 }
 
 /// Step2の結果
