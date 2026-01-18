@@ -210,13 +210,8 @@
     const exportPdfBtn = document.getElementById('exportPdfBtn');
     const exportExcelBtn = document.getElementById('exportExcelBtn');
 
-    // Load saved API key
-    const savedKey = localStorage.getItem('gemini_api_key');
-    if (savedKey) apiKeyInput.value = savedKey;
-
     apiKeyInput.addEventListener('change', () => {
-      localStorage.setItem('gemini_api_key', apiKeyInput.value);
-      log('APIキーを保存しました', 'success');
+      updateButtons();
     });
 
     function log(msg, type = '') {
