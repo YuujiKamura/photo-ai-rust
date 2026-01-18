@@ -3,6 +3,7 @@ use photo_ai_rust::{cli, config, error, scanner, analyzer, matcher, export, stat
 use cli::{Cli, Commands};
 use config::Config;
 use error::Result;
+use photo_ai_common::HierarchyMaster;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,25 +25,27 @@ async fn main() -> Result<()> {
                 ));
             }
 
-            // 2. Claude CLI解析
-            println!("[2/3] AI解析中...{}", if use_cache { " (キャッシュ有効)" } else { "" });
-            let raw_results = if use_cache {
+            // 2. AI解析（マスタがある場合は2段階解析）
+            let results = if let Some(ref master_path) = master {
+                // マスタを読み込み
+                println!("[2/3] 2段階解析中 (Step1: 画像認識 → Step2: マスタ照合)...");
+                let hierarchy = HierarchyMaster::from_csv(master_path)
+                    .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+                println!("  マスタ読み込み: {}件", hierarchy.rows().len());
+
+                analyzer::analyze_images_with_master(&images, &hierarchy, batch_size, cli.verbose).await?
+            } else if use_cache {
+                println!("[2/3] AI解析中... (キャッシュ有効)");
                 analyzer::analyze_images_with_cache(&images, &folder, batch_size, cli.verbose).await?
             } else {
+                println!("[2/3] AI解析中...");
                 analyzer::analyze_images(&images, batch_size, cli.verbose).await?
             };
             println!("✔ 解析完了\n");
 
-            // 3. マスタ照合
-            if let Some(master_path) = master {
-                println!("[3/3] マスタ照合中...");
-                let _matched = matcher::match_with_master(&raw_results, &master_path)?;
-                println!("✔ マスタ照合完了\n");
-            }
-
-            // 4. 結果保存
+            // 3. 結果保存
             println!("[3/3] 結果を保存中...");
-            let json = serde_json::to_string_pretty(&raw_results)?;
+            let json = serde_json::to_string_pretty(&results)?;
             std::fs::write(&output, json)?;
             println!("✔ 結果を保存: {}", output.display());
 
@@ -94,27 +97,31 @@ async fn main() -> Result<()> {
             let images = scanner::scan_folder(&folder)?;
             println!("✔ {}枚の写真を検出\n", images.len());
 
-            // 2. Analyze
-            println!("[2/4] AI解析中...{}", if use_cache { " (キャッシュ有効)" } else { "" });
-            let raw_results = if use_cache {
+            if images.is_empty() {
+                return Err(error::PhotoAiError::NoImagesFound(
+                    folder.display().to_string()
+                ));
+            }
+
+            // 2. AI解析（マスタがある場合は2段階解析）
+            let results = if let Some(ref master_path) = master {
+                println!("[2/4] 2段階解析中 (Step1: 画像認識 → Step2: マスタ照合)...");
+                let hierarchy = HierarchyMaster::from_csv(master_path)
+                    .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+                println!("  マスタ読み込み: {}件", hierarchy.rows().len());
+
+                analyzer::analyze_images_with_master(&images, &hierarchy, batch_size, cli.verbose).await?
+            } else if use_cache {
+                println!("[2/4] AI解析中... (キャッシュ有効)");
                 analyzer::analyze_images_with_cache(&images, &folder, batch_size, cli.verbose).await?
             } else {
+                println!("[2/4] AI解析中...");
                 analyzer::analyze_images(&images, batch_size, cli.verbose).await?
             };
             println!("✔ 解析完了\n");
 
-            // 3. Match with master if provided
-            let results = if let Some(master_path) = master {
-                println!("[3/4] マスタ照合中...");
-                let matched = matcher::match_with_master(&raw_results, &master_path)?;
-                println!("✔ マスタ照合完了\n");
-                matched
-            } else {
-                raw_results
-            };
-
-            // 4. Export
-            println!("[4/4] エクスポート中...");
+            // 3. Export
+            println!("[3/4] エクスポート中...");
             let output_dir = output.unwrap_or_else(|| folder.clone());
             export::export_results(&results, &format, &output_dir, 3, "工事写真帳", pdf_quality)?;
 
