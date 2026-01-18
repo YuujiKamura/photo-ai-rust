@@ -4,6 +4,32 @@ use cli::{Cli, Commands};
 use config::Config;
 use error::Result;
 use photo_ai_common::HierarchyMaster;
+use std::path::Path;
+
+/// AI解析を実行（マスタ有無・キャッシュ有無で分岐）
+async fn run_analysis(
+    images: &[scanner::ImageInfo],
+    folder: &Path,
+    batch_size: usize,
+    verbose: bool,
+    master: Option<&Path>,
+    use_cache: bool,
+    step_prefix: &str,
+) -> Result<Vec<analyzer::AnalysisResult>> {
+    if let Some(master_path) = master {
+        println!("{} 2段階解析中 (Step1: 画像認識 → Step2: マスタ照合)...", step_prefix);
+        let hierarchy = HierarchyMaster::from_csv(master_path)
+            .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+        println!("  マスタ読み込み: {}件", hierarchy.rows().len());
+        analyzer::analyze_images_with_master(images, &hierarchy, batch_size, verbose).await
+    } else if use_cache {
+        println!("{} AI解析中... (キャッシュ有効)", step_prefix);
+        analyzer::analyze_images_with_cache(images, folder, batch_size, verbose).await
+    } else {
+        println!("{} AI解析中...", step_prefix);
+        analyzer::analyze_images(images, batch_size, verbose).await
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -26,21 +52,15 @@ async fn main() -> Result<()> {
             }
 
             // 2. AI解析（マスタがある場合は2段階解析）
-            let results = if let Some(ref master_path) = master {
-                // マスタを読み込み
-                println!("[2/3] 2段階解析中 (Step1: 画像認識 → Step2: マスタ照合)...");
-                let hierarchy = HierarchyMaster::from_csv(master_path)
-                    .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
-                println!("  マスタ読み込み: {}件", hierarchy.rows().len());
-
-                analyzer::analyze_images_with_master(&images, &hierarchy, batch_size, cli.verbose).await?
-            } else if use_cache {
-                println!("[2/3] AI解析中... (キャッシュ有効)");
-                analyzer::analyze_images_with_cache(&images, &folder, batch_size, cli.verbose).await?
-            } else {
-                println!("[2/3] AI解析中...");
-                analyzer::analyze_images(&images, batch_size, cli.verbose).await?
-            };
+            let results = run_analysis(
+                &images,
+                &folder,
+                batch_size,
+                cli.verbose,
+                master.as_deref(),
+                use_cache,
+                "[2/3]",
+            ).await?;
             println!("✔ 解析完了\n");
 
             // 3. 結果保存
@@ -104,20 +124,15 @@ async fn main() -> Result<()> {
             }
 
             // 2. AI解析（マスタがある場合は2段階解析）
-            let results = if let Some(ref master_path) = master {
-                println!("[2/4] 2段階解析中 (Step1: 画像認識 → Step2: マスタ照合)...");
-                let hierarchy = HierarchyMaster::from_csv(master_path)
-                    .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
-                println!("  マスタ読み込み: {}件", hierarchy.rows().len());
-
-                analyzer::analyze_images_with_master(&images, &hierarchy, batch_size, cli.verbose).await?
-            } else if use_cache {
-                println!("[2/4] AI解析中... (キャッシュ有効)");
-                analyzer::analyze_images_with_cache(&images, &folder, batch_size, cli.verbose).await?
-            } else {
-                println!("[2/4] AI解析中...");
-                analyzer::analyze_images(&images, batch_size, cli.verbose).await?
-            };
+            let results = run_analysis(
+                &images,
+                &folder,
+                batch_size,
+                cli.verbose,
+                master.as_deref(),
+                use_cache,
+                "[2/4]",
+            ).await?;
             println!("✔ 解析完了\n");
 
             // 3. Export
