@@ -14,7 +14,7 @@ use std::process::Command;
 
 /// Step1の出力: 画像から抽出した生データ
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct RawImageData {
     pub file_name: String,
     pub has_board: bool,
