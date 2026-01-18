@@ -6,11 +6,15 @@ use web_sys::{DragEvent, File, FileList, FileReader};
 use crate::app::{PhotoItem, PhotoStatus};
 
 #[component]
-pub fn UploadArea<F>(on_photos_added: F) -> impl IntoView
+pub fn UploadArea<F>(
+    api_key: ReadSignal<String>,
+    on_photos_added: F,
+) -> impl IntoView
 where
     F: Fn(Vec<PhotoItem>) + 'static + Clone,
 {
     let (is_dragover, set_is_dragover) = signal(false);
+    let is_enabled = move || !api_key.get().is_empty();
 
     let handle_files = {
         let on_photos_added = on_photos_added.clone();
@@ -30,6 +34,10 @@ where
             ev.prevent_default();
             set_is_dragover.set(false);
 
+            if !is_enabled() {
+                return;
+            }
+
             if let Some(dt) = ev.data_transfer() {
                 if let Some(files) = dt.files() {
                     handle_files(files);
@@ -40,7 +48,9 @@ where
 
     let on_dragover = move |ev: DragEvent| {
         ev.prevent_default();
-        set_is_dragover.set(true);
+        if is_enabled() {
+            set_is_dragover.set(true);
+        }
     };
 
     let on_dragleave = move |_: DragEvent| {
@@ -50,6 +60,10 @@ where
     let on_click = {
         let handle_files = handle_files.clone();
         move |_| {
+            if !is_enabled() {
+                return;
+            }
+
             // ファイル選択ダイアログを開く
             let document = web_sys::window().unwrap().document().unwrap();
             let input: web_sys::HtmlInputElement = document
@@ -85,15 +99,33 @@ where
 
     view! {
         <div
-            class=move || format!("upload-area {}", if is_dragover.get() { "dragover" } else { "" })
+            class=move || {
+                let mut classes = vec!["upload-area"];
+                if is_dragover.get() {
+                    classes.push("dragover");
+                }
+                if !is_enabled() {
+                    classes.push("disabled");
+                }
+                classes.join(" ")
+            }
             on:drop=on_drop
             on:dragover=on_dragover
             on:dragleave=on_dragleave
             on:click=on_click
         >
-            <div class="upload-icon">"📷"</div>
-            <p>"写真をドラッグ&ドロップ または クリックして選択"</p>
-            <p class="text-muted">"対応形式: JPEG, PNG"</p>
+            <Show
+                when=is_enabled
+                fallback=|| view! {
+                    <div class="upload-icon">"🔑"</div>
+                    <p>"APIキーを入力してください"</p>
+                    <p class="text-muted">"上の設定欄でGemini APIキーを設定すると写真をアップロードできます"</p>
+                }
+            >
+                <div class="upload-icon">"📷"</div>
+                <p>"写真をドラッグ&ドロップ または クリックして選択"</p>
+                <p class="text-muted">"対応形式: JPEG, PNG"</p>
+            </Show>
         </div>
     }
 }

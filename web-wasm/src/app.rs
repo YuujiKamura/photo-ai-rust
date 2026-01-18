@@ -97,7 +97,7 @@ pub fn App() -> impl IntoView {
                 set_photos_per_page=set_photos_per_page
             />
 
-            <UploadArea on_photos_added=on_photos_added />
+            <UploadArea api_key=api_key on_photos_added=on_photos_added />
 
             <Show
                 when=move || !photos.get().is_empty()
