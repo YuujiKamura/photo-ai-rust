@@ -1,10 +1,18 @@
-//! Gemini API連携
+//! Gemini API連携（2段階解析対応）
+//!
+//! Step1: 画像認識（build_step1_prompt, parse_step1_response）
+//! Step2: マスタ照合（build_step2_prompt, parse_step2_response）
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 use serde::{Deserialize, Serialize};
-use photo_ai_common::AnalysisResult;
+use photo_ai_common::{
+    RawImageData, Step2Result, AnalysisResult, HierarchyMaster,
+    build_step1_prompt, build_step2_prompt,
+    parse_step1_response, parse_step2_response,
+    detect_work_types, merge_results, ImageMeta,
+};
 
 const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent";
 
@@ -88,7 +96,186 @@ pub fn extract_mime_type_from_data_url(data_url: &str) -> &str {
         .unwrap_or("image/jpeg")
 }
 
-/// 写真を解析
+/// Gemini API呼び出し（共通処理）
+async fn call_gemini_api(api_key: &str, request: &GeminiRequest) -> Result<String, JsValue> {
+    let url = format!("{}?key={}", GEMINI_API_URL, api_key);
+    let body = serde_json::to_string(request)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let mut opts = RequestInit::new();
+    opts.method("POST");
+    opts.mode(RequestMode::Cors);
+    opts.body(Some(&JsValue::from_str(&body)));
+
+    let request = Request::new_with_str_and_init(&url, &opts)?;
+    request.headers().set("Content-Type", "application/json")?;
+
+    let window = web_sys::window().unwrap();
+    let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
+    let resp: Response = resp_value.dyn_into()?;
+
+    if !resp.ok() {
+        return Err(JsValue::from_str(&format!("API error: {}", resp.status())));
+    }
+
+    let json = JsFuture::from(resp.json()?).await?;
+    let response: GeminiResponse = serde_wasm_bindgen::from_value(json)?;
+
+    response
+        .candidates
+        .first()
+        .and_then(|c| c.content.parts.first())
+        .map(|p| p.text.clone())
+        .ok_or_else(|| JsValue::from_str("Empty response"))
+}
+
+/// Step1実行（画像認識）
+///
+/// 画像を受け取りGemini APIへ送信し、RawImageDataを返す
+///
+/// # Arguments
+/// * `api_key` - Gemini API key
+/// * `images` - (ファイル名, 日付Option, DataURL)のベクター
+///
+/// # Returns
+/// Vec<RawImageData>
+pub async fn analyze_step1(
+    api_key: &str,
+    images: &[(String, Option<String>, String)],  // (file_name, date, data_url)
+) -> Result<Vec<RawImageData>, JsValue> {
+    if images.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // プロンプト生成用のメタデータ
+    let image_meta: Vec<(&str, Option<&str>)> = images
+        .iter()
+        .map(|(name, date, _)| (name.as_str(), date.as_deref()))
+        .collect();
+
+    let prompt = build_step1_prompt(&image_meta);
+
+    // リクエスト作成（画像付き）
+    let mut parts: Vec<Part> = vec![Part::Text { text: prompt }];
+
+    for (_, _, data_url) in images {
+        if let Some(base64_data) = extract_base64_from_data_url(data_url) {
+            let mime_type = extract_mime_type_from_data_url(data_url);
+            parts.push(Part::InlineData {
+                inline_data: InlineData {
+                    mime_type: mime_type.to_string(),
+                    data: base64_data.to_string(),
+                },
+            });
+        }
+    }
+
+    let request = GeminiRequest {
+        contents: vec![Content { parts }],
+        generation_config: GenerationConfig {
+            temperature: 0.1,
+            response_mime_type: "application/json".to_string(),
+        },
+    };
+
+    let response_text = call_gemini_api(api_key, &request).await?;
+
+    parse_step1_response(&response_text)
+        .map_err(|e| JsValue::from_str(&format!("Step1 parse error: {}", e)))
+}
+
+/// Step2実行（マスタ照合）
+///
+/// RawImageDataとマスタを受け取り、Step2Resultを返す
+/// 画像は不要（テキストのみでAI照合）
+///
+/// # Arguments
+/// * `api_key` - Gemini API key
+/// * `raw_data` - Step1の出力
+/// * `master` - 階層マスタ
+///
+/// # Returns
+/// Vec<Step2Result>
+pub async fn analyze_step2(
+    api_key: &str,
+    raw_data: &[RawImageData],
+    master: &HierarchyMaster,
+) -> Result<Vec<Step2Result>, JsValue> {
+    if raw_data.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let prompt = build_step2_prompt(raw_data, master);
+
+    // リクエスト作成（テキストのみ、画像なし）
+    let request = GeminiRequest {
+        contents: vec![Content {
+            parts: vec![Part::Text { text: prompt }],
+        }],
+        generation_config: GenerationConfig {
+            temperature: 0.1,
+            response_mime_type: "application/json".to_string(),
+        },
+    };
+
+    let response_text = call_gemini_api(api_key, &request).await?;
+
+    parse_step2_response(&response_text)
+        .map_err(|e| JsValue::from_str(&format!("Step2 parse error: {}", e)))
+}
+
+/// 2段階解析（マスタあり）
+///
+/// Step1実行 -> 工種自動判定 -> マスタ絞込み -> Step2実行 -> 結果マージ
+///
+/// # Arguments
+/// * `api_key` - Gemini API key
+/// * `images` - (ファイル名, 日付Option, DataURL)のベクター
+/// * `master` - 階層マスタ
+/// * `on_progress` - 進捗コールバック (current, total, message)
+///
+/// # Returns
+/// Vec<AnalysisResult>
+pub async fn analyze_with_master(
+    api_key: &str,
+    images: Vec<(String, Option<String>, String)>,  // (file_name, date, data_url)
+    master: &HierarchyMaster,
+    on_progress: impl Fn(usize, usize, &str),
+) -> Result<Vec<AnalysisResult>, JsValue> {
+    let total = 3; // Step1, マスタ絞込み, Step2
+
+    // Step1: 画像認識
+    on_progress(1, total, "Step1: 画像認識中...");
+    let raw_data = analyze_step1(api_key, &images).await?;
+
+    // 工種自動判定
+    on_progress(2, total, "工種を自動判定中...");
+    let detected_work_types = detect_work_types(&raw_data);
+
+    // マスタ絞込み
+    let filtered_master = master.filter_by_work_types(&detected_work_types);
+
+    // Step2: マスタ照合
+    on_progress(3, total, "Step2: マスタ照合中...");
+    let step2_results = analyze_step2(api_key, &raw_data, &filtered_master).await?;
+
+    // ImageMeta作成（WASMではfile_pathは空文字でOK）
+    let image_metas: Vec<ImageMeta> = images
+        .iter()
+        .map(|(file_name, date, _)| ImageMeta {
+            file_name: file_name.clone(),
+            file_path: String::new(),  // WASMでは空文字
+            date: date.clone().unwrap_or_default(),
+        })
+        .collect();
+
+    // 結果マージ
+    let results = merge_results(&raw_data, &step2_results, &image_metas);
+
+    Ok(results)
+}
+
+/// 写真を解析（後方互換性のため維持）
 pub async fn analyze_photo(
     api_key: &str,
     image_data: &str,  // Base64 data URL

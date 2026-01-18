@@ -13,6 +13,9 @@ pub enum Error {
 
     #[error("Config error: {0}")]
     Config(String),
+
+    #[error("Parse error: {0}")]
+    Parse(String),
 }
 
 /// Result型エイリアス
