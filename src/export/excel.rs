@@ -2,24 +2,10 @@
 //!
 //! 共通ライブラリのexcel::generate_excel_bufferを使用
 
-use crate::analyzer::AnalysisResult;
 use crate::error::{PhotoAiError, Result};
-use photo_ai_common::excel::{generate_excel_buffer, ImageData, PhotoData};
+use photo_ai_common::AnalysisResult;
+use photo_ai_common::excel::{generate_excel_buffer, ImageData};
 use std::path::Path;
-
-/// CLI版AnalysisResultにPhotoDataトレイトを実装
-/// （PhotoDataはphoto_ai_commonで定義、AnalysisResultはcrate内で定義なのでOK）
-impl PhotoData for AnalysisResult {
-    fn file_path(&self) -> &str { &self.file_path }
-    fn date(&self) -> &str { &self.date }
-    fn photo_category(&self) -> &str { &self.photo_category }
-    fn work_type(&self) -> &str { &self.work_type }
-    fn variety(&self) -> &str { &self.variety }
-    fn detail(&self) -> &str { &self.detail }
-    fn station(&self) -> &str { &self.station }
-    fn remarks(&self) -> &str { &self.remarks }
-    fn measurements(&self) -> &str { &self.measurements }
-}
 
 /// ファイルパスから画像を読み込む
 fn load_image_from_file(file_path: &str) -> Option<ImageData> {

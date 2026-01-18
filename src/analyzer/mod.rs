@@ -1,13 +1,11 @@
 mod claude_cli;
-mod types;
 pub mod cache;
 
-pub use types::AnalysisResult;
 pub use cache::{CacheFile, filter_cached_images};
 pub use claude_cli::analyze_batch_with_master;
 
 // 共通型は photo_ai_common からre-export
-pub use photo_ai_common::{RawImageData, Step2Result, detect_work_types};
+pub use photo_ai_common::{AnalysisResult, RawImageData, Step2Result, detect_work_types};
 
 use crate::error::Result;
 use crate::scanner::ImageInfo;

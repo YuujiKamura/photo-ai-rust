@@ -8,13 +8,12 @@
 
 use crate::error::{PhotoAiError, Result};
 use crate::scanner::ImageInfo;
-use super::types::AnalysisResult;
 use std::path::PathBuf;
 use std::process::Command;
 
 // 共通モジュールから型と関数をインポート
 use photo_ai_common::{
-    RawImageData, Step2Result, HierarchyMaster, ImageMeta,
+    AnalysisResult, RawImageData, Step2Result, HierarchyMaster, ImageMeta,
     build_step1_prompt, build_step2_prompt,
     parse_step1_response as common_parse_step1,
     parse_step2_response as common_parse_step2,
