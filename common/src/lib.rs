@@ -15,6 +15,7 @@ pub mod hierarchy;
 pub mod parser;
 pub mod analyzer;
 pub mod prompts;
+pub mod excel;
 
 pub use types::{AnalysisResult, RawImageData, Step2Result};
 pub use layout::{PdfLayout, ExcelLayout};
