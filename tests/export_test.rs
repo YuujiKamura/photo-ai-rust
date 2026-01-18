@@ -160,13 +160,19 @@ fn test_pdf_excel_both_generation() {
     assert!(excel_path.exists(), "Excelファイルが作成されていない");
 }
 
-/// Excelに書き込んだデータが正しく読み戻せることを確認
+/// Excelに書き込んだデータが正しく読み戻せることを確認（写真台帳形式）
+///
+/// 写真台帳形式のレイアウト:
+/// - A列(0): 写真セル（マージ）
+/// - B列(1): ラベル（日時、区分、工種、種別、細別、測点、備考、測定値）
+/// - C列(2): 値
+/// - 各写真ブロックは11行（写真10行 + ギャップ1行）
 #[test]
 fn test_excel_data_consistency() {
     let dir = tempdir().expect("Failed to create temp dir");
     let excel_path = dir.path().join("data_check.xlsx");
 
-    // テストデータ作成（特定の値で検証しやすくする）
+    // テストデータ作成
     let results = vec![
         AnalysisResult {
             file_name: "IMG_001.jpg".to_string(),
@@ -181,22 +187,6 @@ fn test_excel_data_consistency() {
             has_board: false,
             photo_category: "施工状況".to_string(),
             measurements: "t=50mm".to_string(),
-            detected_text: String::new(),
-            reasoning: String::new(),
-        },
-        AnalysisResult {
-            file_name: "IMG_002.jpg".to_string(),
-            file_path: String::new(),
-            date: "2026-01-16".to_string(),
-            work_type: "舗装工事".to_string(),
-            variety: "表層工".to_string(),
-            detail: "温度測定".to_string(),
-            station: "No.5+10.0".to_string(),
-            remarks: "到着温度".to_string(),
-            description: String::new(),
-            has_board: false,
-            photo_category: "品質管理".to_string(),
-            measurements: "158℃".to_string(),
             detected_text: String::new(),
             reasoning: String::new(),
         },
@@ -215,48 +205,32 @@ fn test_excel_data_consistency() {
     let range = workbook.worksheet_range(&sheet_name)
         .expect("シートを読み込めない");
 
-    // ヘッダー確認（1行目）
-    let headers: Vec<String> = (0..range.width())
-        .map(|col| {
-            range.get_value((0, col as u32))
-                .map(|v| v.to_string())
-                .unwrap_or_default()
-        })
-        .collect();
+    // 写真台帳形式: B列にラベル、C列に値
+    // 行0: 日時
+    let label_date = range.get_value((0, 1)).map(|v| v.to_string()).unwrap_or_default();
+    assert_eq!(label_date, "日時", "ラベル「日時」がない");
 
-    assert!(headers.contains(&"ファイル名".to_string()), "ヘッダーにファイル名がない");
-    assert!(headers.contains(&"日時".to_string()), "ヘッダーに日時がない");
-    assert!(headers.contains(&"工種".to_string()), "ヘッダーに工種がない");
+    let value_date = range.get_value((0, 2)).map(|v| v.to_string()).unwrap_or_default();
+    assert_eq!(value_date, "2026-01-15", "日付値が一致しない");
 
-    // データ行数確認（ヘッダー1行 + データ2行 = 3行）
-    assert_eq!(range.height(), 3, "行数が一致しない");
+    // 行2: 工種
+    let label_work = range.get_value((2, 1)).map(|v| v.to_string()).unwrap_or_default();
+    assert_eq!(label_work, "工種", "ラベル「工種」がない");
 
-    // 1行目のデータ確認
-    let row1_file = range.get_value((1, 0))
-        .map(|v| v.to_string())
-        .unwrap_or_default();
-    assert_eq!(row1_file, "IMG_001.jpg", "ファイル名が一致しない");
+    let value_work = range.get_value((2, 2)).map(|v| v.to_string()).unwrap_or_default();
+    assert_eq!(value_work, "舗装工事", "工種値が一致しない");
 
-    let row1_date = range.get_value((1, 1))
-        .map(|v| v.to_string())
-        .unwrap_or_default();
-    assert_eq!(row1_date, "2026-01-15", "日時が一致しない");
+    // 行5: 測点
+    let label_station = range.get_value((5, 1)).map(|v| v.to_string()).unwrap_or_default();
+    assert_eq!(label_station, "測点", "ラベル「測点」がない");
 
-    // 2行目のデータ確認
-    let row2_file = range.get_value((2, 0))
-        .map(|v| v.to_string())
-        .unwrap_or_default();
-    assert_eq!(row2_file, "IMG_002.jpg", "2行目ファイル名が一致しない");
+    let value_station = range.get_value((5, 2)).map(|v| v.to_string()).unwrap_or_default();
+    assert_eq!(value_station, "No.5+10.0", "測点値が一致しない");
 
-    let row2_measurements = range.get_value((2, 8))
-        .map(|v| v.to_string())
-        .unwrap_or_default();
-    assert_eq!(row2_measurements, "158℃", "測定値が一致しない");
-
-    println!("Excel整合性検証: 全項目一致");
+    println!("Excel整合性検証（写真台帳形式）: 全項目一致");
 }
 
-/// 日本語文字が正しく保存・読み戻しされることを確認
+/// 日本語文字が正しく保存・読み戻しされることを確認（写真台帳形式）
 #[test]
 fn test_excel_japanese_text() {
     let dir = tempdir().expect("Failed to create temp dir");
@@ -291,16 +265,23 @@ fn test_excel_japanese_text() {
     let sheet_name = workbook.sheet_names().first().cloned().unwrap();
     let range = workbook.worksheet_range(&sheet_name).unwrap();
 
-    // 日本語が正しく保存されているか確認
-    let file_name = range.get_value((1, 0)).map(|v| v.to_string()).unwrap_or_default();
-    assert_eq!(file_name, "写真001.jpg", "日本語ファイル名が壊れている");
+    // 写真台帳形式: B列(1)=ラベル、C列(2)=値
+    // 行0: 日時
+    let value_date = range.get_value((0, 2)).map(|v| v.to_string()).unwrap_or_default();
+    assert_eq!(value_date, "令和8年1月18日", "日本語日付が壊れている");
 
-    let work_type = range.get_value((1, 3)).map(|v| v.to_string()).unwrap_or_default();
-    assert_eq!(work_type, "道路舗装工事", "日本語工種が壊れている");
+    // 行2: 工種
+    let value_work = range.get_value((2, 2)).map(|v| v.to_string()).unwrap_or_default();
+    assert_eq!(value_work, "道路舗装工事", "日本語工種が壊れている");
 
-    let remarks = range.get_value((1, 7)).map(|v| v.to_string()).unwrap_or_default();
-    assert!(remarks.contains("晴れ"), "日本語備考が壊れている: {}", remarks);
-    assert!(remarks.contains("℃"), "特殊文字が壊れている: {}", remarks);
+    // 行6: 備考（row_span=2なのでマージセル、calamine読み取り時は先頭行に値）
+    let value_remarks = range.get_value((6, 2)).map(|v| v.to_string()).unwrap_or_default();
+    assert!(value_remarks.contains("晴れ"), "日本語備考が壊れている: {}", value_remarks);
+    assert!(value_remarks.contains("℃"), "特殊文字が壊れている: {}", value_remarks);
 
-    println!("日本語テスト: 全項目正常");
+    // 行8: 測定値（row_span=3）
+    let value_measurements = range.get_value((8, 2)).map(|v| v.to_string()).unwrap_or_default();
+    assert_eq!(value_measurements, "厚さ50mm", "日本語測定値が壊れている");
+
+    println!("日本語テスト（写真台帳形式）: 全項目正常");
 }
