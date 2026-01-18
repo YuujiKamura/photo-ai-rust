@@ -135,7 +135,7 @@ pub fn compute_file_hash(path: &Path) -> Result<String> {
     let size = buffer.len();
     let head: u64 = buffer.iter().take(1024).map(|&b| b as u64).sum();
     let tail: u64 = buffer.iter().rev().take(1024).map(|&b| b as u64).sum();
-    let checksum: u64 = buffer.iter().step_by(1000.max(1)).map(|&b| b as u64).sum();
+    let checksum: u64 = buffer.iter().step_by(1000).map(|&b| b as u64).sum();
 
     Ok(format!("{:x}{:x}{:x}{:x}", size, head, tail, checksum))
 }

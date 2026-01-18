@@ -16,7 +16,7 @@ pub async fn analyze_images(
     verbose: bool,
 ) -> Result<Vec<AnalysisResult>> {
     let mut results = Vec::new();
-    let total_batches = (images.len() + batch_size - 1) / batch_size;
+    let total_batches = images.len().div_ceil(batch_size);
 
     // プログレスバーの設定（推定残り時間・処理速度表示）
     let pb = ProgressBar::new(total_batches as u64);

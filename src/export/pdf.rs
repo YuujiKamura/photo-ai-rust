@@ -78,7 +78,7 @@ pub fn generate_pdf(
     title: &str,
     quality: PdfQuality,
 ) -> Result<()> {
-    let photos_per_page = photos_per_page.max(2).min(3) as usize;
+    let photos_per_page = photos_per_page.clamp(2, 3) as usize;
 
     // ========== React版と同一の定数（pt単位） ==========
     let a4_width_pt = mm_to_pt(layout::A4_WIDTH_MM);
@@ -96,7 +96,7 @@ pub fn generate_pdf(
     // printpdf 0.8: ドキュメント作成
     let mut doc = PdfDocument::new(title);
     let fonts = load_fonts(&mut doc)?;
-    let total_pages = (results.len() + photos_per_page - 1) / photos_per_page;
+    let total_pages = results.len().div_ceil(photos_per_page);
 
     // 画像をドキュメントに追加してIDを取得
     let mut image_ids: Vec<Option<XObjectId>> = Vec::with_capacity(results.len());
@@ -333,6 +333,7 @@ fn add_text_ops_bold(ops: &mut Vec<Op>, text: &str, x_pt: f32, y_pt: f32, size: 
 }
 
 /// ヘッダー描画オペレーション追加
+#[allow(clippy::too_many_arguments)]
 fn add_header_ops(
     ops: &mut Vec<Op>,
     title: &str,
@@ -368,6 +369,7 @@ fn add_header_ops(
 }
 
 /// 画像描画オペレーション追加
+#[allow(clippy::too_many_arguments)]
 fn add_image_ops(
     ops: &mut Vec<Op>,
     image_id: &XObjectId,

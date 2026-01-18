@@ -147,7 +147,7 @@ async fn main() -> Result<()> {
             let target = folder.unwrap_or_else(|| std::path::PathBuf::from("."));
             let cache_path = analyzer::CacheFile::cache_path(&target);
 
-            if info || (!clear && !info) {
+            if info || !clear {
                 // デフォルトまたは--info: 情報表示
                 if cache_path.exists() {
                     let cache = analyzer::CacheFile::load(&target);
