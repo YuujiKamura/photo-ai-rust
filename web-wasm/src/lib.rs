@@ -4,6 +4,7 @@ mod app;
 mod components;
 mod api;
 mod export;
+mod secure_store;
 
 use wasm_bindgen::prelude::*;
 use leptos::prelude::*;

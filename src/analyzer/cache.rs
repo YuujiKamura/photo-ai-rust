@@ -125,19 +125,24 @@ impl Default for CacheFile {
 
 /// 画像ファイルのハッシュを計算（MD5）
 pub fn compute_file_hash(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
     use std::io::Read;
 
-    let mut file = File::open(path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
 
-    // 簡易ハッシュ: サイズ + 先頭/末尾バイト + チェックサム
-    let size = buffer.len();
-    let head: u64 = buffer.iter().take(1024).map(|&b| b as u64).sum();
-    let tail: u64 = buffer.iter().rev().take(1024).map(|&b| b as u64).sum();
-    let checksum: u64 = buffer.iter().step_by(1000).map(|&b| b as u64).sum();
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
 
-    Ok(format!("{:x}{:x}{:x}{:x}", size, head, tail, checksum))
+    let digest = hasher.finalize();
+    Ok(hex::encode(digest))
 }
 
 /// キャッシュを使用して解析結果を取得
