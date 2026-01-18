@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
     let config = Config::load()?;
 
     match cli.command {
-        Commands::Analyze { folder, output, batch_size, master, use_cache, recursive } => {
+        Commands::Analyze { folder, output, batch_size, master, use_cache, recursive, include_all } => {
             println!("📸 photo-ai-rust - 写真解析\n");
             let has_master_arg = master.is_some();
             let master_path = resolve_master_path(master);
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
 
             // 1. 画像スキャン
             println!("[1/3] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
-            let images = scanner::scan_folder_with_options(&folder, recursive)?;
+            let images = scanner::scan_folder_full(&folder, recursive, !include_all)?;
             println!("✔ {}枚の写真を検出\n", images.len());
 
             if images.is_empty() {
@@ -131,7 +131,7 @@ async fn main() -> Result<()> {
             println!("\n✅ エクスポート完了");
         }
 
-        Commands::Run { folder, output, format, batch_size, master, pdf_quality, use_cache, recursive } => {
+        Commands::Run { folder, output, format, batch_size, master, pdf_quality, use_cache, recursive, include_all } => {
             println!("🚀 photo-ai-rust - 一括処理\n");
             let has_master_arg = master.is_some();
             let master_path = resolve_master_path(master);
@@ -143,7 +143,7 @@ async fn main() -> Result<()> {
 
             // 1. Scan
             println!("[1/4] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
-            let images = scanner::scan_folder_with_options(&folder, recursive)?;
+            let images = scanner::scan_folder_full(&folder, recursive, !include_all)?;
             println!("✔ {}枚の写真を検出\n", images.len());
 
             if images.is_empty() {

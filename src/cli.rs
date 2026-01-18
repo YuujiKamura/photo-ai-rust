@@ -45,6 +45,10 @@ pub enum Commands {
         /// サブフォルダも再帰的にスキャン
         #[arg(short = 'r', long)]
         recursive: bool,
+
+        /// 除外フォルダも含める（デフォルトは「非使用」等を除外）
+        #[arg(long)]
+        include_all: bool,
     },
 
     /// 解析結果からPDF/Excelを生成
@@ -115,6 +119,10 @@ pub enum Commands {
         /// サブフォルダも再帰的にスキャン
         #[arg(short = 'r', long)]
         recursive: bool,
+
+        /// 除外フォルダも含める（デフォルトは「非使用」等を除外）
+        #[arg(long)]
+        include_all: bool,
     },
 
     /// 設定を表示/編集
