@@ -8,33 +8,14 @@
 use crate::types::RawImageData;
 use crate::hierarchy::HierarchyMaster;
 
-/// 写真区分（フォトカテゴリ）
+/// 写真区分（工種階層マスタの写真種別）
 pub const PHOTO_CATEGORIES: &[&str] = &[
-    // 品質管理 - 温度測定
-    "到着温度", "敷均し温度", "初期締固め前温度", "開放温度",
-    "アスファルト混合物温度測定",
-    // 品質管理 - 密度測定
-    "現場密度測定",
-    // 施工状況
-    "転圧状況", "敷均し状況", "舗設状況", "初期転圧状況", "2次転圧状況",
-    "乳剤散布状況", "端部乳剤塗布状況", "養生砂散布状況", "清掃状況",
-    "掘削状況", "積込状況", "取壊し状況", "据付状況", "設置状況",
-    // 着手前・完成
-    "着手前", "完了", "竣工", "施工完了", "既済部分",
-    // 出来形管理
-    "不陸整正出来形", "路盤厚出来形", "表層厚出来形", "幅員出来形",
-    // 安全管理
-    "朝礼実施状況", "朝礼・KYミーティング実施状況", "朝礼状況",
-    "KY活動状況", "危険予知活動状況", "KYミーティング実施状況",
-    "新規入場者教育状況", "新規入場者教育実施状況",
-    "保安施設設置状況", "点灯確認状況", "安全巡視状況",
-    "安全訓練実施状況", "避難訓練実施状況",
-    // 災害・事故
-    "災害発生状況", "事故発生状況", "被害状況",
-    // 環境対策
-    "環境対策状況", "騒音対策状況", "粉塵対策状況",
-    // その他
-    "その他"
+    "使用材料写真",
+    "出来形管理写真",
+    "品質管理写真",
+    "安全管理写真",
+    "施工状況写真",
+    "着手前及び完成写真",
 ];
 
 /// Step1プロンプト生成（画像認識用）
@@ -62,7 +43,7 @@ pub fn build_step1_prompt(images: &[(&str, Option<&str>)]) -> String {
     format!(
         r#"あなたは工事写真帳を作成する現場監督です。複数の写真を同時に解析し、一貫性のある分類を行ってください。
 
-## 写真区分（フォトカテゴリ）
+## 写真区分（写真種別）
 以下から最も適切なものを選択：
 {categories}
 
@@ -175,26 +156,14 @@ mod tests {
     }
 
     #[test]
-    fn test_photo_categories_contains_temperature() {
-        assert!(PHOTO_CATEGORIES.contains(&"到着温度"));
-        assert!(PHOTO_CATEGORIES.contains(&"敷均し温度"));
-    }
-
     #[test]
     fn test_photo_categories_contains_construction() {
-        assert!(PHOTO_CATEGORIES.contains(&"転圧状況"));
-        assert!(PHOTO_CATEGORIES.contains(&"舗設状況"));
+        assert!(PHOTO_CATEGORIES.contains(&"施工状況写真"));
     }
 
     #[test]
     fn test_photo_categories_contains_safety() {
-        assert!(PHOTO_CATEGORIES.contains(&"朝礼実施状況"));
-        assert!(PHOTO_CATEGORIES.contains(&"KY活動状況"));
-    }
-
-    #[test]
-    fn test_photo_categories_contains_other() {
-        assert!(PHOTO_CATEGORIES.contains(&"その他"));
+        assert!(PHOTO_CATEGORIES.contains(&"安全管理写真"));
     }
 
     // =============================================
@@ -208,7 +177,7 @@ mod tests {
 
         assert!(prompt.contains("test.jpg"));
         assert!(prompt.contains("2025-01-18"));
-        assert!(prompt.contains("到着温度"));
+        assert!(prompt.contains("施工状況写真"));
         assert!(prompt.contains("JSON配列のみ出力"));
     }
 
@@ -234,7 +203,7 @@ mod tests {
         let prompt = build_step1_prompt(&images);
 
         // カテゴリがカンマ区切りで含まれていること
-        assert!(prompt.contains("到着温度, 敷均し温度"));
+        assert!(prompt.contains("使用材料写真, 出来形管理写真"));
     }
 
     #[test]
@@ -257,7 +226,7 @@ mod tests {
 
         // 空でもプロンプトは生成される
         assert!(prompt.contains("対象写真:"));
-        assert!(prompt.contains("到着温度"));
+        assert!(prompt.contains("施工状況写真"));
     }
 
     // =============================================
