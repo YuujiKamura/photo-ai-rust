@@ -1,7 +1,7 @@
 ---
 name: progress-display
 description: 進捗表示の改善
-status: backlog
+status: done
 created: 2026-01-18
 github_issue: 31
 ---
