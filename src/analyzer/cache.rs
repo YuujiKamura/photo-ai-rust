@@ -5,7 +5,7 @@
 
 use crate::error::Result;
 use crate::scanner::ImageInfo;
-use super::types::AnalysisResult;
+use photo_ai_common::AnalysisResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
