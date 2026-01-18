@@ -606,7 +606,7 @@ mod tests {
             .collect();
         let prompt = build_step1_prompt(&image_meta);
         assert!(prompt.contains("test.jpg"));
-        assert!(prompt.contains("到着温度"));
+        assert!(prompt.contains("施工状況写真")); // PHOTO_CATEGORIESから
         assert!(prompt.contains("JSON配列のみ出力"));
     }
 
