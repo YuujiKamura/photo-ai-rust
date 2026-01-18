@@ -11,10 +11,17 @@ use std::path::Path;
 fn load_image_from_file(file_path: &str) -> Option<ImageData> {
     let path = Path::new(file_path);
     if !path.exists() {
+        eprintln!("警告: 画像ファイルが見つかりません: {}", file_path);
         return None;
     }
 
-    let data = std::fs::read(path).ok()?;
+    let data = match std::fs::read(path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("警告: 画像読み込み失敗 ({}): {}", file_path, e);
+            return None;
+        }
+    };
     let extension = path
         .extension()
         .and_then(|e| e.to_str())
