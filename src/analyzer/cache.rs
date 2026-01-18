@@ -123,7 +123,7 @@ impl Default for CacheFile {
     }
 }
 
-/// 画像ファイルのハッシュを計算（MD5）
+/// 画像ファイルのハッシュを計算（SHA256）
 pub fn compute_file_hash(path: &Path) -> Result<String> {
     use sha2::{Digest, Sha256};
     use std::io::Read;
