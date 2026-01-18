@@ -41,6 +41,10 @@ pub enum Commands {
         /// キャッシュを使用（再解析をスキップ）
         #[arg(long)]
         use_cache: bool,
+
+        /// サブフォルダも再帰的にスキャン
+        #[arg(short = 'r', long)]
+        recursive: bool,
     },
 
     /// 解析結果からPDF/Excelを生成
@@ -107,6 +111,10 @@ pub enum Commands {
         /// キャッシュを使用（再解析をスキップ）
         #[arg(long)]
         use_cache: bool,
+
+        /// サブフォルダも再帰的にスキャン
+        #[arg(short = 'r', long)]
+        recursive: bool,
     },
 
     /// 設定を表示/編集

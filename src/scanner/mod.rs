@@ -14,16 +14,27 @@ pub struct ImageInfo {
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "JPG", "JPEG", "PNG"];
 
 pub fn scan_folder(folder: &Path) -> Result<Vec<ImageInfo>> {
+    scan_folder_with_options(folder, false)
+}
+
+pub fn scan_folder_recursive(folder: &Path) -> Result<Vec<ImageInfo>> {
+    scan_folder_with_options(folder, true)
+}
+
+pub fn scan_folder_with_options(folder: &Path, recursive: bool) -> Result<Vec<ImageInfo>> {
     if !folder.exists() {
         return Err(PhotoAiError::FolderNotFound(folder.display().to_string()));
     }
 
     let mut images = Vec::new();
 
-    for entry in WalkDir::new(folder)
-        .max_depth(1)  // 直下のみ（再帰しない）
-        .into_iter()
-        .filter_map(|e| e.ok())
+    let walker = if recursive {
+        WalkDir::new(folder)
+    } else {
+        WalkDir::new(folder).max_depth(1)
+    };
+
+    for entry in walker.into_iter().filter_map(|e| e.ok())
     {
         let path = entry.path();
 
