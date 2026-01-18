@@ -31,6 +31,9 @@ jobs:
           chmod +x trunk
           sudo mv trunk /usr/local/bin/
 
+      - name: Run Tests
+        run: cargo test --workspace
+
       - name: Build WASM
         run: |
           cd web-wasm

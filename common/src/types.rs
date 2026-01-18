@@ -49,3 +49,86 @@ pub struct AnalysisResult {
     #[serde(default)]
     pub reasoning: String,        // 分類理由
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_analysis_result_default() {
+        let result = AnalysisResult::default();
+        assert_eq!(result.file_name, "");
+        assert_eq!(result.has_board, false);
+    }
+
+    #[test]
+    fn test_analysis_result_serialize() {
+        let result = AnalysisResult {
+            file_name: "test.jpg".to_string(),
+            work_type: "舗装工".to_string(),
+            variety: "表層工".to_string(),
+            has_board: true,
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&result).expect("シリアライズ失敗");
+        assert!(json.contains("\"fileName\":\"test.jpg\""));
+        assert!(json.contains("\"workType\":\"舗装工\""));
+        assert!(json.contains("\"hasBoard\":true"));
+    }
+
+    #[test]
+    fn test_analysis_result_deserialize() {
+        let json = r#"{
+            "fileName": "photo.jpg",
+            "workType": "区画線工",
+            "photoCategory": "施工状況写真",
+            "hasBoard": false
+        }"#;
+
+        let result: AnalysisResult = serde_json::from_str(json).expect("デシリアライズ失敗");
+        assert_eq!(result.file_name, "photo.jpg");
+        assert_eq!(result.work_type, "区画線工");
+        assert_eq!(result.photo_category, "施工状況写真");
+        assert_eq!(result.has_board, false);
+    }
+
+    #[test]
+    fn test_analysis_result_deserialize_missing_fields() {
+        // 必須フィールドのみでデシリアライズできることを確認
+        let json = r#"{"fileName": "minimal.jpg"}"#;
+
+        let result: AnalysisResult = serde_json::from_str(json).expect("デシリアライズ失敗");
+        assert_eq!(result.file_name, "minimal.jpg");
+        assert_eq!(result.work_type, ""); // デフォルト値
+        assert_eq!(result.has_board, false); // デフォルト値
+    }
+
+    #[test]
+    fn test_analysis_result_roundtrip() {
+        let original = AnalysisResult {
+            file_name: "roundtrip.jpg".to_string(),
+            date: "2025-01-18".to_string(),
+            work_type: "舗装工".to_string(),
+            variety: "舗装打換え工".to_string(),
+            detail: "表層工".to_string(),
+            station: "No.10".to_string(),
+            remarks: "備考テスト".to_string(),
+            description: "説明テスト".to_string(),
+            has_board: true,
+            detected_text: "黒板テキスト".to_string(),
+            measurements: "厚さ50mm".to_string(),
+            photo_category: "品質管理写真".to_string(),
+            reasoning: "分類理由".to_string(),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&original).expect("シリアライズ失敗");
+        let restored: AnalysisResult = serde_json::from_str(&json).expect("デシリアライズ失敗");
+
+        assert_eq!(original.file_name, restored.file_name);
+        assert_eq!(original.work_type, restored.work_type);
+        assert_eq!(original.has_board, restored.has_board);
+        assert_eq!(original.photo_category, restored.photo_category);
+    }
+}

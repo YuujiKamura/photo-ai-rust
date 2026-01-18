@@ -62,6 +62,32 @@ struct ResponsePart {
     text: String,
 }
 
+/// Data URLからBase64データ部分を抽出
+///
+/// # Arguments
+/// * `data_url` - "data:image/jpeg;base64,/9j/4AAQ..." 形式のData URL
+///
+/// # Returns
+/// Base64エンコードされたデータ部分、または抽出失敗時はNone
+pub fn extract_base64_from_data_url(data_url: &str) -> Option<&str> {
+    data_url.split(',').nth(1)
+}
+
+/// Data URLからMIMEタイプを抽出
+///
+/// # Arguments
+/// * `data_url` - "data:image/jpeg;base64,..." 形式のData URL
+///
+/// # Returns
+/// MIMEタイプ（例: "image/jpeg"）、抽出失敗時は"image/jpeg"をデフォルトとして返す
+pub fn extract_mime_type_from_data_url(data_url: &str) -> &str {
+    data_url
+        .split(':')
+        .nth(1)
+        .and_then(|s| s.split(';').next())
+        .unwrap_or("image/jpeg")
+}
+
 /// 写真を解析
 pub async fn analyze_photo(
     api_key: &str,
@@ -69,17 +95,11 @@ pub async fn analyze_photo(
     file_name: &str,
 ) -> Result<AnalysisResult, JsValue> {
     // Data URLからBase64部分を抽出
-    let base64_data = image_data
-        .split(',')
-        .nth(1)
+    let base64_data = extract_base64_from_data_url(image_data)
         .ok_or_else(|| JsValue::from_str("Invalid data URL"))?;
 
     // MIMEタイプを取得
-    let mime_type = image_data
-        .split(':')
-        .nth(1)
-        .and_then(|s| s.split(';').next())
-        .unwrap_or("image/jpeg");
+    let mime_type = extract_mime_type_from_data_url(image_data);
 
     // プロンプト
     let prompt = r#"この工事写真を分析し、以下のJSON形式で情報を抽出してください。
@@ -179,4 +199,146 @@ pub async fn analyze_batch(
     }
 
     results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =============================================
+    // Data URL抽出テスト
+    // =============================================
+
+    #[test]
+    fn test_extract_base64_from_data_url_jpeg() {
+        let data_url = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+        let result = extract_base64_from_data_url(data_url);
+        assert_eq!(result, Some("/9j/4AAQSkZJRg=="));
+    }
+
+    #[test]
+    fn test_extract_base64_from_data_url_png() {
+        let data_url = "data:image/png;base64,iVBORw0KGgo=";
+        let result = extract_base64_from_data_url(data_url);
+        assert_eq!(result, Some("iVBORw0KGgo="));
+    }
+
+    #[test]
+    fn test_extract_base64_from_data_url_invalid() {
+        let invalid_url = "not a data url";
+        let result = extract_base64_from_data_url(invalid_url);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_base64_from_data_url_empty() {
+        let empty_url = "";
+        let result = extract_base64_from_data_url(empty_url);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_mime_type_jpeg() {
+        let data_url = "data:image/jpeg;base64,/9j/4AAQ";
+        let result = extract_mime_type_from_data_url(data_url);
+        assert_eq!(result, "image/jpeg");
+    }
+
+    #[test]
+    fn test_extract_mime_type_png() {
+        let data_url = "data:image/png;base64,iVBORw0KGgo=";
+        let result = extract_mime_type_from_data_url(data_url);
+        assert_eq!(result, "image/png");
+    }
+
+    #[test]
+    fn test_extract_mime_type_webp() {
+        let data_url = "data:image/webp;base64,UklGR";
+        let result = extract_mime_type_from_data_url(data_url);
+        assert_eq!(result, "image/webp");
+    }
+
+    #[test]
+    fn test_extract_mime_type_default() {
+        // 不正なフォーマットの場合はデフォルト値を返す
+        let invalid_url = "invalid";
+        let result = extract_mime_type_from_data_url(invalid_url);
+        assert_eq!(result, "image/jpeg");
+    }
+
+    // =============================================
+    // Gemini リクエスト/レスポンス シリアライズテスト
+    // =============================================
+
+    #[test]
+    fn test_gemini_request_serialize() {
+        let request = GeminiRequest {
+            contents: vec![Content {
+                parts: vec![
+                    Part::Text { text: "テストプロンプト".to_string() },
+                ],
+            }],
+            generation_config: GenerationConfig {
+                temperature: 0.1,
+                response_mime_type: "application/json".to_string(),
+            },
+        };
+
+        let json = serde_json::to_string(&request).expect("シリアライズ失敗");
+        assert!(json.contains("\"contents\""));
+        assert!(json.contains("\"generationConfig\""));
+        assert!(json.contains("\"temperature\":0.1"));
+        assert!(json.contains("\"responseMimeType\":\"application/json\""));
+    }
+
+    #[test]
+    fn test_part_text_serialize() {
+        let part = Part::Text { text: "Hello".to_string() };
+        let json = serde_json::to_string(&part).expect("シリアライズ失敗");
+        assert_eq!(json, r#"{"text":"Hello"}"#);
+    }
+
+    #[test]
+    fn test_part_inline_data_serialize() {
+        let part = Part::InlineData {
+            inline_data: InlineData {
+                mime_type: "image/jpeg".to_string(),
+                data: "base64data".to_string(),
+            },
+        };
+        let json = serde_json::to_string(&part).expect("シリアライズ失敗");
+        assert!(json.contains("\"inline_data\""));
+        assert!(json.contains("\"mime_type\":\"image/jpeg\""));
+        assert!(json.contains("\"data\":\"base64data\""));
+    }
+
+    #[test]
+    fn test_gemini_response_deserialize() {
+        let json = r#"{
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": "{\"workType\": \"舗装工\"}"
+                    }]
+                }
+            }]
+        }"#;
+
+        let response: GeminiResponse = serde_json::from_str(json).expect("デシリアライズ失敗");
+        assert_eq!(response.candidates.len(), 1);
+        assert_eq!(response.candidates[0].content.parts.len(), 1);
+        assert!(response.candidates[0].content.parts[0].text.contains("舗装工"));
+    }
+
+    #[test]
+    fn test_generation_config_serialize() {
+        let config = GenerationConfig {
+            temperature: 0.5,
+            response_mime_type: "text/plain".to_string(),
+        };
+
+        let json = serde_json::to_string(&config).expect("シリアライズ失敗");
+        assert!(json.contains("\"temperature\":0.5"));
+        assert!(json.contains("\"responseMimeType\":\"text/plain\""));
+    }
 }
