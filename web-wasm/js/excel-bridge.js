@@ -147,10 +147,11 @@ export async function generateExcel(photosJson, optionsJson) {
         bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } }
       };
 
+      const imageDataUrl = photo.imageDataUrl || photo.filePath;
       // 画像を追加
-      if (photo.imageDataUrl) {
+      if (imageDataUrl) {
         try {
-          const imageId = addImageToWorkbook(workbook, photo.imageDataUrl);
+          const imageId = addImageToWorkbook(workbook, imageDataUrl);
           if (imageId !== null) {
             sheet.addImage(imageId, {
               tl: { col: 0, row: startRow - 1 },

@@ -2,7 +2,7 @@
 //!
 //! JavaScript Bridge経由でpdf-libを使用してPDF生成
 
-use crate::export::js_bindings::{generate_pdf_js, JsLayoutConfig, JsPhotoEntry};
+use crate::export::js_bindings::{generate_pdf_js, layout_to_json, photos_to_json};
 use photo_ai_common::{AnalysisResult, PdfLayout};
 
 /// PDFを生成してバイト配列を返す
@@ -13,15 +13,8 @@ pub async fn generate_pdf(
 ) -> Result<Vec<u8>, String> {
     let layout = PdfLayout::for_photos_per_page(photos_per_page);
 
-    // AnalysisResult → JsPhotoEntry 変換
-    let photos: Vec<JsPhotoEntry> = results.iter().map(JsPhotoEntry::from).collect();
-
-    let photos_json =
-        serde_json::to_string(&photos).map_err(|e| format!("JSON serialization failed: {}", e))?;
-
-    let layout_config = JsLayoutConfig::from(&layout);
-    let layout_json = serde_json::to_string(&layout_config)
-        .map_err(|e| format!("Layout serialization failed: {}", e))?;
+    let photos_json = photos_to_json(results)?;
+    let layout_json = layout_to_json(&layout)?;
 
     let options_json = serde_json::to_string(&serde_json::json!({
         "title": title
