@@ -4,7 +4,7 @@ use cli::{Cli, Commands};
 use config::Config;
 use error::Result;
 use photo_ai_common::HierarchyMaster;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// AI解析を実行（マスタ有無・キャッシュ有無で分岐）
 async fn run_analysis(
@@ -31,6 +31,19 @@ async fn run_analysis(
     }
 }
 
+fn resolve_master_path(master: Option<PathBuf>) -> Option<PathBuf> {
+    if master.is_some() {
+        return master;
+    }
+
+    let default_path = PathBuf::from("master").join("construction_hierarchy.csv");
+    if default_path.exists() {
+        Some(default_path)
+    } else {
+        None
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -39,6 +52,13 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Analyze { folder, output, batch_size, master, use_cache } => {
             println!("📸 photo-ai-rust - 写真解析\n");
+            let has_master_arg = master.is_some();
+            let master_path = resolve_master_path(master);
+            if !has_master_arg {
+                if let Some(path) = master_path.as_ref() {
+                    println!("- デフォルトマスタを使用: {}", path.display());
+                }
+            }
 
             // 1. 画像スキャン
             println!("[1/3] 写真をスキャン中...");
@@ -57,7 +77,7 @@ async fn main() -> Result<()> {
                 &folder,
                 batch_size,
                 cli.verbose,
-                master.as_deref(),
+                master_path.as_deref(),
                 use_cache,
                 "[2/3]",
             ).await?;
@@ -111,6 +131,13 @@ async fn main() -> Result<()> {
 
         Commands::Run { folder, output, format, batch_size, master, pdf_quality, use_cache } => {
             println!("🚀 photo-ai-rust - 一括処理\n");
+            let has_master_arg = master.is_some();
+            let master_path = resolve_master_path(master);
+            if !has_master_arg {
+                if let Some(path) = master_path.as_ref() {
+                    println!("- デフォルトマスタを使用: {}", path.display());
+                }
+            }
 
             // 1. Scan
             println!("[1/4] 写真をスキャン中...");
@@ -129,7 +156,7 @@ async fn main() -> Result<()> {
                 &folder,
                 batch_size,
                 cli.verbose,
-                master.as_deref(),
+                master_path.as_deref(),
                 use_cache,
                 "[2/4]",
             ).await?;
