@@ -220,7 +220,7 @@ pub async fn analyze_batch_with_master(
 
     // 結果マージ
     let mut results = merge_results(&raw_data, &step2_results, images);
-    sanitize_remarks(&mut results, master);
+    sanitize_classification(&mut results, &filtered_master);
     Ok(results)
 }
 
@@ -448,15 +448,38 @@ fn parse_step2_response(response: &str) -> Result<Vec<Step2Result>> {
         .map_err(|e| PhotoAiError::ApiParse(format!("Step2 JSONパースエラー: {}", e)))
 }
 
-fn sanitize_remarks(results: &mut [AnalysisResult], master: &HierarchyMaster) {
+fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMaster) {
+    let work_types = master.get_work_types();
     let mut allowed = std::collections::HashSet::new();
     for row in master.rows() {
-        if !row.shooting_content.is_empty() {
-            allowed.insert(row.shooting_content.as_str());
+        if !row.remarks.is_empty() {
+            allowed.insert(row.remarks.as_str());
         }
     }
 
     for result in results.iter_mut() {
+        if !work_types.contains(&result.work_type.as_str()) {
+            result.work_type.clear();
+        }
+
+        if !result.work_type.is_empty() {
+            let varieties = master.get_varieties(&result.work_type);
+            if !varieties.contains(&result.variety.as_str()) {
+                result.variety.clear();
+            }
+        } else {
+            result.variety.clear();
+        }
+
+        if !result.work_type.is_empty() && !result.variety.is_empty() {
+            let details = master.get_details(&result.work_type, &result.variety);
+            if !details.contains(&result.detail.as_str()) {
+                result.detail.clear();
+            }
+        } else {
+            result.detail.clear();
+        }
+
         if !result.remarks.is_empty() && !allowed.contains(result.remarks.as_str()) {
             result.remarks.clear();
         }
