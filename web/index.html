@@ -122,7 +122,7 @@
     // Noto Sans JP フォント (Google Fonts)
     const FONT_URL = 'https://fonts.gstatic.com/s/notosansjp/v52/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.ttf';
 
-    // Constants (same as React version)
+    // Constants (same as Rust version)
     const A4_WIDTH = 595.28;
     const A4_HEIGHT = 841.89;
     const MARGIN = 40;
@@ -130,6 +130,7 @@
     const GAP = 5;
     const IMAGE_RATIO = 0.65;
     const INFO_RATIO = 0.35;
+    const UNIFIED_FONT_SIZE = 12; // Rust版と統一
 
     // State
     let photos = [];
@@ -362,8 +363,8 @@
         const pagePhotos = photos.slice(pageNum * photosPerPage, (pageNum + 1) * photosPerPage);
 
         // Header
-        page.drawText(title, { x: MARGIN, y: A4_HEIGHT - MARGIN - 20, size: 14, font: japaneseFont, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(`Page ${pageNum + 1} / ${totalPages}`, { x: A4_WIDTH - MARGIN - 80, y: A4_HEIGHT - MARGIN - 20, size: 10, font: japaneseFont, color: rgb(0.5, 0.5, 0.5) });
+        page.drawText(title, { x: MARGIN, y: A4_HEIGHT - MARGIN - 20, size: UNIFIED_FONT_SIZE, font: japaneseFont, color: rgb(0.2, 0.2, 0.2) });
+        page.drawText(`Page ${pageNum + 1} / ${totalPages}`, { x: A4_WIDTH - MARGIN - 80, y: A4_HEIGHT - MARGIN - 20, size: UNIFIED_FONT_SIZE, font: japaneseFont, color: rgb(0.5, 0.5, 0.5) });
 
         for (let i = 0; i < pagePhotos.length; i++) {
           const photo = pagePhotos[i];
@@ -415,12 +416,12 @@
             const y = rowY + photoHeight - 15 - idx * 16;
             if (y > rowY + 5) {
               page.drawText(`${line.label}: ${(line.value || '-').substring(0, 25)}`, {
-                x: infoX + 5, y, size: 8, font: japaneseFont, color: rgb(0.2, 0.2, 0.2)
+                x: infoX + 5, y, size: UNIFIED_FONT_SIZE, font: japaneseFont, color: rgb(0.2, 0.2, 0.2)
               });
             }
           });
 
-          page.drawText(photo.fileName, { x: infoX + 5, y: rowY + 5, size: 7, font: japaneseFont, color: rgb(0.5, 0.5, 0.5) });
+          page.drawText(photo.fileName, { x: infoX + 5, y: rowY + 5, size: UNIFIED_FONT_SIZE, font: japaneseFont, color: rgb(0.5, 0.5, 0.5) });
         }
       }
 
