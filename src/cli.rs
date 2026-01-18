@@ -125,6 +125,21 @@ pub enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+
+    /// キャッシュ管理
+    Cache {
+        /// キャッシュを削除
+        #[arg(long)]
+        clear: bool,
+
+        /// 対象フォルダ（省略時はカレント）
+        #[arg(short, long)]
+        folder: Option<PathBuf>,
+
+        /// キャッシュ情報を表示
+        #[arg(long)]
+        info: bool,
+    },
 }
 
 #[derive(Clone, Debug, Default)]

@@ -132,6 +132,34 @@ async fn main() -> Result<()> {
             println!("📍 photo-ai-rust - 測点入力\n");
             station::run_interactive_station(&input, output.as_deref())?;
         }
+
+        Commands::Cache { clear, folder, info } => {
+            let target = folder.unwrap_or_else(|| std::path::PathBuf::from("."));
+            let cache_path = analyzer::CacheFile::cache_path(&target);
+
+            if info || (!clear && !info) {
+                // デフォルトまたは--info: 情報表示
+                if cache_path.exists() {
+                    let cache = analyzer::CacheFile::load(&target);
+                    println!("キャッシュ情報:");
+                    println!("  パス: {}", cache_path.display());
+                    println!("  件数: {}", cache.len());
+                    if let Ok(meta) = std::fs::metadata(&cache_path) {
+                        println!("  サイズ: {} bytes", meta.len());
+                    }
+                } else {
+                    println!("キャッシュファイルが存在しません: {}", cache_path.display());
+                }
+            }
+
+            if clear {
+                match analyzer::CacheFile::clear(&target) {
+                    Ok(true) => println!("✔ キャッシュを削除しました: {}", cache_path.display()),
+                    Ok(false) => println!("キャッシュファイルが存在しません"),
+                    Err(e) => println!("キャッシュ削除エラー: {}", e),
+                }
+            }
+        }
     }
 
     Ok(())

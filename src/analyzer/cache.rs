@@ -91,6 +91,27 @@ impl CacheFile {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+
+    /// キャッシュが空か
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// キャッシュファイルを削除
+    pub fn clear(folder: &Path) -> Result<bool> {
+        let cache_path = folder.join(CACHE_FILE_NAME);
+        if cache_path.exists() {
+            std::fs::remove_file(&cache_path)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// キャッシュファイルのパスを取得
+    pub fn cache_path(folder: &Path) -> std::path::PathBuf {
+        folder.join(CACHE_FILE_NAME)
+    }
 }
 
 impl Default for CacheFile {
