@@ -47,6 +47,9 @@ pub enum PhotoAiError {
 
     #[error("CLI実行エラー: {0}")]
     CliExecution(String),
+
+    #[error(transparent)]
+    Common(#[from] photo_ai_common::Error),
 }
 
 pub type Result<T> = std::result::Result<T, PhotoAiError>;
