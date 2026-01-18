@@ -20,8 +20,8 @@ pub struct HierarchyRow {
     pub variety: String,
     /// 細別
     pub detail: String,
-    /// 撮影内容
-    pub shooting_content: String,
+    /// 備考（マスタの最下層）
+    pub remarks: String,
     /// 検索パターン（|区切り）
     pub search_patterns: String,
 }
@@ -66,7 +66,7 @@ impl HierarchyMaster {
                 work_type: fields[2].to_string(),
                 variety: fields[3].to_string(),
                 detail: fields[4].to_string(),
-                shooting_content: fields[5].to_string(),
+                remarks: fields[5].to_string(),
                 search_patterns: fields[6].to_string(),
             };
 
