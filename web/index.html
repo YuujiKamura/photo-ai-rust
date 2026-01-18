@@ -9,7 +9,8 @@
       "imports": {
         "@google/genai": "https://esm.run/@google/genai",
         "pdf-lib": "https://esm.run/pdf-lib",
-        "xlsx": "https://esm.run/xlsx"
+        "xlsx": "https://esm.run/xlsx",
+        "@pdf-lib/fontkit": "https://esm.run/@pdf-lib/fontkit"
       }
     }
   </script>
@@ -114,8 +115,12 @@
 
   <script type="module">
     import { GoogleGenAI } from '@google/genai';
-    import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+    import { PDFDocument, rgb } from 'pdf-lib';
+    import fontkit from '@pdf-lib/fontkit';
     import * as XLSX from 'xlsx';
+
+    // Noto Sans JP フォント (Google Fonts)
+    const FONT_URL = 'https://fonts.gstatic.com/s/notosansjp/v52/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.ttf';
 
     // Constants (same as React version)
     const A4_WIDTH = 595.28;
@@ -338,7 +343,11 @@
       const photosPerPage = parseInt(photosPerPageSelect.value);
       const title = titleInput.value || '工事写真帳';
       const pdfDoc = await PDFDocument.create();
-      const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+      // 日本語フォント埋め込み
+      pdfDoc.registerFontkit(fontkit);
+      const fontBytes = await fetch(FONT_URL).then(r => r.arrayBuffer());
+      const japaneseFont = await pdfDoc.embedFont(fontBytes);
 
       const usableHeight = A4_HEIGHT - MARGIN * 2 - HEADER_HEIGHT;
       const photoRowHeight = usableHeight / photosPerPage;
@@ -353,8 +362,8 @@
         const pagePhotos = photos.slice(pageNum * photosPerPage, (pageNum + 1) * photosPerPage);
 
         // Header
-        page.drawText(title, { x: MARGIN, y: A4_HEIGHT - MARGIN - 20, size: 14, font: helvetica, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(`Page ${pageNum + 1} / ${totalPages}`, { x: A4_WIDTH - MARGIN - 80, y: A4_HEIGHT - MARGIN - 20, size: 10, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
+        page.drawText(title, { x: MARGIN, y: A4_HEIGHT - MARGIN - 20, size: 14, font: japaneseFont, color: rgb(0.2, 0.2, 0.2) });
+        page.drawText(`Page ${pageNum + 1} / ${totalPages}`, { x: A4_WIDTH - MARGIN - 80, y: A4_HEIGHT - MARGIN - 20, size: 10, font: japaneseFont, color: rgb(0.5, 0.5, 0.5) });
 
         for (let i = 0; i < pagePhotos.length; i++) {
           const photo = pagePhotos[i];
@@ -392,12 +401,12 @@
           const infoX = MARGIN + photoWidth + GAP;
           const r = photo.result || {};
           const infoLines = [
-            { label: 'Category', value: r.photoCategory || '-' },
-            { label: 'WorkType', value: r.workType || '-' },
-            { label: 'Variety', value: r.variety || '-' },
-            { label: 'Detail', value: r.detail || '-' },
-            { label: 'Station', value: r.station || '-' },
-            { label: 'Remarks', value: r.remarks || '-' }
+            { label: '写真区分', value: r.photoCategory || '-' },
+            { label: '工種', value: r.workType || '-' },
+            { label: '種別', value: r.variety || '-' },
+            { label: '細別', value: r.detail || '-' },
+            { label: '測点', value: r.station || '-' },
+            { label: '備考', value: r.remarks || '-' }
           ];
 
           page.drawRectangle({ x: infoX, y: rowY, width: infoWidth, height: photoHeight, borderColor: rgb(0.7, 0.7, 0.7), borderWidth: 0.5 });
@@ -406,12 +415,12 @@
             const y = rowY + photoHeight - 15 - idx * 16;
             if (y > rowY + 5) {
               page.drawText(`${line.label}: ${(line.value || '-').substring(0, 25)}`, {
-                x: infoX + 5, y, size: 8, font: helvetica, color: rgb(0.2, 0.2, 0.2)
+                x: infoX + 5, y, size: 8, font: japaneseFont, color: rgb(0.2, 0.2, 0.2)
               });
             }
           });
 
-          page.drawText(photo.fileName, { x: infoX + 5, y: rowY + 5, size: 7, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
+          page.drawText(photo.fileName, { x: infoX + 5, y: rowY + 5, size: 7, font: japaneseFont, color: rgb(0.5, 0.5, 0.5) });
         }
       }
 
