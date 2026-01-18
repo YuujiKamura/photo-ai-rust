@@ -3,9 +3,15 @@ target = "index.html"
 dist = "dist"
 
 [watch]
-watch = ["src", "index.html", "style.css"]
+watch = ["src", "index.html", "style.css", "js"]
 
 [serve]
 address = "127.0.0.1"
 port = 8080
 open = false
+
+# jsディレクトリをdistにコピー
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["-c", "cp -r js dist/"]
