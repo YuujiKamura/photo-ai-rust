@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// エイリアス定義
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AliasConfig {
     /// 写真区分のエイリアス
     #[serde(default)]
@@ -22,17 +22,6 @@ pub struct AliasConfig {
     /// 細別のエイリアス
     #[serde(default)]
     pub detail: HashMap<String, String>,
-}
-
-impl Default for AliasConfig {
-    fn default() -> Self {
-        Self {
-            photo_category: HashMap::new(),
-            work_type: HashMap::new(),
-            variety: HashMap::new(),
-            detail: HashMap::new(),
-        }
-    }
 }
 
 impl AliasConfig {
@@ -146,10 +135,10 @@ impl AliasConfig {
         // 部分一致（最長マッチ）
         let mut best_match: Option<(&str, &str)> = None;
         for (pattern, replacement) in aliases {
-            if value.contains(pattern.as_str()) {
-                if best_match.is_none() || pattern.len() > best_match.unwrap().0.len() {
-                    best_match = Some((pattern.as_str(), replacement.as_str()));
-                }
+            if value.contains(pattern.as_str())
+                && (best_match.is_none() || pattern.len() > best_match.unwrap().0.len())
+            {
+                best_match = Some((pattern.as_str(), replacement.as_str()));
             }
         }
 
