@@ -211,7 +211,7 @@
     const exportExcelBtn = document.getElementById('exportExcelBtn');
 
     apiKeyInput.addEventListener('change', () => {
-      // APIキーはブラウザのストレージには保存しません。
+      updateButtons();
     });
 
     function log(msg, type = '') {
