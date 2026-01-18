@@ -1,5 +1,5 @@
 use clap::Parser;
-use photo_ai_rust::{cli, config, error, scanner, analyzer, matcher, export};
+use photo_ai_rust::{cli, config, error, scanner, analyzer, matcher, export, station};
 use cli::{Cli, Commands};
 use config::Config;
 use error::Result;
@@ -126,6 +126,11 @@ async fn main() -> Result<()> {
                 println!("  バッチサイズ: {}", config.default_batch_size);
                 println!("  APIキー: {}", if config.api_key.is_some() { "設定済み" } else { "未設定" });
             }
+        }
+
+        Commands::Station { input, output } => {
+            println!("📍 photo-ai-rust - 測点入力\n");
+            station::run_interactive_station(&input, output.as_deref())?;
         }
     }
 

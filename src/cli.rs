@@ -114,6 +114,17 @@ pub enum Commands {
         #[arg(long)]
         show: bool,
     },
+
+    /// 対話的に測点を入力
+    Station {
+        /// 解析結果JSONファイル
+        #[arg(required = true)]
+        input: PathBuf,
+
+        /// 出力先（省略時は上書き）
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 #[derive(Clone, Debug, Default)]

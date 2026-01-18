@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 # CLI
 clap = { version = "4", features = ["derive"] }
+dialoguer = "0.11"
 
 # 画像処理
 image = "0.25"
