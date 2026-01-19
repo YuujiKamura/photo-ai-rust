@@ -88,6 +88,7 @@ fn find_japanese_font() -> Option<PathBuf> {
 
     #[cfg(target_os = "linux")]
     {
+        let home_fonts = format!("{}/.local/share/fonts", std::env::var("HOME").unwrap_or_default());
         let font_dirs = [
             Path::new("/usr/share/fonts/opentype/noto"),
             Path::new("/usr/share/fonts/truetype/noto"),
@@ -95,7 +96,7 @@ fn find_japanese_font() -> Option<PathBuf> {
             Path::new("/usr/share/fonts/truetype/ipafont"),
             Path::new("/usr/share/fonts/OTF"),
             Path::new("/usr/share/fonts/TTF"),
-            Path::new(&format!("{}/.local/share/fonts", std::env::var("HOME").unwrap_or_default())),
+            Path::new(&home_fonts),
         ];
         for dir in &font_dirs {
             for font in &font_names {
