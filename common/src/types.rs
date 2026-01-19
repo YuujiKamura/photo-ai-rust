@@ -63,6 +63,9 @@ pub struct AnalysisResult {
     pub remarks: String,          // 備考
 
     #[serde(default)]
+    pub remarks_candidates: Vec<String>, // 備考候補（AIが提案）
+
+    #[serde(default)]
     pub description: String,      // 写真説明
 
     #[serde(default)]
