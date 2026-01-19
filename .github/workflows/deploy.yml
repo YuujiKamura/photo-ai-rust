@@ -6,6 +6,7 @@ on:
     paths:
       - "web-wasm/**"
       - "common/**"
+      - "docs/flutter/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/deploy.yml"
@@ -55,6 +56,12 @@ jobs:
         run: |
           cd web-wasm
           trunk build --release --public-url "/photo-ai-rust/"
+
+      - name: Copy Flutter build
+        run: |
+          if [ -d "docs/flutter" ]; then
+            cp -r docs/flutter web-wasm/dist/flutter
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
