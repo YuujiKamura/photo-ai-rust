@@ -23,6 +23,6 @@ pub use layout::{PdfLayout, ExcelLayout};
 pub use alias::{AliasConfig, apply_aliases};
 pub use error::{Error, Result};
 pub use hierarchy::{HierarchyMaster, HierarchyRow};
-pub use parser::{extract_json, parse_step1_response, parse_step2_response};
+pub use parser::{extract_json, parse_step1_response, parse_step2_response, parse_single_step_response};
 pub use analyzer::{ImageMeta, detect_work_types, merge_results};
-pub use prompts::{PHOTO_CATEGORIES, build_step1_prompt, build_step2_prompt};
+pub use prompts::{PHOTO_CATEGORIES, build_step1_prompt, build_step2_prompt, build_single_step_prompt};

@@ -72,6 +72,86 @@ pub fn build_step1_prompt(images: &[(&str, Option<&str>)]) -> String {
     )
 }
 
+/// 1ステップ解析プロンプト生成（工種指定版）
+///
+/// 工種が既知の場合、画像認識と分類を1回のAI呼び出しで実行
+///
+/// # Arguments
+/// * `images` - 画像メタデータ
+/// * `master` - フィルタ済み階層マスタ（指定工種のみ）
+/// * `work_type` - 指定された工種
+/// * `variety` - 指定された種別（オプション）
+///
+/// # Returns
+/// 1ステップ解析用のプロンプト文字列
+pub fn build_single_step_prompt(
+    images: &[(&str, Option<&str>)],
+    master: &HierarchyMaster,
+    work_type: &str,
+    variety: Option<&str>,
+) -> String {
+    let photo_list = images
+        .iter()
+        .map(|(name, date)| {
+            format!(
+                "- {} (撮影: {})",
+                name,
+                date.unwrap_or("unknown")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let categories = PHOTO_CATEGORIES.join(", ");
+    let hierarchy_json = master.to_hierarchy_json();
+    let hierarchy_str = serde_json::to_string(&hierarchy_json).unwrap_or_default();
+
+    let variety_hint = variety
+        .map(|v| format!("\n- 種別は「{}」が基本（確実でない場合は他を選択可）", v))
+        .unwrap_or_default();
+
+    format!(
+        r#"あなたは工事写真帳を作成する現場監督です。工種「{work_type}」の写真を解析してください。
+
+## 写真区分（写真種別）
+以下から最も適切なものを選択：
+{categories}
+
+## 工種マスタ（この中から選択）
+{hierarchy_str}
+
+## 制約
+- 工種は「{work_type}」固定{variety_hint}
+- 種別・細別・備考は必ずマスタに存在する値を選択
+- 該当なしの場合は空文字""
+
+## 出力形式（厳密にこのJSON配列形式で出力）
+[
+  {{
+    "fileName": "ファイル名",
+    "hasBoard": true/false,
+    "detectedText": "黒板・看板から読み取った全テキスト",
+    "measurements": "数値データ（温度、寸法等）単位付き",
+    "description": "写真の説明",
+    "photoCategory": "写真区分から選択",
+    "workType": "{work_type}",
+    "variety": "種別（マスタから選択）",
+    "detail": "細別（マスタから選択）",
+    "station": "測点（黒板から読み取れた場合）",
+    "remarks": "備考（マスタから選択）"
+  }}
+]
+
+## 注意
+- 黒板のテキストは正確にOCR
+- 数値は単位も含めて正確に
+- JSON配列のみ出力。説明文は不要
+
+対象写真:
+{photo_list}"#
+    )
+}
+
 /// Step2プロンプト生成（マスタ照合用）
 ///
 /// # Arguments
