@@ -7,6 +7,7 @@ use photo_ai_common::HierarchyMaster;
 use std::path::{Path, PathBuf};
 
 /// AI解析を実行（1ステップ解析優先）
+#[allow(clippy::too_many_arguments)]
 async fn run_analysis(
     images: &[scanner::ImageInfo],
     folder: &Path,
