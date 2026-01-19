@@ -1077,7 +1077,7 @@ class _DetailPanel extends StatelessWidget {
           _DetailRow(label: 'Photo Category', value: it.photoCategory),
           _DetailRow(label: 'Work Type', value: it.workType),
           _DetailRow(label: 'Variety', value: it.variety),
-          _DetailRow(label: 'Subphase', value: it.subphase),
+          _DetailRow(label: 'Subphase', value: it.subphase ?? ''),
           _DetailRow(label: 'Remarks', value: it.remarks),
           _DetailRow(label: 'Station', value: it.station),
           _DetailRow(label: 'Measurements', value: it.measurements),
@@ -1174,7 +1174,7 @@ class ResultItem {
   final String photoCategory;
   final String workType;
   final String variety;
-  final String subphase;
+  final String? subphase;
   final String remarks;
   final String station;
   final String description;
@@ -1194,7 +1194,7 @@ class ResultItem {
       case 'variety':
         return variety;
       case 'subphase':
-        return subphase;
+        return subphase ?? '';
       case 'station':
         return station;
       case 'remarks':
