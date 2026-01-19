@@ -57,7 +57,7 @@ const LAYOUT_FIELDS = [
   { key: 'photoCategory', label: '区分', rowSpan: 1 },
   { key: 'workType', label: '工種', rowSpan: 1 },
   { key: 'variety', label: '種別', rowSpan: 1 },
-  { key: 'subphase', label: '作業段階', rowSpan: 1 },
+  { key: 'subphase', label: '細別', rowSpan: 1 },
   { key: 'station', label: '測点', rowSpan: 1 },
   { key: 'remarks', label: '備考', rowSpan: 2 },
   { key: 'measurements', label: '測定値', rowSpan: 2 },
