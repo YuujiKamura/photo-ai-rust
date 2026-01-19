@@ -73,6 +73,12 @@ class _ViewerScreenState extends State<ViewerScreen>
   void initState() {
     super.initState();
     _ensurePulse();
+    Future.microtask(() async {
+      appendLog('App started');
+      appendLog('Repo root: ${resolveRepoRoot()}');
+      final resolvedCli = await resolveCliPath();
+      appendLog('CLI resolved: $resolvedCli');
+    });
   }
 
   void _ensurePulse() {
