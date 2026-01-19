@@ -52,13 +52,18 @@ jobs:
       - name: Build WASM
         run: |
           cd web-wasm
-          trunk build --release --public-url "/photo-ai-rust/"
+          trunk build --release --public-url "/photo-ai-rust/leptos/"
 
-      - name: Copy Flutter build
+      - name: Prepare deploy folder
         run: |
+          mkdir -p deploy
+          # Flutter at root
           if [ -d "docs/flutter" ]; then
-            cp -r docs/flutter web-wasm/dist/flutter
+            cp -r docs/flutter/* deploy/
           fi
+          # Leptos at /leptos/
+          mkdir -p deploy/leptos
+          cp -r web-wasm/dist/* deploy/leptos/
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -66,7 +71,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: web-wasm/dist
+          path: deploy
 
   deploy:
     environment:
