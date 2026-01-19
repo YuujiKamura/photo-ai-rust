@@ -145,6 +145,17 @@ class _ViewerScreenState extends State<ViewerScreen>
     }
   }
 
+  Future<void> saveToSource() async {
+    if (items.isEmpty || sourcePath == null) return;
+    final file = File(sourcePath!);
+    final jsonText = const JsonEncoder.withIndent('  ')
+        .convert(items.map((e) => e.toJson()).toList());
+    await file.writeAsString(jsonText);
+    originalItems = List<ResultItem>.from(items);
+    setStatus('Saved to ${p.basename(sourcePath!)}');
+    appendLog('Saved to ${p.basename(sourcePath!)}');
+  }
+
   Future<void> saveSorted() async {
     if (items.isEmpty) return;
     final defaultName = sourcePath != null
@@ -740,8 +751,12 @@ class _ViewerScreenState extends State<ViewerScreen>
                     child: const Text('Set CLI Path'),
                   ),
                   MenuItemButton(
+                    onPressed: items.isEmpty || sourcePath == null ? null : saveToSource,
+                    child: const Text('Save (上書き保存)'),
+                  ),
+                  MenuItemButton(
                     onPressed: items.isEmpty ? null : saveSorted,
-                    child: const Text('Save Sorted'),
+                    child: const Text('Save As...'),
                   ),
                   MenuItemButton(
                     onPressed: items.isEmpty ? null : resetOrder,
@@ -1138,7 +1153,7 @@ class _FieldGrid extends StatelessWidget {
     FieldDef(key: 'photoCategory', label: '区分'),
     FieldDef(key: 'workType', label: '工種'),
     FieldDef(key: 'variety', label: '種別'),
-    FieldDef(key: 'subphase', label: '作業段階'),
+    FieldDef(key: 'subphase', label: '細別'),
     FieldDef(key: 'station', label: '測点'),
     FieldDef(key: 'remarks', label: '備考'),
     FieldDef(key: 'measurements', label: '測定値'),
