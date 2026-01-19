@@ -186,7 +186,7 @@ pub enum Commands {
         info: bool,
     },
 
-    /// 解析結果を正規化（測点・工種の統一）
+    /// 解析結果を正規化（グループ単位で計測値を統一）
     Normalize {
         /// 入力JSONファイル
         #[arg(required = true)]
@@ -199,22 +199,6 @@ pub enum Commands {
         /// ドライラン（変更を適用せずプレビュー）
         #[arg(long)]
         dry_run: bool,
-
-        /// 統一の閾値（0.0-1.0、デフォルト0.6）
-        #[arg(long, default_value = "0.6")]
-        threshold: f64,
-
-        /// 測点の正規化を無効化
-        #[arg(long)]
-        no_station: bool,
-
-        /// 工種・種別の統一を無効化
-        #[arg(long)]
-        no_work_type: bool,
-
-        /// 計測値保護を無効化（温度・寸法を含むレコードも変更対象にする）
-        #[arg(long)]
-        no_protect_measurements: bool,
     },
 }
 
