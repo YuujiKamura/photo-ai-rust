@@ -61,6 +61,7 @@ class _ViewerScreenState extends State<ViewerScreen>
   bool analyzing = false;
   bool exporting = false;
   bool verboseAnalyze = true;
+  bool allowStationFromAnalyze = false;
   String workTypeInput = '';
   String varietyInput = '';
   String stationInput = '';
@@ -68,6 +69,13 @@ class _ViewerScreenState extends State<ViewerScreen>
   List<String> workTypeOptions = [];
   AnimationController? _pulseController;
   Animation<Color?>? _pulseColor;
+  Process? _analyzeProcess;
+  bool _analyzeCancelRequested = false;
+  bool _awaitingWorkType = false;
+  String? _pendingAnalyzeFolder;
+  String? _pendingAnalyzeOutput;
+  final TextEditingController _terminalInputController = TextEditingController();
+  _ClipboardPayload? _clipboardPayload;
 
   @override
   void initState() {
@@ -86,7 +94,7 @@ class _ViewerScreenState extends State<ViewerScreen>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
+    )..repeat();
     _pulseColor = TweenSequence<Color?>([
       TweenSequenceItem(
         tween: ColorTween(begin: const Color(0xFFE7C86C), end: const Color(0xFF9ED9FF)),
@@ -102,6 +110,7 @@ class _ViewerScreenState extends State<ViewerScreen>
   @override
   void dispose() {
     _pulseController?.dispose();
+    _terminalInputController.dispose();
     super.dispose();
   }
 
@@ -149,6 +158,177 @@ class _ViewerScreenState extends State<ViewerScreen>
       setStatus('Load failed: $err');
       appendLog('Load failed: $err');
     }
+  }
+
+  void _applyStationPolicy() {
+    final enforced = stationOverride;
+    if (allowStationFromAnalyze && enforced.isEmpty) return;
+    items = items
+        .map(
+          (item) => item.copyWith(
+            station: enforced.isNotEmpty ? enforced : '',
+          ),
+        )
+        .toList();
+    originalItems = List<ResultItem>.from(items);
+    setState(() {});
+  }
+
+  void updateSelectedItemField(String key, String value) {
+    if (selectedIndices.isEmpty || selectedIndices.length != 1) return;
+    final index = selectedIndices.last;
+    final current = items[index];
+    final updated = switch (key) {
+      'date' => current.copyWith(date: value),
+      'photoCategory' => current.copyWith(photoCategory: value),
+      'workType' => current.copyWith(workType: value),
+      'variety' => current.copyWith(variety: value),
+      'subphase' => current.copyWith(subphase: value),
+      'remarks' => current.copyWith(remarks: value),
+      'station' => current.copyWith(station: value),
+      'measurements' => current.copyWith(measurements: value),
+      'description' => current.copyWith(description: value),
+      _ => current,
+    };
+    setState(() {
+      items[index] = updated;
+      final originalIndex = originalItems.indexWhere((e) => e.filePath == current.filePath);
+      if (originalIndex != -1) {
+        originalItems[originalIndex] = updated;
+      }
+    });
+  }
+
+  void _updateItemsByIndices(
+    Iterable<int> indices,
+    ResultItem Function(ResultItem item) updater,
+  ) {
+    setState(() {
+      for (final index in indices) {
+        final current = items[index];
+        final updated = updater(current);
+        items[index] = updated;
+        final originalIndex = originalItems.indexWhere((e) => e.filePath == current.filePath);
+        if (originalIndex != -1) {
+          originalItems[originalIndex] = updated;
+        }
+      }
+    });
+  }
+
+  Future<_ClipboardPayload?> _loadClipboardPayload() async {
+    if (_clipboardPayload != null) return _clipboardPayload;
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    if (text == null || text.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(text);
+      if (decoded is! Map<String, dynamic>) return null;
+      final type = decoded['type']?.toString();
+      final payload = decoded['data'];
+      if (type == null || payload is! Map) return null;
+      final dataMap = <String, String>{};
+      for (final entry in payload.entries) {
+        dataMap[entry.key.toString()] = entry.value?.toString() ?? '';
+      }
+      return _ClipboardPayload(type: type, data: dataMap);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _copyPayload(_ClipboardPayload payload) async {
+    _clipboardPayload = payload;
+    await Clipboard.setData(ClipboardData(text: payload.toJsonString()));
+  }
+
+  Future<void> _copyMaster(ResultItem item) async {
+    await _copyPayload(
+      _ClipboardPayload(
+        type: 'master',
+        data: {
+          'workType': item.workType,
+          'variety': item.variety,
+          'subphase': item.subphase ?? '',
+          'remarks': item.remarks,
+        },
+      ),
+    );
+    appendLog('Copied master: ${item.fileName}');
+  }
+
+  Future<void> _copyMeasurements(ResultItem item) async {
+    await _copyPayload(
+      _ClipboardPayload(
+        type: 'measurements',
+        data: {'measurements': item.measurements},
+      ),
+    );
+    appendLog('Copied measurements: ${item.fileName}');
+  }
+
+  Future<void> _copyAnalysis(ResultItem item) async {
+    await _copyPayload(
+      _ClipboardPayload(
+        type: 'analysis',
+        data: {
+          'photoCategory': item.photoCategory,
+          'workType': item.workType,
+          'variety': item.variety,
+          'subphase': item.subphase ?? '',
+          'remarks': item.remarks,
+          'measurements': item.measurements,
+        },
+      ),
+    );
+    appendLog('Copied analysis: ${item.fileName}');
+  }
+
+  Future<bool> _pasteMaster() async {
+    final payload = await _loadClipboardPayload();
+    if (payload == null || payload.type != 'master') return false;
+    _updateItemsByIndices(
+      selectedIndices,
+      (item) => item.copyWith(
+        workType: payload.data['workType'] ?? item.workType,
+        variety: payload.data['variety'] ?? item.variety,
+        subphase: payload.data['subphase'] ?? item.subphase,
+        remarks: payload.data['remarks'] ?? item.remarks,
+      ),
+    );
+    appendLog('Pasted master (${selectedIndices.length} items)');
+    return true;
+  }
+
+  Future<bool> _pasteMeasurements() async {
+    final payload = await _loadClipboardPayload();
+    if (payload == null || payload.type != 'measurements') return false;
+    _updateItemsByIndices(
+      selectedIndices,
+      (item) => item.copyWith(
+        measurements: payload.data['measurements'] ?? item.measurements,
+      ),
+    );
+    appendLog('Pasted measurements (${selectedIndices.length} items)');
+    return true;
+  }
+
+  Future<bool> _pasteAnalysis() async {
+    final payload = await _loadClipboardPayload();
+    if (payload == null || payload.type != 'analysis') return false;
+    _updateItemsByIndices(
+      selectedIndices,
+      (item) => item.copyWith(
+        photoCategory: payload.data['photoCategory'] ?? item.photoCategory,
+        workType: payload.data['workType'] ?? item.workType,
+        variety: payload.data['variety'] ?? item.variety,
+        subphase: payload.data['subphase'] ?? item.subphase,
+        remarks: payload.data['remarks'] ?? item.remarks,
+        measurements: payload.data['measurements'] ?? item.measurements,
+      ),
+    );
+    appendLog('Pasted analysis (${selectedIndices.length} items)');
+    return true;
   }
 
   Future<void> saveToSource() async {
@@ -211,6 +391,16 @@ class _ViewerScreenState extends State<ViewerScreen>
 
   Future<void> runAnalyzeForFolder(String folder, {String? outputPath}) async {
     if (analyzing) return;
+    if (workTypeInput.isEmpty) {
+      setAnalyzeStatus('Work type required');
+      appendLog('Analyze aborted: work type not set');
+      _awaitingWorkType = true;
+      _pendingAnalyzeFolder = folder;
+      _pendingAnalyzeOutput = outputPath;
+      setState(() {});
+      openAnalyzeOptions();
+      return;
+    }
     String? output = outputPath;
     if (output == null) {
       output = await FilePicker.platform.saveFile(
@@ -222,6 +412,7 @@ class _ViewerScreenState extends State<ViewerScreen>
 
     try {
       analyzing = true;
+      _analyzeCancelRequested = false;
       setState(() {});
       final resolvedCli = await resolveCliPath();
       appendLog('Analyze CLI: $resolvedCli');
@@ -230,8 +421,9 @@ class _ViewerScreenState extends State<ViewerScreen>
         resolvedCli,
         buildAnalyzeArgs(folder, output),
         workingDirectory: resolveRepoRoot(),
-        runInShell: true,
+        runInShell: false,
       );
+      _analyzeProcess = process;
       process.stdout
           .transform(const Utf8Decoder(allowMalformed: true))
           .transform(const LineSplitter())
@@ -246,26 +438,95 @@ class _ViewerScreenState extends State<ViewerScreen>
       });
 
       final exitCode = await process.exitCode;
-      if (exitCode != 0) {
+      if (_analyzeCancelRequested) {
+        setAnalyzeStatus('Analyze cancelled');
+        appendLog('Analyze cancelled');
+      } else if (exitCode != 0) {
         setAnalyzeStatus('Analyze failed (code $exitCode)');
         appendLog('Analyze failed (code $exitCode)');
       } else {
         setAnalyzeStatus('Analyze complete');
         appendLog('Analyze complete');
         await loadFromPath(output);
+        _applyStationPolicy();
       }
     } catch (err) {
       setAnalyzeStatus('Analyze failed: $err');
       appendLog('Analyze failed: $err');
     } finally {
       analyzing = false;
+      _analyzeProcess = null;
+      _analyzeCancelRequested = false;
       setState(() {});
     }
+  }
+
+  void cancelAnalyze() {
+    final process = _analyzeProcess;
+    if (!analyzing || process == null) return;
+    _analyzeCancelRequested = true;
+    setAnalyzeStatus('Canceling analyze...');
+    appendLog('Analyze cancel requested');
+    final killed = process.kill(ProcessSignal.sigkill);
+    if (!killed && Platform.isWindows) {
+      Process.run('taskkill', ['/PID', process.pid.toString(), '/T', '/F'])
+          .then((result) => appendLog('taskkill: ${result.exitCode}'))
+          .catchError((err) => appendLog('taskkill failed: $err'));
+    } else if (!killed) {
+      appendLog('Analyze cancel failed');
+    }
+  }
+
+  Future<void> _resumePendingAnalyze() async {
+    if (!_awaitingWorkType) return;
+    final folder = _pendingAnalyzeFolder;
+    if (folder == null || workTypeInput.isEmpty) return;
+    final outputPath = _pendingAnalyzeOutput;
+    _awaitingWorkType = false;
+    _pendingAnalyzeFolder = null;
+    _pendingAnalyzeOutput = null;
+    setState(() {});
+    await runAnalyzeForFolder(folder, outputPath: outputPath);
+  }
+
+  void _cancelPendingAnalyze() {
+    if (!_awaitingWorkType) return;
+    _awaitingWorkType = false;
+    _pendingAnalyzeFolder = null;
+    _pendingAnalyzeOutput = null;
+    setAnalyzeStatus('Analyze cancelled: work type not set');
+    appendLog('Analyze cancelled: work type not set');
+    setState(() {});
+  }
+
+  void _sendTerminalInput() {
+    final value = _terminalInputController.text.trim();
+    if (value.isEmpty) return;
+    _terminalInputController.clear();
+    if (analyzing && _analyzeProcess != null) {
+      _analyzeProcess!.stdin.writeln(value);
+      appendLog('stdin: $value');
+      setState(() {});
+      return;
+    }
+    setState(() {
+      workTypeInput = value;
+    });
+    appendLog('Work type set via console: $value');
+    _resumePendingAnalyze();
   }
 
   Future<void> reanalyzeEntry(ResultItem item) async {
     if (analyzing) return;
     if (item.filePath.isEmpty) return;
+    if (workTypeInput.isEmpty) {
+      setAnalyzeStatus('Work type required');
+      appendLog('Analyze aborted: work type not set');
+      _awaitingWorkType = true;
+      setState(() {});
+      openAnalyzeOptions();
+      return;
+    }
     final srcFile = File(item.filePath);
     if (!srcFile.existsSync()) {
       setAnalyzeStatus('File not found: ${item.fileName}');
@@ -279,14 +540,16 @@ class _ViewerScreenState extends State<ViewerScreen>
 
     try {
       analyzing = true;
+      _analyzeCancelRequested = false;
       setState(() {});
       final resolvedCli = await resolveCliPath();
       final process = await Process.start(
         resolvedCli,
         buildAnalyzeArgs(tempDir.path, output),
         workingDirectory: resolveRepoRoot(),
-        runInShell: true,
+        runInShell: false,
       );
+      _analyzeProcess = process;
       process.stdout
           .transform(const Utf8Decoder(allowMalformed: true))
           .transform(const LineSplitter())
@@ -297,6 +560,11 @@ class _ViewerScreenState extends State<ViewerScreen>
           .listen(appendLog);
 
       final exitCode = await process.exitCode;
+      if (_analyzeCancelRequested) {
+        setAnalyzeStatus('Analyze cancelled');
+        appendLog('Analyze cancelled');
+        return;
+      }
       if (exitCode != 0) {
         setAnalyzeStatus('Analyze failed (code $exitCode)');
         appendLog('Analyze failed (code $exitCode)');
@@ -310,9 +578,15 @@ class _ViewerScreenState extends State<ViewerScreen>
         return;
       }
       final updated = ResultItem.fromJson(data.first as Map<String, dynamic>);
-      final normalized = stationOverride.isNotEmpty
-          ? updated.copyWith(station: stationOverride)
-          : updated;
+      final preservedStation =
+          stationOverride.isNotEmpty ? stationOverride : item.station;
+      final normalized = allowStationFromAnalyze
+          ? (preservedStation.isNotEmpty && updated.station.isEmpty
+              ? updated.copyWith(station: preservedStation)
+              : updated)
+          : updated.copyWith(
+              station: preservedStation.isNotEmpty ? preservedStation : '',
+            );
       setState(() {
         final index = items.indexWhere((e) => e.filePath == item.filePath);
         if (index != -1) {
@@ -330,6 +604,8 @@ class _ViewerScreenState extends State<ViewerScreen>
       appendLog('Analyze failed: $err');
     } finally {
       analyzing = false;
+      _analyzeProcess = null;
+      _analyzeCancelRequested = false;
       setState(() {});
     }
   }
@@ -473,6 +749,7 @@ class _ViewerScreenState extends State<ViewerScreen>
       context: context,
       builder: (context) {
         String dropdownValue = workTypeInput;
+        bool allowStation = allowStationFromAnalyze;
         void setDropdown(String? value, StateSetter setStateDialog) {
           dropdownValue = value ?? '';
           workController.text = dropdownValue;
@@ -526,6 +803,15 @@ class _ViewerScreenState extends State<ViewerScreen>
                     controller: stationController,
                     decoration: const InputDecoration(labelText: 'Station (optional)'),
                   ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Allow station from analyze'),
+                    value: allowStation,
+                    onChanged: (value) {
+                      allowStation = value ?? false;
+                      setStateDialog(() {});
+                    },
+                  ),
                 ],
               );
             },
@@ -538,11 +824,15 @@ class _ViewerScreenState extends State<ViewerScreen>
             FilledButton(
               onPressed: () {
                 setState(() {
+                  allowStationFromAnalyze = allowStation;
                   workTypeInput = workController.text.trim();
                   varietyInput = varietyController.text.trim();
                   stationInput = stationController.text.trim();
                 });
                 Navigator.of(context).pop();
+                if (_awaitingWorkType && workTypeInput.isNotEmpty) {
+                  _resumePendingAnalyze();
+                }
               },
               child: const Text('Save'),
             ),
@@ -778,6 +1068,10 @@ class _ViewerScreenState extends State<ViewerScreen>
                     child: const Text('Run Analyze'),
                   ),
                   MenuItemButton(
+                    onPressed: analyzing ? cancelAnalyze : null,
+                    child: const Text('Stop Analyze'),
+                  ),
+                  MenuItemButton(
                     onPressed: openAnalyzeOptions,
                     child: const Text('Analyze Options'),
                   ),
@@ -789,6 +1083,16 @@ class _ViewerScreenState extends State<ViewerScreen>
                   MenuItemButton(
                     onPressed: () => setState(() => verboseAnalyze = !verboseAnalyze),
                     child: Text(verboseAnalyze ? 'Verbose: ON' : 'Verbose: OFF'),
+                  ),
+                  MenuItemButton(
+                    onPressed: () => setState(() {
+                      allowStationFromAnalyze = !allowStationFromAnalyze;
+                    }),
+                    child: Text(
+                      allowStationFromAnalyze
+                          ? 'Station from Analyze: ON'
+                          : 'Station from Analyze: OFF',
+                    ),
                   ),
                   const Divider(),
                   MenuItemButton(
@@ -924,6 +1228,30 @@ class _ViewerScreenState extends State<ViewerScreen>
                                   child: Text('グループ解析 (${selectedIndices.length}件)'),
                                 ),
                               const PopupMenuItem(
+                                value: 'copy_master',
+                                child: Text('階層マスタをコピー'),
+                              ),
+                              const PopupMenuItem(
+                                value: 'paste_master',
+                                child: Text('階層マスタを貼り付け'),
+                              ),
+                              const PopupMenuItem(
+                                value: 'copy_measurements',
+                                child: Text('測定値をコピー'),
+                              ),
+                              const PopupMenuItem(
+                                value: 'paste_measurements',
+                                child: Text('測定値を貼り付け'),
+                              ),
+                              const PopupMenuItem(
+                                value: 'copy_analysis',
+                                child: Text('解析結果をコピー'),
+                              ),
+                              const PopupMenuItem(
+                                value: 'paste_analysis',
+                                child: Text('解析結果を貼り付け'),
+                              ),
+                              const PopupMenuItem(
                                 value: 'copy_path',
                                 child: Text('Copy File Path'),
                               ),
@@ -945,6 +1273,33 @@ class _ViewerScreenState extends State<ViewerScreen>
                             await runAnalyzeForFolder(folder);
                           } else if (selected == 'reanalyze_entry') {
                             await reanalyzeEntry(item);
+                          } else if (selected == 'copy_master') {
+                            await _copyMaster(item);
+                          } else if (selected == 'paste_master') {
+                            final ok = await _pasteMaster();
+                            if (!ok && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('No master data to paste')),
+                              );
+                            }
+                          } else if (selected == 'copy_measurements') {
+                            await _copyMeasurements(item);
+                          } else if (selected == 'paste_measurements') {
+                            final ok = await _pasteMeasurements();
+                            if (!ok && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('No measurements to paste')),
+                              );
+                            }
+                          } else if (selected == 'copy_analysis') {
+                            await _copyAnalysis(item);
+                          } else if (selected == 'paste_analysis') {
+                            final ok = await _pasteAnalysis();
+                            if (!ok && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('No analysis data to paste')),
+                              );
+                            }
                           } else if (selected == 'copy_path') {
                             if (item.filePath.isEmpty) return;
                             await Clipboard.setData(ClipboardData(text: item.filePath));
@@ -1089,6 +1444,8 @@ class _ViewerScreenState extends State<ViewerScreen>
                   child: _DetailPanel(
                     item: selectedIndices.isEmpty ? null : items[selectedIndices.last],
                     selectedCount: selectedIndices.length,
+                    onUpdate:
+                        selectedIndices.length == 1 ? updateSelectedItemField : null,
                   ),
                 ),
               ],
@@ -1140,6 +1497,42 @@ class _ViewerScreenState extends State<ViewerScreen>
                     ),
                   ),
                 ),
+                if (_awaitingWorkType || analyzing)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _terminalInputController,
+                            onChanged: (_) => setState(() {}),
+                            onSubmitted: (_) => _sendTerminalInput(),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              labelText: _awaitingWorkType
+                                  ? 'Work Type (console)'
+                                  : 'Console input',
+                              hintText: _awaitingWorkType
+                                  ? '工種を入力して送信'
+                                  : 'CLIへ入力を送信',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _terminalInputController.text.trim().isEmpty
+                              ? null
+                              : _sendTerminalInput,
+                          child: Text(analyzing ? 'Send' : 'Set'),
+                        ),
+                        if (_awaitingWorkType)
+                          TextButton(
+                            onPressed: _cancelPendingAnalyze,
+                            child: const Text('Cancel'),
+                          ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1195,18 +1588,107 @@ class _FieldGrid extends StatelessWidget {
   }
 }
 
-class _DetailPanel extends StatelessWidget {
-  const _DetailPanel({required this.item, this.selectedCount = 1});
+class _DetailPanel extends StatefulWidget {
+  const _DetailPanel({
+    required this.item,
+    this.selectedCount = 1,
+    this.onUpdate,
+  });
 
   final ResultItem? item;
   final int selectedCount;
+  final void Function(String key, String value)? onUpdate;
+
+  @override
+  State<_DetailPanel> createState() => _DetailPanelState();
+}
+
+class _DetailPanelState extends State<_DetailPanel> {
+  final Map<String, TextEditingController> _controllers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _syncControllers(widget.item);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DetailPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.item?.filePath != oldWidget.item?.filePath ||
+        widget.item != oldWidget.item) {
+      _syncControllers(widget.item);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _syncControllers(ResultItem? item) {
+    if (item == null) return;
+    _setControllerText('date', item.date);
+    _setControllerText('photoCategory', item.photoCategory);
+    _setControllerText('workType', item.workType);
+    _setControllerText('variety', item.variety);
+    _setControllerText('subphase', item.subphase ?? '');
+    _setControllerText('remarks', item.remarks);
+    _setControllerText('station', item.station);
+    _setControllerText('measurements', item.measurements);
+    _setControllerText('description', item.description);
+  }
+
+  TextEditingController _controllerFor(String key) {
+    return _controllers.putIfAbsent(key, () => TextEditingController());
+  }
+
+  void _setControllerText(String key, String value) {
+    final controller = _controllerFor(key);
+    if (controller.text != value) {
+      controller.text = value;
+    }
+  }
+
+  Widget _buildEditableRow({
+    required String label,
+    required String key,
+    required String value,
+    int maxLines = 1,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.white70)),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _controllerFor(key),
+            maxLines: maxLines,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              isDense: true,
+              filled: true,
+            ),
+            onChanged: (value) => widget.onUpdate?.call(key, value),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final item = widget.item;
     if (item == null) {
       return const Center(child: Text('Select a card'));
     }
-    final it = item!;
+    final it = item;
+    final canEdit = widget.onUpdate != null && widget.selectedCount == 1;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
@@ -1215,16 +1697,24 @@ class _DetailPanel extends StatelessWidget {
       child: SelectionArea(
         child: ListView(
         children: [
-          if (selectedCount > 1)
+          if (widget.selectedCount > 1)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
-                '$selectedCount 件選択中',
+                '${widget.selectedCount} 件選択中',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFFF6C445),
                 ),
+              ),
+            ),
+          if (!canEdit)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                '複数選択中は編集できません',
+                style: TextStyle(fontSize: 12, color: Colors.white70),
               ),
             ),
           _DetailRow(
@@ -1233,17 +1723,63 @@ class _DetailPanel extends StatelessWidget {
             onCopyPath: it.filePath,
           ),
           const SizedBox(height: 8),
-          _DetailRow(label: 'Date', value: it.date),
-          _DetailRow(label: 'Photo Category', value: it.photoCategory),
-          _DetailRow(label: 'Work Type', value: it.workType),
-          _DetailRow(label: 'Variety', value: it.variety),
-          _DetailRow(label: '細別', value: it.subphase ?? ''),
-          _DetailRow(label: 'Remarks', value: it.remarks),
-          _DetailRow(label: 'Station', value: it.station),
-          _DetailRow(label: 'Measurements', value: it.measurements),
+          if (canEdit)
+            _buildEditableRow(label: 'Date', key: 'date', value: it.date),
+          if (!canEdit) _DetailRow(label: 'Date', value: it.date),
+          if (canEdit)
+            _buildEditableRow(
+              label: 'Photo Category',
+              key: 'photoCategory',
+              value: it.photoCategory,
+            ),
+          if (!canEdit)
+            _DetailRow(label: 'Photo Category', value: it.photoCategory),
+          if (canEdit)
+            _buildEditableRow(label: 'Work Type', key: 'workType', value: it.workType),
+          if (!canEdit) _DetailRow(label: 'Work Type', value: it.workType),
+          if (canEdit)
+            _buildEditableRow(label: 'Variety', key: 'variety', value: it.variety),
+          if (!canEdit) _DetailRow(label: 'Variety', value: it.variety),
+          if (canEdit)
+            _buildEditableRow(
+              label: '細別',
+              key: 'subphase',
+              value: it.subphase ?? '',
+            ),
+          if (!canEdit) _DetailRow(label: '細別', value: it.subphase ?? ''),
+          if (canEdit)
+            _buildEditableRow(
+              label: 'Remarks',
+              key: 'remarks',
+              value: it.remarks,
+              maxLines: 2,
+            ),
+          if (!canEdit) _DetailRow(label: 'Remarks', value: it.remarks),
+          if (canEdit)
+            _buildEditableRow(
+              label: 'Station',
+              key: 'station',
+              value: it.station,
+            ),
+          if (!canEdit) _DetailRow(label: 'Station', value: it.station),
+          if (canEdit)
+            _buildEditableRow(
+              label: 'Measurements',
+              key: 'measurements',
+              value: it.measurements,
+              maxLines: 2,
+            ),
+          if (!canEdit) _DetailRow(label: 'Measurements', value: it.measurements),
           _DetailRow(label: 'Detected Text', value: it.detectedText),
           _DetailRow(label: 'Has Board', value: it.hasBoard ? 'true' : 'false'),
-          _DetailRow(label: 'Description', value: it.description),
+          if (canEdit)
+            _buildEditableRow(
+              label: 'Description',
+              key: 'description',
+              value: it.description,
+              maxLines: 3,
+            ),
+          if (!canEdit) _DetailRow(label: 'Description', value: it.description),
           _DetailRow(label: 'Reasoning', value: it.reasoning),
         ],
       ),
@@ -1405,23 +1941,45 @@ class ResultItem {
   }
 
   ResultItem copyWith({
+    String? date,
+    String? photoCategory,
+    String? workType,
+    String? variety,
+    String? subphase,
+    String? remarks,
     String? station,
+    String? description,
+    String? measurements,
+    String? detectedText,
+    bool? hasBoard,
+    String? reasoning,
   }) {
     return ResultItem(
       fileName: fileName,
       filePath: filePath,
-      date: date,
-      photoCategory: photoCategory,
-      workType: workType,
-      variety: variety,
-      subphase: subphase,
-      remarks: remarks,
+      date: date ?? this.date,
+      photoCategory: photoCategory ?? this.photoCategory,
+      workType: workType ?? this.workType,
+      variety: variety ?? this.variety,
+      subphase: subphase ?? this.subphase,
+      remarks: remarks ?? this.remarks,
       station: station ?? this.station,
-      description: description,
-      measurements: measurements,
-      detectedText: detectedText,
-      hasBoard: hasBoard,
-      reasoning: reasoning,
+      description: description ?? this.description,
+      measurements: measurements ?? this.measurements,
+      detectedText: detectedText ?? this.detectedText,
+      hasBoard: hasBoard ?? this.hasBoard,
+      reasoning: reasoning ?? this.reasoning,
     );
+  }
+}
+
+class _ClipboardPayload {
+  const _ClipboardPayload({required this.type, required this.data});
+
+  final String type;
+  final Map<String, String> data;
+
+  String toJsonString() {
+    return jsonEncode({'type': type, 'data': data});
   }
 }
