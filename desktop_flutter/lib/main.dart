@@ -35,7 +35,7 @@ class PhotoAiApp extends StatelessWidget {
 
 enum AnalyzeProvider { claude, codex }
 
-enum ExportFormat { pdf, excel, both }
+enum ExportFormat { pdf, excel, photoXml, both }
 
 class ViewerScreen extends StatefulWidget {
   const ViewerScreen({super.key});
@@ -327,6 +327,7 @@ class _ViewerScreenState extends State<ViewerScreen>
     final suggestedName = switch (format) {
       ExportFormat.pdf => '$defaultStem.pdf',
       ExportFormat.excel => '$defaultStem.xlsx',
+      ExportFormat.photoXml => 'PHOTO.XML',
       ExportFormat.both => '$defaultStem.pdf',
     };
     final outputPath = await FilePicker.platform.saveFile(
@@ -343,6 +344,7 @@ class _ViewerScreenState extends State<ViewerScreen>
     final formatArg = switch (format) {
       ExportFormat.pdf => 'pdf',
       ExportFormat.excel => 'excel',
+      ExportFormat.photoXml => 'xml',
       ExportFormat.both => 'both',
     };
 
@@ -788,6 +790,12 @@ class _ViewerScreenState extends State<ViewerScreen>
                   MenuItemButton(
                     onPressed: items.isEmpty || exporting
                         ? null
+                        : () => runExport(ExportFormat.photoXml),
+                    child: const Text('Export PHOTO.XML'),
+                  ),
+                  MenuItemButton(
+                    onPressed: items.isEmpty || exporting
+                        ? null
                         : () => runExport(ExportFormat.both),
                     child: const Text('Export Both'),
                   ),
@@ -857,6 +865,10 @@ class _ViewerScreenState extends State<ViewerScreen>
                                 value: 'copy_path',
                                 child: Text('Copy File Path'),
                               ),
+                              const PopupMenuItem(
+                                value: 'edit_station',
+                                child: Text('測点編集'),
+                              ),
                             ],
                           );
 
@@ -873,6 +885,38 @@ class _ViewerScreenState extends State<ViewerScreen>
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('Path copied')),
                               );
+                            }
+                          } else if (selected == 'edit_station') {
+                            final controller = TextEditingController(text: item.station);
+                            final result = await showDialog<String>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('測点編集'),
+                                content: TextField(
+                                  controller: controller,
+                                  autofocus: true,
+                                  decoration: const InputDecoration(
+                                    labelText: '測点',
+                                    hintText: '例: No.10+5.0',
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: const Text('キャンセル'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, controller.text),
+                                    child: const Text('OK'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (result != null) {
+                              setState(() {
+                                items[index] = item.copyWith(station: result);
+                              });
+                              appendLog('Station updated: ${item.fileName} → $result');
                             }
                           }
                         },
