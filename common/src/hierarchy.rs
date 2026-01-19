@@ -151,6 +151,26 @@ impl HierarchyMaster {
         serde_json::to_value(hierarchy).unwrap_or(serde_json::Value::Null)
     }
 
+    /// 1ステップ解析用のチェーンレコードJSONを生成
+    /// (photoType/workType/variety/detail/remarks/patterns)
+    pub fn to_chain_records_json(&self) -> serde_json::Value {
+        let records: Vec<serde_json::Value> = self.rows
+            .iter()
+            .map(|row| {
+                serde_json::json!({
+                    "photoType": row.photo_type,
+                    "workType": row.work_type,
+                    "variety": row.variety,
+                    "detail": row.detail,
+                    "remarks": row.remarks,
+                    "patterns": row.search_patterns,
+                })
+            })
+            .collect();
+
+        serde_json::to_value(records).unwrap_or(serde_json::Value::Null)
+    }
+
     /// 写真種別の一覧を取得
     pub fn get_photo_types(&self) -> Vec<String> {
         let mut types: HashSet<String> = HashSet::new();

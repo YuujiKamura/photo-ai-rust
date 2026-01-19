@@ -103,7 +103,7 @@ pub fn build_single_step_prompt(
         .join("\n");
 
     let categories = PHOTO_CATEGORIES.join(", ");
-    let hierarchy_json = master.to_hierarchy_json();
+    let hierarchy_json = master.to_chain_records_json();
     let hierarchy_str = serde_json::to_string(&hierarchy_json).unwrap_or_default();
 
     let variety_hint = variety
@@ -117,7 +117,7 @@ pub fn build_single_step_prompt(
 以下から最も適切なものを選択：
 {categories}
 
-## 工種マスタ（この中から選択）
+## 工種マスタ（チェーンレコード）
 {hierarchy_str}
 
 ## 階層の意味（重要）
@@ -127,6 +127,7 @@ pub fn build_single_step_prompt(
 - variety: 種別
 - detail: 細別
 - remarks: 撮影内容（最下層。ここだけを選ぶ）
+- patterns: 備考に紐づく検索パターン
 
 ## 制約
 - 工種は「{work_type}」固定{variety_hint}
@@ -144,7 +145,8 @@ pub fn build_single_step_prompt(
     "photoCategory": "写真区分から選択",
     "station": "測点（黒板から読み取れた場合）",
     "remarks": "撮影内容（マスタの備考から1つ選択）",
-    "remarksCandidates": ["備考候補1", "備考候補2", "備考候補3"]
+    "remarksCandidates": ["備考候補1", "備考候補2", "備考候補3"],
+    "reasoning": "remarks を選んだ根拠（OCR/説明のどこが一致したかを短く）"
   }}
 ]
 
@@ -154,6 +156,7 @@ pub fn build_single_step_prompt(
 - JSON配列のみ出力。説明文は不要
 - remarks は空にせず、必ずマスタの備考から選択
 - remarksCandidates はマスタの備考から候補を3つ挙げ、すべて remarks と同じ「備考」カテゴリにする
+- reasoning は remarks を選んだ根拠を1〜2文で書く
 
 対象写真:
 {photo_list}"#
