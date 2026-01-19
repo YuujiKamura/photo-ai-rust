@@ -120,6 +120,14 @@ pub fn build_single_step_prompt(
 ## 工種マスタ（この中から選択）
 {hierarchy_str}
 
+## 階層の意味（重要）
+- photoDivision: 写真区分（直接工事費など）
+- photoType: 写真種別（施工状況写真、品質管理写真など）
+- workType: 工種
+- variety: 種別
+- detail: 細別
+- remarks: 撮影内容（最下層。ここだけを選ぶ）
+
 ## 制約
 - 工種は「{work_type}」固定{variety_hint}
 - 撮影内容（備考）だけをマスタから選択（判断不可なら空文字）
@@ -145,7 +153,7 @@ pub fn build_single_step_prompt(
 - 数値は単位も含めて正確に
 - JSON配列のみ出力。説明文は不要
 - remarks は空にせず、必ずマスタの備考から選択
-- remarksCandidates はマスタの備考から候補を3つ挙げ、最初の候補は remarks と一致させる
+- remarksCandidates はマスタの備考から候補を3つ挙げ、すべて remarks と同じ「備考」カテゴリにする
 
 対象写真:
 {photo_list}"#
