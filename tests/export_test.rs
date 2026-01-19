@@ -26,6 +26,7 @@ fn create_test_result(index: usize) -> AnalysisResult {
         measurements: "50mm".to_string(),
         detected_text: String::new(),
         reasoning: String::new(),
+        remarks_candidates: Vec::new(),
     }
 }
 
@@ -189,6 +190,7 @@ fn test_excel_data_consistency() {
             measurements: "t=50mm".to_string(),
             detected_text: String::new(),
             reasoning: String::new(),
+            remarks_candidates: Vec::new(),
         },
     ];
 
@@ -252,6 +254,7 @@ fn test_excel_japanese_text() {
             measurements: "厚さ50mm".to_string(),
             detected_text: String::new(),
             reasoning: String::new(),
+            remarks_candidates: Vec::new(),
         },
     ];
 
