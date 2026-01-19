@@ -67,7 +67,7 @@ fn build_xml(results: &[AnalysisResult]) -> String {
     xml
 }
 
-fn photo_xml_paths(output: &Path) -> Result<(PathBuf, PathBuf)> {
+fn photo_xml_paths(output: &Path) -> Result<(PathBuf, PathBuf, PathBuf)> {
     let is_xml = output
         .extension()
         .and_then(|s| s.to_str())
@@ -77,7 +77,8 @@ fn photo_xml_paths(output: &Path) -> Result<(PathBuf, PathBuf)> {
     if is_xml {
         let parent = output.parent().unwrap_or_else(|| Path::new("."));
         let dtd_path = parent.join("PHOTO.DTD");
-        return Ok((output.to_path_buf(), dtd_path));
+        let pic_dir = parent.join("PIC");
+        return Ok((output.to_path_buf(), dtd_path, pic_dir));
     }
 
     let base_dir = if output.is_dir() || output.extension().is_none() {
@@ -91,15 +92,51 @@ fn photo_xml_paths(output: &Path) -> Result<(PathBuf, PathBuf)> {
 
     let xml_path = photo_dir.join("PHOTO.XML");
     let dtd_path = photo_dir.join("PHOTO.DTD");
-    Ok((xml_path, dtd_path))
+    let pic_dir = photo_dir.join("PIC");
+    Ok((xml_path, dtd_path, pic_dir))
 }
 
 pub fn generate_photo_xml(results: &[AnalysisResult], output: &Path) -> Result<PathBuf> {
-    let (xml_path, dtd_path) = photo_xml_paths(output)?;
+    let (xml_path, dtd_path, pic_dir) = photo_xml_paths(output)?;
     let xml = build_xml(results);
 
     std::fs::write(&xml_path, xml)?;
     std::fs::write(&dtd_path, DTD_CONTENT)?;
+    copy_images_to_pic(results, &pic_dir)?;
 
     Ok(xml_path)
+}
+
+fn copy_images_to_pic(results: &[AnalysisResult], pic_dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(pic_dir)?;
+
+    for result in results {
+        if result.file_path.is_empty() {
+            continue;
+        }
+        let source = Path::new(&result.file_path);
+        if !source.exists() {
+            eprintln!("PHOTO.XML: image not found: {}", source.display());
+            continue;
+        }
+        let file_name = if result.file_name.is_empty() {
+            source
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("image.jpg")
+                .to_string()
+        } else {
+            result.file_name.clone()
+        };
+        let dest = pic_dir.join(file_name);
+        if let Err(err) = std::fs::copy(source, &dest) {
+            eprintln!(
+                "PHOTO.XML: failed to copy image {}: {}",
+                source.display(),
+                err
+            );
+        }
+    }
+
+    Ok(())
 }
