@@ -227,6 +227,54 @@ impl HierarchyMaster {
             variety_to_details,
         }
     }
+
+    /// 指定した工種・種別のみに絞ったマスタを返す
+    pub fn filter_by_work_type_and_variety(&self, work_type: &str, variety: Option<&str>) -> Self {
+        let filtered_rows: Vec<HierarchyRow> = self.rows
+            .iter()
+            .filter(|row| {
+                if row.work_type != work_type {
+                    return false;
+                }
+                match variety {
+                    Some(v) => row.variety == v,
+                    None => true,
+                }
+            })
+            .cloned()
+            .collect();
+
+        let mut work_types_set = HashSet::new();
+        let mut work_type_to_varieties: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut variety_to_details: HashMap<(String, String), HashSet<String>> = HashMap::new();
+
+        for row in &filtered_rows {
+            if !row.work_type.is_empty() {
+                work_types_set.insert(row.work_type.clone());
+
+                if !row.variety.is_empty() {
+                    work_type_to_varieties
+                        .entry(row.work_type.clone())
+                        .or_default()
+                        .insert(row.variety.clone());
+
+                    if !row.detail.is_empty() {
+                        variety_to_details
+                            .entry((row.work_type.clone(), row.variety.clone()))
+                            .or_default()
+                            .insert(row.detail.clone());
+                    }
+                }
+            }
+        }
+
+        Self {
+            rows: filtered_rows,
+            work_types: work_types_set,
+            work_type_to_varieties,
+            variety_to_details,
+        }
+    }
 }
 
 /// CSV行をパース（ダブルクォート対応）

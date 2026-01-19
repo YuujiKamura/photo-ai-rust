@@ -52,7 +52,7 @@ const LAYOUT_FIELDS = [
   { key: 'detail', label: '細別', rowSpan: 1 },
   { key: 'station', label: '測点', rowSpan: 1 },
   { key: 'remarks', label: '備考', rowSpan: 2 },
-  { key: 'measurements', label: '測定値', rowSpan: 3 },
+  { key: 'measurements', label: '測定値', rowSpan: 2 },
 ];
 
 // 2枚/ページ用のフィールド（測点と備考のみ）
@@ -304,6 +304,7 @@ if (isNode) {
     const outputPath = args[1];
 
     import('fs').then(async (fs) => {
+      const path = await import('path');
       const ExcelJSModule = await import('exceljs');
       globalThis.ExcelJS = ExcelJSModule.default || ExcelJSModule;
 
@@ -311,6 +312,17 @@ if (isNode) {
         const inputData = JSON.parse(fs.readFileSync(inputJson, 'utf-8'));
         const photos = inputData.photos || inputData;
         const options = inputData.options || { title: '写真台帳', photosPerPage: 3 };
+
+        // filePathがある場合はbase64に変換して埋め込み用にする
+        for (const photo of photos) {
+          if (photo.imageDataUrl || !photo.filePath) continue;
+          if (!fs.existsSync(photo.filePath)) continue;
+          const ext = path.extname(photo.filePath).replace('.', '').toLowerCase();
+          const normalized = ext === 'jpg' ? 'jpeg' : ext;
+          if (!['jpeg', 'png', 'gif'].includes(normalized)) continue;
+          const buffer = fs.readFileSync(photo.filePath);
+          photo.imageDataUrl = `data:image/${normalized};base64,${buffer.toString('base64')}`;
+        }
 
         const buffer = await generateExcel(
           JSON.stringify(photos),

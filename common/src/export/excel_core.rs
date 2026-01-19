@@ -3,9 +3,10 @@
 //! layout.rs の定義を使用して写真台帳形式のExcelを生成
 
 use crate::layout::{
+    excel_width_to_px, PT_TO_PX,
     ExcelLayout, LAYOUT_FIELDS,
-    PHOTO_ROWS, ROW_HEIGHT_PT,
-    PHOTO_COL_WIDTH, LABEL_COL_WIDTH, VALUE_COL_WIDTH,
+    PHOTO_COL_WIDTH, PHOTO_ROWS,
+    LABEL_COL_WIDTH, VALUE_COL_WIDTH,
 };
 use rust_xlsxwriter::*;
 
@@ -113,12 +114,16 @@ where
         worksheet.set_name(&sheet_name)
             .map_err(|e| format!("シート名設定エラー: {}", e))?;
 
-        // 列幅設定
-        worksheet.set_column_width(0, PHOTO_COL_WIDTH as f64)
+        // 列幅設定（React版と同じpx換算を使用）
+        let row_height_px = (layout.row_height_pt * PT_TO_PX).round() as u32;
+        let col_a_px = excel_width_to_px(PHOTO_COL_WIDTH) as u32;
+        let col_b_px = excel_width_to_px(LABEL_COL_WIDTH) as u32;
+        let col_c_px = excel_width_to_px(VALUE_COL_WIDTH) as u32;
+        worksheet.set_column_width_pixels(0, col_a_px)
             .map_err(|e| format!("列幅設定エラー: {}", e))?;
-        worksheet.set_column_width(1, LABEL_COL_WIDTH as f64)
+        worksheet.set_column_width_pixels(1, col_b_px)
             .map_err(|e| format!("列幅設定エラー: {}", e))?;
-        worksheet.set_column_width(2, VALUE_COL_WIDTH as f64)
+        worksheet.set_column_width_pixels(2, col_c_px)
             .map_err(|e| format!("列幅設定エラー: {}", e))?;
 
         let mut current_row: u32 = 0;
@@ -130,7 +135,7 @@ where
 
             // 行高さ設定
             for r in start_row..(start_row + rows_per_block) {
-                worksheet.set_row_height(r, ROW_HEIGHT_PT as f64)
+                worksheet.set_row_height_pixels(r, row_height_px)
                     .map_err(|e| format!("行高さ設定エラー: {}", e))?;
             }
 
@@ -144,7 +149,13 @@ where
                 let image = Image::new_from_buffer(&image_data.data)
                     .map_err(|e| format!("画像読み込みエラー: {}", e))?;
 
-                worksheet.insert_image_fit_to_cell(start_row, 0, &image, false)
+                // 単一倍率で縦横比を維持しつつ枠内に収める
+                let image = image
+                    .set_scale_width(0.36)
+                    .set_scale_height(0.36)
+                    .set_object_movement(ObjectMovement::DontMoveOrSizeWithCells);
+
+                worksheet.insert_image_with_offset(start_row, 0, &image, 0, 0)
                     .map_err(|e| format!("画像埋め込みエラー: {}", e))?;
             }
 

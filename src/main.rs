@@ -15,9 +15,10 @@ async fn run_analysis(
     master: Option<&Path>,
     use_cache: bool,
     provider: AiProvider,
-    step_prefix: &str,
     work_type: Option<&str>,
     variety: Option<&str>,
+    _station: Option<&str>,
+    step_prefix: &str,
 ) -> Result<Vec<analyzer::AnalysisResult>> {
     // 工種指定時は1ステップ解析（推奨）
     if let Some(wt) = work_type {
@@ -119,7 +120,16 @@ async fn main() -> Result<()> {
             // work_type: CLI引数優先、なければ選択結果から
             let effective_work_type = work_type.or_else(|| selection.as_ref().and_then(|s| s.work_type.clone()));
             let master_path = selection.map(|s| s.path);
-
+            if variety.is_some() && effective_work_type.is_none() {
+                return Err(error::PhotoAiError::InvalidMaster(
+                    "variety指定にはwork_typeが必要です".to_string(),
+                ));
+            }
+            if effective_work_type.is_some() && master_path.is_none() {
+                return Err(error::PhotoAiError::MasterLoad(
+                    "work_type指定にはマスタが必要です".to_string(),
+                ));
+            }
 
             // 1. 画像スキャン
             println!("[1/3] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
@@ -141,9 +151,10 @@ async fn main() -> Result<()> {
                 master_path.as_deref(),
                 use_cache,
                 cli.ai_provider,
-                "[2/3]",
                 effective_work_type.as_deref(),
                 variety.as_deref(),
+                station.as_deref(),
+                "[2/3]",
             ).await?;
             println!("✔ 解析完了\n");
 
@@ -210,10 +221,19 @@ async fn main() -> Result<()> {
             // work_type: CLI引数優先、なければ選択結果から
             let effective_work_type = work_type.or_else(|| selection.as_ref().and_then(|s| s.work_type.clone()));
             let master_path = selection.map(|s| s.path);
-
+            if variety.is_some() && effective_work_type.is_none() {
+                return Err(error::PhotoAiError::InvalidMaster(
+                    "variety指定にはwork_typeが必要です".to_string(),
+                ));
+            }
+            if effective_work_type.is_some() && master_path.is_none() {
+                return Err(error::PhotoAiError::MasterLoad(
+                    "work_type指定にはマスタが必要です".to_string(),
+                ));
+            }
 
             // 1. Scan
-            println!("[1/5] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
+            println!("[1/4] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
             let images = scanner::scan_folder_full(&folder, recursive, !include_all)?;
             println!("✔ {}枚の写真を検出\n", images.len());
 
@@ -232,9 +252,10 @@ async fn main() -> Result<()> {
                 master_path.as_deref(),
                 use_cache,
                 cli.ai_provider,
-                "[2/5]",
                 effective_work_type.as_deref(),
                 variety.as_deref(),
+                station.as_deref(),
+                "[2/4]",
             ).await?;
             println!("✔ 解析完了\n");
 
@@ -246,14 +267,14 @@ async fn main() -> Result<()> {
 
             // 3. 結果保存
             let output_dir = output.unwrap_or_else(|| folder.clone());
-            println!("[3/5] 結果を保存中...");
+            println!("[3/4] 結果を保存中...");
             let json_path = output_dir.join("result.json");
             let json = serde_json::to_string_pretty(&results)?;
             std::fs::write(&json_path, &json)?;
             println!("✔ 結果を保存: {}", json_path.display());
 
             // 4. Export
-            println!("[4/5] エクスポート中...");
+            println!("[4/4] エクスポート中...");
             export::export_results(&results, &format, &output_dir, 3, "工事写真帳", pdf_quality)?;
 
             println!("\n✅ 完了");
