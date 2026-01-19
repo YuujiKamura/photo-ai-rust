@@ -389,11 +389,16 @@ class _ViewerScreenState extends State<ViewerScreen>
   Future<String> resolveCliPath() async {
     if (cliPath.isNotEmpty) return cliPath;
     final current = Directory.current.path;
+    final repoRoot = resolveRepoRoot();
     final candidate = Platform.isWindows ? 'photo-ai-rust.exe' : 'photo-ai-rust';
-    final debugPath = p.join(current, '..', 'target', 'debug', candidate);
-    final releasePath = p.join(current, '..', 'target', 'release', candidate);
+    final debugPath = p.join(repoRoot, 'target', 'debug', candidate);
+    final releasePath = p.join(repoRoot, 'target', 'release', candidate);
     if (File(debugPath).existsSync()) return debugPath;
     if (File(releasePath).existsSync()) return releasePath;
+    final legacyDebug = p.join(current, '..', 'target', 'debug', candidate);
+    final legacyRelease = p.join(current, '..', 'target', 'release', candidate);
+    if (File(legacyDebug).existsSync()) return legacyDebug;
+    if (File(legacyRelease).existsSync()) return legacyRelease;
     return candidate;
   }
 
