@@ -87,8 +87,8 @@ pub const GAP_ROWS: u8 = 1;
 pub const ROWS_PER_BLOCK_3UP: u8 = PHOTO_ROWS + GAP_ROWS; // 11行/ブロック
 pub const ROWS_PER_BLOCK_2UP: u8 = PHOTO_ROWS + GAP_ROWS; // 2upも同様
 
-/// 行高さ (pt) = 写真高さ ÷ 写真行数 × SCALE
-pub const ROW_HEIGHT_PT: f32 = 26.0; // floor((242.9 / 10) * 1.1)
+/// 行高さ (pt) = 列幅から4:3比率で導出
+pub const ROW_HEIGHT_PT: f32 = 27.0;
 
 /// 列幅 (Excel単位)
 pub const PHOTO_COL_WIDTH: f32 = 56.1;  // アスペクト比に合わせて調整
@@ -116,7 +116,7 @@ pub const LAYOUT_FIELDS: &[FieldDefinition] = &[
     FieldDefinition { key: "variety", label: "種別", row_span: 1 },
     FieldDefinition { key: "detail", label: "細別", row_span: 1 },
     FieldDefinition { key: "station", label: "測点", row_span: 1 },
-    FieldDefinition { key: "remarks", label: "備考", row_span: 2 },
+    FieldDefinition { key: "remarks", label: "備考", row_span: 1 },
     FieldDefinition { key: "measurements", label: "測定値", row_span: 3 },
 ];
 
@@ -365,7 +365,7 @@ mod tests {
         let layout = ExcelLayout::three_up();
         assert_eq!(layout.rows_per_block, 11);
         assert_eq!(layout.photo_rows, 10);
-        assert!((layout.row_height_pt - 26.0).abs() < 0.01);
+        assert!((layout.row_height_pt - 27.0).abs() < 0.01);
         assert!((layout.col_a_width - 56.1).abs() < 0.01);
         assert!((layout.col_b_width - 11.0).abs() < 0.01);
         assert!((layout.col_c_width - 28.6).abs() < 0.01);

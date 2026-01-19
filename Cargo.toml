@@ -1,5 +1,5 @@
 [workspace]
-members = ["common", "web-wasm"]
+members = ["common", "desktop-rust", "web-wasm"]
 resolver = "2"
 
 [package]
