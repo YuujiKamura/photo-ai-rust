@@ -48,7 +48,7 @@ class _ViewerScreenState extends State<ViewerScreen>
     with SingleTickerProviderStateMixin {
   List<ResultItem> items = [];
   List<ResultItem> originalItems = [];
-  int? selectedIndex;
+  Set<int> selectedIndices = {};
   String? sourcePath;
   String status = '';
   String analyzeStatus = '';
@@ -134,7 +134,7 @@ class _ViewerScreenState extends State<ViewerScreen>
         items = items.map((item) => item.copyWith(station: stationOverride)).toList();
       }
       originalItems = List<ResultItem>.from(items);
-      selectedIndex = items.isEmpty ? null : 0;
+      selectedIndices = items.isEmpty ? {} : {0};
       sourcePath = path;
       setStatus('Loaded ${p.basename(path)}');
       appendLog('Loaded ${p.basename(path)}');
@@ -214,13 +214,13 @@ class _ViewerScreenState extends State<ViewerScreen>
         runInShell: true,
       );
       process.stdout
-          .transform(utf8.decoder)
+          .transform(const Utf8Decoder(allowMalformed: true))
           .transform(const LineSplitter())
           .listen((line) {
         appendLog(line);
       });
       process.stderr
-          .transform(utf8.decoder)
+          .transform(const Utf8Decoder(allowMalformed: true))
           .transform(const LineSplitter())
           .listen((line) {
         appendLog(line);
@@ -269,11 +269,11 @@ class _ViewerScreenState extends State<ViewerScreen>
         runInShell: true,
       );
       process.stdout
-          .transform(utf8.decoder)
+          .transform(const Utf8Decoder(allowMalformed: true))
           .transform(const LineSplitter())
           .listen(appendLog);
       process.stderr
-          .transform(utf8.decoder)
+          .transform(const Utf8Decoder(allowMalformed: true))
           .transform(const LineSplitter())
           .listen(appendLog);
 
@@ -360,11 +360,11 @@ class _ViewerScreenState extends State<ViewerScreen>
         runInShell: true,
       );
       process.stdout
-          .transform(utf8.decoder)
+          .transform(const Utf8Decoder(allowMalformed: true))
           .transform(const LineSplitter())
           .listen(appendLog);
       process.stderr
-          .transform(utf8.decoder)
+          .transform(const Utf8Decoder(allowMalformed: true))
           .transform(const LineSplitter())
           .listen(appendLog);
 
@@ -837,7 +837,16 @@ class _ViewerScreenState extends State<ViewerScreen>
                         key: ValueKey(item.fileName + index.toString()),
                         onTap: () {
                           setState(() {
-                            selectedIndex = index;
+                            final isCtrlPressed = HardwareKeyboard.instance.isControlPressed;
+                            if (isCtrlPressed) {
+                              if (selectedIndices.contains(index)) {
+                                selectedIndices.remove(index);
+                              } else {
+                                selectedIndices.add(index);
+                              }
+                            } else {
+                              selectedIndices = {index};
+                            }
                           });
                         },
                         onSecondaryTapDown: (details) async {
@@ -849,6 +858,12 @@ class _ViewerScreenState extends State<ViewerScreen>
                             ),
                             Offset.zero & overlay.size,
                           );
+                          // 右クリックしたアイテムが選択に含まれていなければ選択を切り替え
+                          if (!selectedIndices.contains(index)) {
+                            setState(() {
+                              selectedIndices = {index};
+                            });
+                          }
                           final selected = await showMenu<String>(
                             context: context,
                             position: position,
@@ -861,6 +876,11 @@ class _ViewerScreenState extends State<ViewerScreen>
                                 value: 'reanalyze_entry',
                                 child: Text('Re-analyze Entry'),
                               ),
+                              if (selectedIndices.length > 1)
+                                PopupMenuItem(
+                                  value: 'reanalyze_group',
+                                  child: Text('グループ解析 (${selectedIndices.length}件)'),
+                                ),
                               const PopupMenuItem(
                                 value: 'copy_path',
                                 child: Text('Copy File Path'),
@@ -869,6 +889,11 @@ class _ViewerScreenState extends State<ViewerScreen>
                                 value: 'edit_station',
                                 child: Text('測点編集'),
                               ),
+                              if (selectedIndices.length > 1)
+                                PopupMenuItem(
+                                  value: 'edit_station_group',
+                                  child: Text('グループ測点編集 (${selectedIndices.length}件)'),
+                                ),
                             ],
                           );
 
@@ -924,12 +949,12 @@ class _ViewerScreenState extends State<ViewerScreen>
                           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: selectedIndex == index
+                            color: selectedIndices.contains(index)
                                 ? const Color(0xFF1F232E)
                                 : const Color(0xFF141821),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: selectedIndex == index
+                              color: selectedIndices.contains(index)
                                   ? const Color(0xFFF6C445)
                                   : const Color(0xFF2A2F3A),
                             ),
@@ -981,7 +1006,8 @@ class _ViewerScreenState extends State<ViewerScreen>
                 Expanded(
                   flex: 1,
                   child: _DetailPanel(
-                    item: selectedIndex == null ? null : items[selectedIndex!],
+                    item: selectedIndices.isEmpty ? null : items[selectedIndices.last],
+                    selectedCount: selectedIndices.length,
                   ),
                 ),
               ],
@@ -1094,9 +1120,10 @@ class _FieldGrid extends StatelessWidget {
 }
 
 class _DetailPanel extends StatelessWidget {
-  const _DetailPanel({required this.item});
+  const _DetailPanel({required this.item, this.selectedCount = 1});
 
   final ResultItem? item;
+  final int selectedCount;
 
   @override
   Widget build(BuildContext context) {
@@ -1111,6 +1138,18 @@ class _DetailPanel extends StatelessWidget {
       ),
       child: ListView(
         children: [
+          if (selectedCount > 1)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '$selectedCount 件選択中',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFF6C445),
+                ),
+              ),
+            ),
           _DetailRow(
             label: 'File Name',
             value: it.fileName,
