@@ -15,6 +15,7 @@ photo-ai-common = { path = "common" }
 # CLI
 clap = { version = "4", features = ["derive"] }
 dialoguer = "0.11"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 # 画像処理
 image = "0.25"

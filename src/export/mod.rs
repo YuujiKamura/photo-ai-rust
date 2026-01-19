@@ -1,5 +1,6 @@
 pub mod pdf;
 pub mod excel;
+pub mod photo_xml;
 
 use crate::analyzer::AnalysisResult;
 use crate::cli::{ExportFormat, PdfQuality};
@@ -51,6 +52,11 @@ pub fn export_results(
             println!("- Excelを生成中...");
             excel::generate_excel(results, &output_path, title)?;
             println!("✔ Excel出力: {}", output_path.display());
+        }
+        ExportFormat::PhotoXml => {
+            println!("- PHOTO.XMLを生成中...");
+            let xml_path = photo_xml::generate_photo_xml(results, output_dir)?;
+            println!("✔ PHOTO.XML出力: {}", xml_path.display());
         }
         ExportFormat::Both => {
             let (pdf_path, excel_path) = output_paths_for_both(output_dir, title);
