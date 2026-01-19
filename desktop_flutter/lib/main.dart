@@ -7,6 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:csv/csv.dart';
 
+import 'models/result_item.dart';
+import 'widgets/detail_panel.dart';
+import 'widgets/field_grid.dart';
+
 void main() {
   runApp(const PhotoAiApp());
 }
@@ -75,7 +79,7 @@ class _ViewerScreenState extends State<ViewerScreen>
   String? _pendingAnalyzeFolder;
   String? _pendingAnalyzeOutput;
   final TextEditingController _terminalInputController = TextEditingController();
-  _ClipboardPayload? _clipboardPayload;
+  ClipboardPayload? _clipboardPayload;
 
   @override
   void initState() {
@@ -216,7 +220,7 @@ class _ViewerScreenState extends State<ViewerScreen>
     });
   }
 
-  Future<_ClipboardPayload?> _loadClipboardPayload() async {
+  Future<ClipboardPayload?> _loadClipboardPayload() async {
     if (_clipboardPayload != null) return _clipboardPayload;
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text;
@@ -231,20 +235,20 @@ class _ViewerScreenState extends State<ViewerScreen>
       for (final entry in payload.entries) {
         dataMap[entry.key.toString()] = entry.value?.toString() ?? '';
       }
-      return _ClipboardPayload(type: type, data: dataMap);
+      return ClipboardPayload(type: type, data: dataMap);
     } catch (_) {
       return null;
     }
   }
 
-  Future<void> _copyPayload(_ClipboardPayload payload) async {
+  Future<void> _copyPayload(ClipboardPayload payload) async {
     _clipboardPayload = payload;
     await Clipboard.setData(ClipboardData(text: payload.toJsonString()));
   }
 
   Future<void> _copyMaster(ResultItem item) async {
     await _copyPayload(
-      _ClipboardPayload(
+      ClipboardPayload(
         type: 'master',
         data: {
           'workType': item.workType,
@@ -259,7 +263,7 @@ class _ViewerScreenState extends State<ViewerScreen>
 
   Future<void> _copyMeasurements(ResultItem item) async {
     await _copyPayload(
-      _ClipboardPayload(
+      ClipboardPayload(
         type: 'measurements',
         data: {'measurements': item.measurements},
       ),
@@ -269,7 +273,7 @@ class _ViewerScreenState extends State<ViewerScreen>
 
   Future<void> _copyAnalysis(ResultItem item) async {
     await _copyPayload(
-      _ClipboardPayload(
+      ClipboardPayload(
         type: 'analysis',
         data: {
           'photoCategory': item.photoCategory,
@@ -1415,7 +1419,7 @@ class _ViewerScreenState extends State<ViewerScreen>
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    _FieldGrid(item: item),
+                                    FieldGrid(item: item),
                                     const SizedBox(height: 8),
                                     Text(
                                       'キャプション',
@@ -1441,12 +1445,12 @@ class _ViewerScreenState extends State<ViewerScreen>
                 ),
                 Expanded(
                   flex: 1,
-                  child: _DetailPanel(
-                    item: selectedIndices.isEmpty ? null : items[selectedIndices.last],
-                    selectedCount: selectedIndices.length,
-                    onUpdate:
+                child: DetailPanel(
+                  item: selectedIndices.isEmpty ? null : items[selectedIndices.last],
+                  selectedCount: selectedIndices.length,
+                  onUpdate:
                         selectedIndices.length == 1 ? updateSelectedItemField : null,
-                  ),
+                ),
                 ),
               ],
             ),
@@ -1539,447 +1543,5 @@ class _ViewerScreenState extends State<ViewerScreen>
         ],
       ),
     );
-  }
-}
-
-class _FieldGrid extends StatelessWidget {
-  const _FieldGrid({required this.item});
-
-  final ResultItem item;
-
-  static const fields = [
-    FieldDef(key: 'date', label: '日時'),
-    FieldDef(key: 'photoCategory', label: '区分'),
-    FieldDef(key: 'workType', label: '工種'),
-    FieldDef(key: 'variety', label: '種別'),
-    FieldDef(key: 'subphase', label: '細別'),
-    FieldDef(key: 'station', label: '測点'),
-    FieldDef(key: 'remarks', label: '備考'),
-    FieldDef(key: 'measurements', label: '測定値'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: fields
-          .map(
-            (field) => Row(
-              children: [
-                SizedBox(
-                  width: 60,
-                  child: Text(
-                    field.label,
-                    style: const TextStyle(fontSize: 12, color: Colors.white70),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    item.valueByKey(field.key).isEmpty
-                        ? '-'
-                        : item.valueByKey(field.key),
-                    style: const TextStyle(fontSize: 12, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          )
-          .toList(),
-    );
-  }
-}
-
-class _DetailPanel extends StatefulWidget {
-  const _DetailPanel({
-    required this.item,
-    this.selectedCount = 1,
-    this.onUpdate,
-  });
-
-  final ResultItem? item;
-  final int selectedCount;
-  final void Function(String key, String value)? onUpdate;
-
-  @override
-  State<_DetailPanel> createState() => _DetailPanelState();
-}
-
-class _DetailPanelState extends State<_DetailPanel> {
-  final Map<String, TextEditingController> _controllers = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _syncControllers(widget.item);
-  }
-
-  @override
-  void didUpdateWidget(covariant _DetailPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.item?.filePath != oldWidget.item?.filePath ||
-        widget.item != oldWidget.item) {
-      _syncControllers(widget.item);
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final controller in _controllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
-  void _syncControllers(ResultItem? item) {
-    if (item == null) return;
-    _setControllerText('date', item.date);
-    _setControllerText('photoCategory', item.photoCategory);
-    _setControllerText('workType', item.workType);
-    _setControllerText('variety', item.variety);
-    _setControllerText('subphase', item.subphase ?? '');
-    _setControllerText('remarks', item.remarks);
-    _setControllerText('station', item.station);
-    _setControllerText('measurements', item.measurements);
-    _setControllerText('description', item.description);
-  }
-
-  TextEditingController _controllerFor(String key) {
-    return _controllers.putIfAbsent(key, () => TextEditingController());
-  }
-
-  void _setControllerText(String key, String value) {
-    final controller = _controllerFor(key);
-    if (controller.text != value) {
-      controller.text = value;
-    }
-  }
-
-  Widget _buildEditableRow({
-    required String label,
-    required String key,
-    required String value,
-    int maxLines = 1,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(color: Colors.white70)),
-          const SizedBox(height: 4),
-          TextField(
-            controller: _controllerFor(key),
-            maxLines: maxLines,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              isDense: true,
-              filled: true,
-            ),
-            onChanged: (value) => widget.onUpdate?.call(key, value),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final item = widget.item;
-    if (item == null) {
-      return const Center(child: Text('Select a card'));
-    }
-    final it = item;
-    final canEdit = widget.onUpdate != null && widget.selectedCount == 1;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: Color(0xFF0F121A),
-      ),
-      child: SelectionArea(
-        child: ListView(
-        children: [
-          if (widget.selectedCount > 1)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                '${widget.selectedCount} 件選択中',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFFF6C445),
-                ),
-              ),
-            ),
-          if (!canEdit)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                '複数選択中は編集できません',
-                style: TextStyle(fontSize: 12, color: Colors.white70),
-              ),
-            ),
-          _DetailRow(
-            label: 'File Name',
-            value: it.fileName,
-            onCopyPath: it.filePath,
-          ),
-          const SizedBox(height: 8),
-          if (canEdit)
-            _buildEditableRow(label: 'Date', key: 'date', value: it.date),
-          if (!canEdit) _DetailRow(label: 'Date', value: it.date),
-          if (canEdit)
-            _buildEditableRow(
-              label: 'Photo Category',
-              key: 'photoCategory',
-              value: it.photoCategory,
-            ),
-          if (!canEdit)
-            _DetailRow(label: 'Photo Category', value: it.photoCategory),
-          if (canEdit)
-            _buildEditableRow(label: 'Work Type', key: 'workType', value: it.workType),
-          if (!canEdit) _DetailRow(label: 'Work Type', value: it.workType),
-          if (canEdit)
-            _buildEditableRow(label: 'Variety', key: 'variety', value: it.variety),
-          if (!canEdit) _DetailRow(label: 'Variety', value: it.variety),
-          if (canEdit)
-            _buildEditableRow(
-              label: '細別',
-              key: 'subphase',
-              value: it.subphase ?? '',
-            ),
-          if (!canEdit) _DetailRow(label: '細別', value: it.subphase ?? ''),
-          if (canEdit)
-            _buildEditableRow(
-              label: 'Remarks',
-              key: 'remarks',
-              value: it.remarks,
-              maxLines: 2,
-            ),
-          if (!canEdit) _DetailRow(label: 'Remarks', value: it.remarks),
-          if (canEdit)
-            _buildEditableRow(
-              label: 'Station',
-              key: 'station',
-              value: it.station,
-            ),
-          if (!canEdit) _DetailRow(label: 'Station', value: it.station),
-          if (canEdit)
-            _buildEditableRow(
-              label: 'Measurements',
-              key: 'measurements',
-              value: it.measurements,
-              maxLines: 2,
-            ),
-          if (!canEdit) _DetailRow(label: 'Measurements', value: it.measurements),
-          _DetailRow(label: 'Detected Text', value: it.detectedText),
-          _DetailRow(label: 'Has Board', value: it.hasBoard ? 'true' : 'false'),
-          if (canEdit)
-            _buildEditableRow(
-              label: 'Description',
-              key: 'description',
-              value: it.description,
-              maxLines: 3,
-            ),
-          if (!canEdit) _DetailRow(label: 'Description', value: it.description),
-          _DetailRow(label: 'Reasoning', value: it.reasoning),
-        ],
-      ),
-      ),
-    );
-  }
-}
-
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.label, required this.value, this.onCopyPath});
-
-  final String label;
-  final String value;
-  final String? onCopyPath;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onSecondaryTapDown: (details) async {
-        if (onCopyPath == null || onCopyPath!.isEmpty) return;
-        final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-        final position = RelativeRect.fromRect(
-          Rect.fromPoints(
-            details.globalPosition,
-            details.globalPosition,
-          ),
-          Offset.zero & overlay.size,
-        );
-        final selected = await showMenu<String>(
-          context: context,
-          position: position,
-          items: [
-            const PopupMenuItem(value: 'copy_path', child: Text('Copy Path')),
-          ],
-        );
-        if (selected == 'copy_path') {
-          await Clipboard.setData(ClipboardData(text: onCopyPath!));
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Path copied')),
-          );
-        }
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(color: Colors.white70)),
-            const SizedBox(height: 4),
-            SelectableText(
-              value.isEmpty ? '-' : value,
-              style: const TextStyle(color: Colors.white),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class FieldDef {
-  const FieldDef({required this.key, required this.label});
-
-  final String key;
-  final String label;
-}
-
-class ResultItem {
-  ResultItem({
-    required this.fileName,
-    required this.filePath,
-    required this.date,
-    required this.photoCategory,
-    required this.workType,
-    required this.variety,
-    required this.subphase,
-    required this.remarks,
-    required this.station,
-    required this.description,
-    required this.measurements,
-    required this.detectedText,
-    required this.hasBoard,
-    required this.reasoning,
-  });
-
-  final String fileName;
-  final String filePath;
-  final String date;
-  final String photoCategory;
-  final String workType;
-  final String variety;
-  final String? subphase;
-  final String remarks;
-  final String station;
-  final String description;
-  final String measurements;
-  final String detectedText;
-  final bool hasBoard;
-  final String reasoning;
-
-  String valueByKey(String key) {
-    switch (key) {
-      case 'date':
-        return date;
-      case 'photoCategory':
-        return photoCategory;
-      case 'workType':
-        return workType;
-      case 'variety':
-        return variety;
-      case 'subphase':
-        return subphase ?? '';
-      case 'station':
-        return station;
-      case 'remarks':
-        return remarks;
-      case 'measurements':
-        return measurements;
-    }
-    return '';
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'fileName': fileName,
-      'filePath': filePath,
-      'date': date,
-      'photoCategory': photoCategory,
-      'workType': workType,
-      'variety': variety,
-      'subphase': subphase,
-      'remarks': remarks,
-      'station': station,
-      'description': description,
-      'measurements': measurements,
-      'detectedText': detectedText,
-      'hasBoard': hasBoard,
-      'reasoning': reasoning,
-    };
-  }
-
-  factory ResultItem.fromJson(Map<String, dynamic> json) {
-    return ResultItem(
-      fileName: json['fileName']?.toString() ?? '',
-      filePath: json['filePath']?.toString() ?? '',
-      date: json['date']?.toString() ?? '',
-      photoCategory: json['photoCategory']?.toString() ?? '',
-      workType: json['workType']?.toString() ?? '',
-      variety: json['variety']?.toString() ?? '',
-      subphase: (json['subphase'] ?? json['detail'])?.toString() ?? '',
-      remarks: json['remarks']?.toString() ?? '',
-      station: json['station']?.toString() ?? '',
-      description: json['description']?.toString() ?? '',
-      measurements: json['measurements']?.toString() ?? '',
-      detectedText: json['detectedText']?.toString() ?? '',
-      hasBoard: json['hasBoard'] == true,
-      reasoning: json['reasoning']?.toString() ?? '',
-    );
-  }
-
-  ResultItem copyWith({
-    String? date,
-    String? photoCategory,
-    String? workType,
-    String? variety,
-    String? subphase,
-    String? remarks,
-    String? station,
-    String? description,
-    String? measurements,
-    String? detectedText,
-    bool? hasBoard,
-    String? reasoning,
-  }) {
-    return ResultItem(
-      fileName: fileName,
-      filePath: filePath,
-      date: date ?? this.date,
-      photoCategory: photoCategory ?? this.photoCategory,
-      workType: workType ?? this.workType,
-      variety: variety ?? this.variety,
-      subphase: subphase ?? this.subphase,
-      remarks: remarks ?? this.remarks,
-      station: station ?? this.station,
-      description: description ?? this.description,
-      measurements: measurements ?? this.measurements,
-      detectedText: detectedText ?? this.detectedText,
-      hasBoard: hasBoard ?? this.hasBoard,
-      reasoning: reasoning ?? this.reasoning,
-    );
-  }
-}
-
-class _ClipboardPayload {
-  const _ClipboardPayload({required this.type, required this.data});
-
-  final String type;
-  final Map<String, String> data;
-
-  String toJsonString() {
-    return jsonEncode({'type': type, 'data': data});
   }
 }
