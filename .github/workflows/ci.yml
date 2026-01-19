@@ -10,6 +10,12 @@ concurrency:
 on:
   push:
     branches: [master, main]
+    paths:
+      - "src/**"
+      - "common/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: [master, main]
 
