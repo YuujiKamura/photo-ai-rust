@@ -3,6 +3,12 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [master]
+    paths:
+      - "web-wasm/**"
+      - "common/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 permissions:
