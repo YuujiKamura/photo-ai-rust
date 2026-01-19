@@ -7,7 +7,9 @@ use super::{CorrectionField, NormalizationCorrection, find_most_frequent_with_ra
 use crate::analyzer::AnalysisResult;
 use std::collections::HashSet;
 
-/// 工種・種別を正規化する
+/// 工種・種別の表記揺れを修正する
+///
+/// 注意: 細別（detail）は写真ごとに異なるのが正常なので統一しない
 ///
 /// # Arguments
 /// * `results` - 解析結果のスライス
@@ -20,7 +22,7 @@ pub fn normalize_work_types(
 ) -> Vec<NormalizationCorrection> {
     let mut corrections = Vec::new();
 
-    // 工種の正規化
+    // 工種の表記揺れ修正（同一工種内での表記揺れのみ）
     corrections.extend(normalize_field(
         results,
         threshold,
@@ -29,7 +31,7 @@ pub fn normalize_work_types(
         CorrectionField::WorkType,
     ));
 
-    // 種別の正規化
+    // 種別の表記揺れ修正（同一工種内での表記揺れのみ）
     corrections.extend(normalize_field(
         results,
         threshold,
@@ -38,14 +40,7 @@ pub fn normalize_work_types(
         CorrectionField::Variety,
     ));
 
-    // 細別の正規化
-    corrections.extend(normalize_field(
-        results,
-        threshold,
-        protected_files,
-        |r| &r.detail,
-        CorrectionField::Detail,
-    ));
+    // 細別は統一しない（写真ごとに異なるのが正常）
 
     corrections
 }
