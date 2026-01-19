@@ -943,6 +943,45 @@ class _ViewerScreenState extends State<ViewerScreen>
                               });
                               appendLog('Station updated: ${item.fileName} → $result');
                             }
+                          } else if (selected == 'reanalyze_group') {
+                            final selectedItems = selectedIndices.map((i) => items[i]).toList();
+                            for (final selectedItem in selectedItems) {
+                              await reanalyzeEntry(selectedItem);
+                            }
+                          } else if (selected == 'edit_station_group') {
+                            final controller = TextEditingController();
+                            final result = await showDialog<String>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: Text('グループ測点編集 (${selectedIndices.length}件)'),
+                                content: TextField(
+                                  controller: controller,
+                                  autofocus: true,
+                                  decoration: const InputDecoration(
+                                    labelText: '測点',
+                                    hintText: '例: No.10+5.0',
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: const Text('キャンセル'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, controller.text),
+                                    child: const Text('OK'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (result != null) {
+                              setState(() {
+                                for (final i in selectedIndices) {
+                                  items[i] = items[i].copyWith(station: result);
+                                }
+                              });
+                              appendLog('Station updated for ${selectedIndices.length} items → $result');
+                            }
                           }
                         },
                         child: Container(
