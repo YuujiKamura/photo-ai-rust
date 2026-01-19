@@ -309,7 +309,7 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Normalize { input, output, dry_run, threshold, no_station, no_work_type, no_protect_measurements } => {
+        Commands::Normalize { input, output, dry_run } => {
             use photo_ai_rust::normalizer::{self, NormalizationOptions};
 
             println!("🔧 photo-ai-rust - 正規化\n");
@@ -320,12 +320,7 @@ async fn main() -> Result<()> {
             println!("読み込み: {}件", results.len());
 
             // 正規化オプション
-            let options = NormalizationOptions {
-                normalize_station: !no_station,
-                normalize_work_type: !no_work_type,
-                threshold,
-                protect_measurements: !no_protect_measurements,
-            };
+            let options = NormalizationOptions::default();
 
             // 正規化実行
             let result = normalizer::normalize_results(&results, &options);
@@ -334,9 +329,7 @@ async fn main() -> Result<()> {
             println!("\n📊 正規化結果:");
             println!("  総レコード数: {}", result.stats.total_records);
             println!("  修正対象: {}件", result.stats.corrected_records);
-            println!("  - 測点修正: {}件", result.stats.station_corrections);
-            println!("  - 工種修正: {}件", result.stats.work_type_corrections);
-            println!("  スキップ（計測値保護）: {}件", result.stats.skipped_due_to_measurements);
+            println!("  - 計測値修正: {}件", result.stats.measurement_corrections);
 
             // 修正内容を表示
             if !result.corrections.is_empty() {

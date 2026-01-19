@@ -1,18 +1,14 @@
 //! 後解析（正規化）モジュール
 //!
-//! 個別画像解析後に、測点・計測値・工種の整合性を統一する。
+//! 個別画像解析後に、グループ単位で計測値を統一する。
 //!
-//! ## 処理フロー
-//! 1. 測点の最頻出値統一・OCR修正
-//! 2. 計測値（温度・寸法）の保護
-//! 3. 工種・種別の表記揺れ統一
+//! ## 処理フロー（予定）
+//! - 温度管理: 3枚単位（全景+ボードアップ+温度計アップ）で統一
+//! - 出来形管理: 同一測点のセット全体で統一
 
-pub mod station;
 pub mod measurements;
-pub mod work_type;
 
 use crate::analyzer::AnalysisResult;
-use std::collections::HashMap;
 
 /// 正規化結果
 #[derive(Debug, Clone)]
@@ -41,21 +37,13 @@ pub struct NormalizationCorrection {
 /// 修正対象フィールド
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CorrectionField {
-    Station,
-    WorkType,
-    Variety,
-    Detail,
-    Remarks,
+    Measurements,
 }
 
 impl std::fmt::Display for CorrectionField {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CorrectionField::Station => write!(f, "測点"),
-            CorrectionField::WorkType => write!(f, "工種"),
-            CorrectionField::Variety => write!(f, "種別"),
-            CorrectionField::Detail => write!(f, "細別"),
-            CorrectionField::Remarks => write!(f, "備考"),
+            CorrectionField::Measurements => write!(f, "計測値"),
         }
     }
 }
@@ -67,34 +55,21 @@ pub struct NormalizationStats {
     pub total_records: usize,
     /// 修正したレコード数
     pub corrected_records: usize,
-    /// 測点の修正数
-    pub station_corrections: usize,
-    /// 工種の修正数
-    pub work_type_corrections: usize,
-    /// スキップしたレコード数（計測値保護）
-    pub skipped_due_to_measurements: usize,
+    /// 計測値の修正数
+    pub measurement_corrections: usize,
 }
 
 /// 正規化オプション
 #[derive(Debug, Clone)]
 pub struct NormalizationOptions {
-    /// 測点の正規化を有効にする
-    pub normalize_station: bool,
-    /// 工種・種別の統一を有効にする
-    pub normalize_work_type: bool,
-    /// 統一の閾値（この割合以上一致で統一）
-    pub threshold: f64,
-    /// 計測値を含むレコードの保護
-    pub protect_measurements: bool,
+    /// 計測値グループ統一を有効にする
+    pub unify_measurements: bool,
 }
 
 impl Default for NormalizationOptions {
     fn default() -> Self {
         Self {
-            normalize_station: true,
-            normalize_work_type: true,
-            threshold: 0.6, // 60%以上で統一
-            protect_measurements: true,
+            unify_measurements: true,
         }
     }
 }
@@ -109,47 +84,17 @@ impl Default for NormalizationOptions {
 /// 正規化結果（修正内容と統計情報）
 pub fn normalize_results(
     results: &[AnalysisResult],
-    options: &NormalizationOptions,
+    _options: &NormalizationOptions,
 ) -> NormalizationResult {
-    let mut corrections = Vec::new();
-    let mut stats = NormalizationStats {
+    let corrections = Vec::new();
+    let stats = NormalizationStats {
         total_records: results.len(),
         ..Default::default()
     };
 
-    // 計測値を含むファイル名を収集（保護対象）
-    let protected_files: std::collections::HashSet<&str> = if options.protect_measurements {
-        results
-            .iter()
-            .filter(|r| measurements::contains_measurement(&r.remarks) ||
-                       measurements::contains_measurement(&r.measurements))
-            .map(|r| r.file_name.as_str())
-            .collect()
-    } else {
-        std::collections::HashSet::new()
-    };
-    stats.skipped_due_to_measurements = protected_files.len();
-
-    // 測点の正規化
-    if options.normalize_station {
-        let station_corrections = station::normalize_stations(results, options.threshold, &protected_files);
-        stats.station_corrections = station_corrections.len();
-        corrections.extend(station_corrections);
-    }
-
-    // 工種・種別の統一
-    if options.normalize_work_type {
-        let work_type_corrections = work_type::normalize_work_types(results, options.threshold, &protected_files);
-        stats.work_type_corrections = work_type_corrections.len();
-        corrections.extend(work_type_corrections);
-    }
-
-    // 修正されたレコード数を計算
-    let corrected_files: std::collections::HashSet<&str> = corrections
-        .iter()
-        .map(|c| c.file_name.as_str())
-        .collect();
-    stats.corrected_records = corrected_files.len();
+    // TODO: グループ単位での計測値統一を実装予定
+    // - 温度管理: 3枚単位（全景+ボードアップ+温度計アップ）で同じ計測値を共有
+    // - 出来形管理: 同一測点のセット全体で最も明瞭なOCR値を採用
 
     NormalizationResult { corrections, stats }
 }
@@ -164,63 +109,12 @@ pub fn apply_corrections(
     corrections: &[NormalizationCorrection],
 ) {
     for correction in corrections {
-        // 対応するレコードを検索
         if let Some(result) = results.iter_mut().find(|r| r.file_name == correction.file_name) {
             match correction.field {
-                CorrectionField::Station => result.station = correction.corrected.clone(),
-                CorrectionField::WorkType => result.work_type = correction.corrected.clone(),
-                CorrectionField::Variety => result.variety = correction.corrected.clone(),
-                CorrectionField::Detail => result.detail = correction.corrected.clone(),
-                CorrectionField::Remarks => result.remarks = correction.corrected.clone(),
+                CorrectionField::Measurements => result.measurements = correction.corrected.clone(),
             }
         }
     }
-}
-
-/// 最頻出値を取得する
-pub fn find_most_frequent<'a>(values: impl Iterator<Item = &'a str>) -> Option<String> {
-    let mut counts: HashMap<&str, usize> = HashMap::new();
-    let mut total = 0;
-
-    for value in values {
-        if !value.is_empty() {
-            *counts.entry(value).or_insert(0) += 1;
-            total += 1;
-        }
-    }
-
-    if total == 0 {
-        return None;
-    }
-
-    counts
-        .into_iter()
-        .max_by_key(|(_, count)| *count)
-        .map(|(value, _)| value.to_string())
-}
-
-/// 最頻出値とその割合を取得する
-pub fn find_most_frequent_with_ratio<'a>(
-    values: impl Iterator<Item = &'a str>,
-) -> Option<(String, f64)> {
-    let mut counts: HashMap<&str, usize> = HashMap::new();
-    let mut total = 0;
-
-    for value in values {
-        if !value.is_empty() {
-            *counts.entry(value).or_insert(0) += 1;
-            total += 1;
-        }
-    }
-
-    if total == 0 {
-        return None;
-    }
-
-    counts
-        .into_iter()
-        .max_by_key(|(_, count)| *count)
-        .map(|(value, count)| (value.to_string(), count as f64 / total as f64))
 }
 
 #[cfg(test)]
@@ -228,24 +122,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_find_most_frequent() {
-        let values = vec!["A", "B", "A", "C", "A"];
-        assert_eq!(find_most_frequent(values.iter().copied()), Some("A".to_string()));
-    }
+    fn test_normalize_results_returns_empty() {
+        let results = vec![
+            AnalysisResult {
+                file_name: "photo1.jpg".to_string(),
+                measurements: "温度: 160℃".to_string(),
+                ..Default::default()
+            },
+        ];
 
-    #[test]
-    fn test_find_most_frequent_empty() {
-        let values: Vec<&str> = vec![];
-        assert_eq!(find_most_frequent(values.iter().copied()), None);
-    }
+        let options = NormalizationOptions::default();
+        let result = normalize_results(&results, &options);
 
-    #[test]
-    fn test_find_most_frequent_with_ratio() {
-        let values = vec!["A", "A", "B", "A", "C"];
-        let result = find_most_frequent_with_ratio(values.iter().copied());
-        assert!(result.is_some());
-        let (value, ratio) = result.unwrap();
-        assert_eq!(value, "A");
-        assert!((ratio - 0.6).abs() < 0.01);
+        assert_eq!(result.stats.total_records, 1);
+        assert!(result.corrections.is_empty());
     }
 }
