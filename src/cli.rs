@@ -38,6 +38,18 @@ pub enum Commands {
         #[arg(short, long)]
         master: Option<PathBuf>,
 
+        /// 工種を指定（1ステップ解析モード）
+        #[arg(short = 'w', long)]
+        work_type: Option<String>,
+
+        /// 種別を指定
+        #[arg(long)]
+        variety: Option<String>,
+
+        /// 測点を一括指定
+        #[arg(short = 's', long)]
+        station: Option<String>,
+
         /// キャッシュを使用（再解析をスキップ）
         #[arg(long)]
         use_cache: bool,
@@ -107,6 +119,18 @@ pub enum Commands {
         /// 工種マスタJSONファイル
         #[arg(short, long)]
         master: Option<PathBuf>,
+
+        /// 工種を指定（1ステップ解析モード）
+        #[arg(short = 'w', long)]
+        work_type: Option<String>,
+
+        /// 種別を指定
+        #[arg(long)]
+        variety: Option<String>,
+
+        /// 測点を一括指定
+        #[arg(short = 's', long)]
+        station: Option<String>,
 
         /// PDF画像品質 (high/medium/low)
         #[arg(long, default_value = "medium")]

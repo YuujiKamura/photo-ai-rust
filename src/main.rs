@@ -6,7 +6,7 @@ use error::Result;
 use photo_ai_common::HierarchyMaster;
 use std::path::{Path, PathBuf};
 
-/// AI解析を実行（マスタ有無・キャッシュ有無で分岐）
+/// AI解析を実行（マスタ有無・キャッシュ有無・工種指定で分岐）
 async fn run_analysis(
     images: &[scanner::ImageInfo],
     folder: &Path,
@@ -16,7 +16,50 @@ async fn run_analysis(
     use_cache: bool,
     provider: AiProvider,
     step_prefix: &str,
+    work_type: Option<&str>,
+    variety: Option<&str>,
 ) -> Result<Vec<analyzer::AnalysisResult>> {
+    // 工種指定時は1ステップ解析
+    if let Some(wt) = work_type {
+        // マスタパスを決定（所有権を持つPathBufを使用）
+        let master_path_buf: PathBuf = if let Some(mp) = master {
+            mp.to_path_buf()
+        } else {
+            // 工種別マスタを自動選択
+            let by_work_type = PathBuf::from("master/by_work_type").join(format!("{}.csv", wt));
+            if by_work_type.exists() {
+                by_work_type
+            } else {
+                // デフォルトマスタ
+                let default = PathBuf::from("master/construction_hierarchy.csv");
+                if default.exists() {
+                    default
+                } else {
+                    return Err(error::PhotoAiError::MasterLoad("マスタファイルが見つかりません".to_string()));
+                }
+            }
+        };
+
+        println!("{} 1ステップ解析中 (工種: {})...", step_prefix, wt);
+        let hierarchy = HierarchyMaster::from_csv(&master_path_buf)
+            .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+
+        // 指定工種でマスタをフィルタ
+        let filtered = hierarchy.filter_by_work_types(&[wt.to_string()]);
+        println!("  マスタ読み込み: {}件 (工種: {})", filtered.rows().len(), wt);
+
+        return analyzer::analyze_images_single_step(
+            images,
+            &filtered,
+            wt,
+            variety,
+            batch_size,
+            verbose,
+            provider,
+        ).await;
+    }
+
+    // 従来の処理
     if let Some(master_path) = master {
         println!("{} 2段階解析中 (Step1: 画像認識 → Step2: マスタ照合)...", step_prefix);
         let hierarchy = HierarchyMaster::from_csv(master_path)
@@ -29,6 +72,13 @@ async fn run_analysis(
     } else {
         println!("{} AI解析中...", step_prefix);
         analyzer::analyze_images(images, batch_size, verbose, provider).await
+    }
+}
+
+/// 測点を一括適用
+fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
+    for result in results {
+        result.station = station.to_string();
     }
 }
 
@@ -57,10 +107,16 @@ async fn main() -> Result<()> {
     let config = Config::load()?;
 
     match cli.command {
-        Commands::Analyze { folder, output, batch_size, master, use_cache, recursive, include_all } => {
+        Commands::Analyze { folder, output, batch_size, master, work_type, variety, station, use_cache, recursive, include_all } => {
             println!("📸 photo-ai-rust - 写真解析\n");
-            let has_master_arg = master.is_some();
-            let master_path = resolve_master_path(master, !has_master_arg);
+
+            // 工種指定がない場合のみ対話式マスタ選択
+            let master_path = if work_type.is_none() {
+                let has_master_arg = master.is_some();
+                resolve_master_path(master, !has_master_arg)
+            } else {
+                master
+            };
 
 
             // 1. 画像スキャン
@@ -74,8 +130,8 @@ async fn main() -> Result<()> {
                 ));
             }
 
-            // 2. AI解析（マスタがある場合は2段階解析）
-            let results = run_analysis(
+            // 2. AI解析（工種指定時は1ステップ解析、それ以外は2段階解析）
+            let mut results = run_analysis(
                 &images,
                 &folder,
                 batch_size,
@@ -84,8 +140,16 @@ async fn main() -> Result<()> {
                 use_cache,
                 cli.ai_provider,
                 "[2/3]",
+                work_type.as_deref(),
+                variety.as_deref(),
             ).await?;
             println!("✔ 解析完了\n");
+
+            // 測点一括適用
+            if let Some(ref st) = station {
+                println!("  測点を一括適用: {}", st);
+                apply_station(&mut results, st);
+            }
 
             // 3. 結果保存
             println!("[3/3] 結果を保存中...");
@@ -134,10 +198,16 @@ async fn main() -> Result<()> {
             println!("\n✅ エクスポート完了");
         }
 
-        Commands::Run { folder, output, format, batch_size, master, pdf_quality, use_cache, recursive, include_all } => {
+        Commands::Run { folder, output, format, batch_size, master, work_type, variety, station, pdf_quality, use_cache, recursive, include_all } => {
             println!("🚀 photo-ai-rust - 一括処理\n");
-            let has_master_arg = master.is_some();
-            let master_path = resolve_master_path(master, !has_master_arg);
+
+            // 工種指定がない場合のみ対話式マスタ選択
+            let master_path = if work_type.is_none() {
+                let has_master_arg = master.is_some();
+                resolve_master_path(master, !has_master_arg)
+            } else {
+                master
+            };
 
 
             // 1. Scan
@@ -151,8 +221,8 @@ async fn main() -> Result<()> {
                 ));
             }
 
-            // 2. AI解析（マスタがある場合は2段階解析）
-            let results = run_analysis(
+            // 2. AI解析（工種指定時は1ステップ解析、それ以外は2段階解析）
+            let mut results = run_analysis(
                 &images,
                 &folder,
                 batch_size,
@@ -161,8 +231,16 @@ async fn main() -> Result<()> {
                 use_cache,
                 cli.ai_provider,
                 "[2/5]",
+                work_type.as_deref(),
+                variety.as_deref(),
             ).await?;
             println!("✔ 解析完了\n");
+
+            // 測点一括適用
+            if let Some(ref st) = station {
+                println!("  測点を一括適用: {}", st);
+                apply_station(&mut results, st);
+            }
 
             // 3. 結果保存
             let output_dir = output.unwrap_or_else(|| folder.clone());

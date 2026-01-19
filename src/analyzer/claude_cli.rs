@@ -15,9 +15,10 @@ use std::process::Command;
 // 共通モジュールから型と関数をインポート
 use photo_ai_common::{
     AnalysisResult, RawImageData, Step2Result, HierarchyMaster, ImageMeta,
-    build_step1_prompt, build_step2_prompt,
+    build_step1_prompt, build_step2_prompt, build_single_step_prompt,
     parse_step1_response as common_parse_step1,
     parse_step2_response as common_parse_step2,
+    parse_single_step_response as common_parse_single_step,
     detect_work_types, merge_results as common_merge_results,
 };
 
@@ -222,6 +223,83 @@ pub async fn analyze_batch_with_master(
     let mut results = merge_results(&raw_data, &step2_results, images);
     sanitize_classification(&mut results, &filtered_master);
     Ok(results)
+}
+
+/// 1ステップ解析を実行（工種指定版）
+///
+/// 工種が既知の場合、1回のAI呼び出しで画像認識と分類を実行
+pub async fn analyze_batch_single_step(
+    images: &[ImageInfo],
+    master: &HierarchyMaster,
+    work_type: &str,
+    variety: Option<&str>,
+    verbose: bool,
+    provider: AiProvider,
+) -> Result<Vec<AnalysisResult>> {
+    // 画像をtemp-imagesにコピー
+    let temp_dir = get_temp_dir()?;
+    let local_paths = copy_to_temp(images, &temp_dir)?;
+
+    // 画像パスリスト
+    let image_list = local_paths
+        .iter()
+        .map(|p| p.display().to_string().replace('\\', "/"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    // 画像メタデータ
+    let image_meta: Vec<(&str, Option<&str>)> = images
+        .iter()
+        .map(|img| (img.file_name.as_str(), img.date.as_deref()))
+        .collect();
+
+    // 1ステップ解析プロンプト生成
+    let single_step_prompt = build_single_step_prompt(&image_meta, master, work_type, variety);
+
+    // プロンプト構築
+    let raw_prompt = format!(
+        "Read the following image files and analyze them: {}\n\n{}",
+        image_list, single_step_prompt
+    );
+    let full_prompt = raw_prompt.replace('\n', " ").replace('"', "\\\"");
+
+    if verbose {
+        println!("  [1ステップ解析] プロンプト長: {} chars", full_prompt.len());
+    }
+
+    // AI CLI呼び出し
+    let response = run_ai_cli(&full_prompt, Some(&local_paths), verbose, provider)?;
+
+    if verbose {
+        println!("  [1ステップ解析] レスポンス長: {} chars", response.len());
+    }
+
+    // レスポンスをパース
+    let mut results = parse_single_step_response(&response)?;
+
+    // file_path と date を補完
+    let info_map: std::collections::HashMap<&str, &ImageInfo> = images
+        .iter()
+        .map(|img| (img.file_name.as_str(), img))
+        .collect();
+
+    for result in &mut results {
+        if let Some(img_info) = info_map.get(result.file_name.as_str()) {
+            result.file_path = img_info.path.display().to_string();
+            result.date = img_info.date.clone().unwrap_or_default();
+        }
+    }
+
+    // マスタとの整合性チェック
+    sanitize_classification(&mut results, master);
+
+    Ok(results)
+}
+
+/// 1ステップ解析レスポンスをパース
+fn parse_single_step_response(response: &str) -> Result<Vec<AnalysisResult>> {
+    common_parse_single_step(response)
+        .map_err(|e| PhotoAiError::ApiParse(format!("1ステップ解析 JSONパースエラー: {}", e)))
 }
 
 // =============================================

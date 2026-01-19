@@ -4,7 +4,7 @@
 //! Step1/Step2の結果をパースする
 
 use crate::error::{Error, Result};
-use crate::types::{RawImageData, Step2Result};
+use crate::types::{AnalysisResult, RawImageData, Step2Result};
 
 /// APIレスポンスからJSON部分を抽出
 ///
@@ -82,6 +82,24 @@ pub fn parse_step2_response(response: &str) -> Result<Vec<Step2Result>> {
     let json_str = extract_json(response)?;
     let results: Vec<Step2Result> = serde_json::from_str(json_str.trim())
         .map_err(|e| Error::Parse(format!("Step2 JSONパースエラー: {}", e)))?;
+    Ok(results)
+}
+
+/// 1ステップ解析レスポンスをパース
+///
+/// 工種指定時の1回のAI呼び出しで得られる結果をパースする
+/// レスポンスは直接AnalysisResult形式
+///
+/// # Arguments
+/// * `response` - 1ステップ解析のAPIレスポンス
+///
+/// # Returns
+/// * `Ok(Vec<AnalysisResult>)` - パース成功
+/// * `Err` - JSONが見つからないかパース失敗
+pub fn parse_single_step_response(response: &str) -> Result<Vec<AnalysisResult>> {
+    let json_str = extract_json(response)?;
+    let results: Vec<AnalysisResult> = serde_json::from_str(json_str.trim())
+        .map_err(|e| Error::Parse(format!("1ステップ解析 JSONパースエラー: {}", e)))?;
     Ok(results)
 }
 
