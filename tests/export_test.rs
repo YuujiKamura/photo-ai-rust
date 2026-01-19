@@ -76,6 +76,7 @@ fn test_pdf_generation_empty_results() {
 }
 
 #[test]
+#[ignore] // Requires npm install (exceljs)
 fn test_excel_generation() {
     let dir = tempdir().expect("Failed to create temp dir");
     let output_path = dir.path().join("test_output.xlsx");
@@ -96,6 +97,7 @@ fn test_excel_generation() {
 }
 
 #[test]
+#[ignore] // Requires npm install (exceljs)
 fn test_excel_generation_empty_results() {
     let dir = tempdir().expect("Failed to create temp dir");
     let output_path = dir.path().join("empty.xlsx");
@@ -133,6 +135,7 @@ fn test_pdf_quality_options() {
 
 /// PDF/Excel両方を同一データから生成できることを確認
 #[test]
+#[ignore] // Requires npm install (exceljs)
 fn test_pdf_excel_both_generation() {
     let dir = tempdir().expect("Failed to create temp dir");
     let pdf_path = dir.path().join("consistency.pdf");
@@ -169,6 +172,7 @@ fn test_pdf_excel_both_generation() {
 /// - C列(2): 値
 /// - 各写真ブロックは11行（写真10行 + ギャップ1行）
 #[test]
+#[ignore] // Requires npm install (exceljs)
 fn test_excel_data_consistency() {
     let dir = tempdir().expect("Failed to create temp dir");
     let excel_path = dir.path().join("data_check.xlsx");
@@ -234,6 +238,7 @@ fn test_excel_data_consistency() {
 
 /// 日本語文字が正しく保存・読み戻しされることを確認（写真台帳形式）
 #[test]
+#[ignore] // Requires npm install (exceljs)
 fn test_excel_japanese_text() {
     let dir = tempdir().expect("Failed to create temp dir");
     let excel_path = dir.path().join("japanese_test.xlsx");
