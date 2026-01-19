@@ -413,18 +413,16 @@ class _ViewerScreenState extends State<ViewerScreen>
 
   List<String> buildAnalyzeArgs(String folder, String output) {
     final args = <String>[
+      '--ai-provider',
+      analyzeProvider == AnalyzeProvider.claude ? 'claude' : 'codex',
+      if (verboseAnalyze) '--verbose',
       'analyze',
       folder,
       '--output',
       output,
       '--batch-size',
       batchSize.toString(),
-      '--ai-provider',
-      analyzeProvider == AnalyzeProvider.claude ? 'claude' : 'codex',
     ];
-    if (verboseAnalyze) {
-      args.add('--verbose');
-    }
     if (workTypeInput.isNotEmpty) {
       args.addAll(['--work-type', workTypeInput]);
       // 工種に対応するマスタCSVを自動解決
