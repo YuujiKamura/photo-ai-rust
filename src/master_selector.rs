@@ -29,8 +29,14 @@ pub fn list_available_masters() -> Vec<(String, PathBuf)> {
     masters
 }
 
-/// 対話式でマスタを選択
-pub fn select_master_interactive() -> Option<PathBuf> {
+/// マスタ選択結果
+pub struct MasterSelection {
+    pub path: PathBuf,
+    pub work_type: Option<String>,  // 工種名（全工種の場合はNone）
+}
+
+/// 対話式でマスタを選択（工種名も返す）
+pub fn select_master_interactive() -> Option<MasterSelection> {
     let masters = list_available_masters();
 
     if masters.is_empty() {
@@ -38,7 +44,7 @@ pub fn select_master_interactive() -> Option<PathBuf> {
         println!("  デフォルトマスタ (master/construction_hierarchy.csv) を使用します");
         let default = PathBuf::from("master/construction_hierarchy.csv");
         if default.exists() {
-            return Some(default);
+            return Some(MasterSelection { path: default, work_type: None });
         }
         return None;
     }
@@ -66,22 +72,34 @@ pub fn select_master_interactive() -> Option<PathBuf> {
     // 空入力はデフォルト
     if input.is_empty() {
         println!("→ 全工種マスタを使用");
-        return Some(PathBuf::from("master/construction_hierarchy.csv"));
+        return Some(MasterSelection {
+            path: PathBuf::from("master/construction_hierarchy.csv"),
+            work_type: None,
+        });
     }
 
     match input.parse::<usize>() {
         Ok(0) => {
             println!("→ 全工種マスタを使用");
-            Some(PathBuf::from("master/construction_hierarchy.csv"))
+            Some(MasterSelection {
+                path: PathBuf::from("master/construction_hierarchy.csv"),
+                work_type: None,
+            })
         }
         Ok(n) if n >= 1 && n <= masters.len() => {
             let (name, path) = &masters[n - 1];
             println!("→ {} を使用", name);
-            Some(path.clone())
+            Some(MasterSelection {
+                path: path.clone(),
+                work_type: Some(name.clone()),
+            })
         }
         _ => {
             println!("⚠ 無効な入力です。全工種マスタを使用します");
-            Some(PathBuf::from("master/construction_hierarchy.csv"))
+            Some(MasterSelection {
+                path: PathBuf::from("master/construction_hierarchy.csv"),
+                work_type: None,
+            })
         }
     }
 }

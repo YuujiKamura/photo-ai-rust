@@ -2,7 +2,7 @@ mod claude_cli;
 pub mod cache;
 
 pub use cache::{CacheFile, filter_cached_images};
-pub use claude_cli::{analyze_batch_with_master, analyze_batch_single_step};
+pub use claude_cli::analyze_batch_single_step;
 
 // 共通型は photo_ai_common からre-export
 pub use photo_ai_common::{AnalysisResult, RawImageData, Step2Result, detect_work_types};
@@ -113,51 +113,6 @@ pub async fn analyze_images_with_cache(
     cached_results.sort_by_key(|r| file_order.get(r.file_name.as_str()).copied().unwrap_or(usize::MAX));
 
     Ok(cached_results)
-}
-
-/// マスタを使用した2段階解析
-///
-/// - Step1: 画像認識（OCR、数値、シーン説明）
-/// - Step2: 階層マスタとの照合で分類
-pub async fn analyze_images_with_master(
-    images: &[ImageInfo],
-    master: &photo_ai_common::HierarchyMaster,
-    batch_size: usize,
-    verbose: bool,
-    provider: AiProvider,
-) -> Result<Vec<AnalysisResult>> {
-    let mut results = Vec::new();
-    let total_batches = images.len().div_ceil(batch_size);
-
-    // プログレスバーの設定
-    let pb = ProgressBar::new(total_batches as u64);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} バッチ | 残り {eta} | {msg}")
-            .unwrap()
-            .progress_chars("=>-"),
-    );
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
-
-    // バッチに分割して2段階解析
-    for (batch_idx, batch) in images.chunks(batch_size).enumerate() {
-        pb.set_message(format!("{}枚 2段階解析中", batch.len()));
-
-        if verbose {
-            pb.suspend(|| {
-                println!("  バッチ {}: {}枚 (2段階解析)", batch_idx + 1, batch.len());
-            });
-        }
-
-        let batch_results = claude_cli::analyze_batch_with_master(batch, master, verbose, provider).await?;
-        results.extend(batch_results);
-
-        pb.inc(1);
-    }
-
-    pb.finish_with_message("2段階解析完了");
-
-    Ok(results)
 }
 
 /// 工種指定の1ステップ解析

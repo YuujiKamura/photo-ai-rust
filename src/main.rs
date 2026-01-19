@@ -6,7 +6,7 @@ use error::Result;
 use photo_ai_common::HierarchyMaster;
 use std::path::{Path, PathBuf};
 
-/// AI解析を実行（マスタ有無・キャッシュ有無・工種指定で分岐）
+/// AI解析を実行（1ステップ解析優先）
 async fn run_analysis(
     images: &[scanner::ImageInfo],
     folder: &Path,
@@ -19,9 +19,9 @@ async fn run_analysis(
     work_type: Option<&str>,
     variety: Option<&str>,
 ) -> Result<Vec<analyzer::AnalysisResult>> {
-    // 工種指定時は1ステップ解析
+    // 工種指定時は1ステップ解析（推奨）
     if let Some(wt) = work_type {
-        // マスタパスを決定（所有権を持つPathBufを使用）
+        // マスタパスを決定
         let master_path_buf: PathBuf = if let Some(mp) = master {
             mp.to_path_buf()
         } else {
@@ -59,18 +59,15 @@ async fn run_analysis(
         ).await;
     }
 
-    // 従来の処理
-    if let Some(master_path) = master {
-        println!("{} 2段階解析中 (Step1: 画像認識 → Step2: マスタ照合)...", step_prefix);
-        let hierarchy = HierarchyMaster::from_csv(master_path)
-            .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
-        println!("  マスタ読み込み: {}件", hierarchy.rows().len());
-        analyzer::analyze_images_with_master(images, &hierarchy, batch_size, verbose, provider).await
-    } else if use_cache {
+    // 工種未指定の場合はキャッシュまたは基本解析
+    // ※2ステップ解析は廃止（API消費が多いため）
+    if use_cache {
         println!("{} AI解析中... (キャッシュ有効)", step_prefix);
+        println!("  ⚠ 工種未指定: --work-type で指定すると精度向上");
         analyzer::analyze_images_with_cache(images, folder, batch_size, verbose, provider).await
     } else {
         println!("{} AI解析中...", step_prefix);
+        println!("  ⚠ 工種未指定: --work-type で指定すると精度向上");
         analyzer::analyze_images(images, batch_size, verbose, provider).await
     }
 }
@@ -82,9 +79,14 @@ fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
     }
 }
 
-fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<PathBuf> {
-    if master.is_some() {
-        return master;
+fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<master_selector::MasterSelection> {
+    if let Some(path) = master {
+        // パスからwork_typeを推定（by_work_type/xxx.csv → xxx）
+        let work_type = path.file_stem()
+            .and_then(|s| s.to_str())
+            .filter(|s| *s != "construction_hierarchy")
+            .map(|s| s.to_string());
+        return Some(master_selector::MasterSelection { path, work_type });
     }
 
     // 対話式選択
@@ -95,7 +97,7 @@ fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<Pat
     // デフォルトマスタ
     let default_path = PathBuf::from("master").join("construction_hierarchy.csv");
     if default_path.exists() {
-        Some(default_path)
+        Some(master_selector::MasterSelection { path: default_path, work_type: None })
     } else {
         None
     }
@@ -110,13 +112,13 @@ async fn main() -> Result<()> {
         Commands::Analyze { folder, output, batch_size, master, work_type, variety, station, use_cache, recursive, include_all } => {
             println!("📸 photo-ai-rust - 写真解析\n");
 
-            // 工種指定がない場合のみ対話式マスタ選択
-            let master_path = if work_type.is_none() {
-                let has_master_arg = master.is_some();
-                resolve_master_path(master, !has_master_arg)
-            } else {
-                master
-            };
+            // マスタ選択（対話式または引数から）
+            let has_master_arg = master.is_some();
+            let selection = resolve_master_path(master, !has_master_arg && work_type.is_none());
+
+            // work_type: CLI引数優先、なければ選択結果から
+            let effective_work_type = work_type.or_else(|| selection.as_ref().and_then(|s| s.work_type.clone()));
+            let master_path = selection.map(|s| s.path);
 
 
             // 1. 画像スキャン
@@ -130,7 +132,7 @@ async fn main() -> Result<()> {
                 ));
             }
 
-            // 2. AI解析（工種指定時は1ステップ解析、それ以外は2段階解析）
+            // 2. AI解析（1ステップ解析）
             let mut results = run_analysis(
                 &images,
                 &folder,
@@ -140,7 +142,7 @@ async fn main() -> Result<()> {
                 use_cache,
                 cli.ai_provider,
                 "[2/3]",
-                work_type.as_deref(),
+                effective_work_type.as_deref(),
                 variety.as_deref(),
             ).await?;
             println!("✔ 解析完了\n");
@@ -201,13 +203,13 @@ async fn main() -> Result<()> {
         Commands::Run { folder, output, format, batch_size, master, work_type, variety, station, pdf_quality, use_cache, recursive, include_all } => {
             println!("🚀 photo-ai-rust - 一括処理\n");
 
-            // 工種指定がない場合のみ対話式マスタ選択
-            let master_path = if work_type.is_none() {
-                let has_master_arg = master.is_some();
-                resolve_master_path(master, !has_master_arg)
-            } else {
-                master
-            };
+            // マスタ選択（対話式または引数から）
+            let has_master_arg = master.is_some();
+            let selection = resolve_master_path(master, !has_master_arg && work_type.is_none());
+
+            // work_type: CLI引数優先、なければ選択結果から
+            let effective_work_type = work_type.or_else(|| selection.as_ref().and_then(|s| s.work_type.clone()));
+            let master_path = selection.map(|s| s.path);
 
 
             // 1. Scan
@@ -221,7 +223,7 @@ async fn main() -> Result<()> {
                 ));
             }
 
-            // 2. AI解析（工種指定時は1ステップ解析、それ以外は2段階解析）
+            // 2. AI解析（1ステップ解析）
             let mut results = run_analysis(
                 &images,
                 &folder,
@@ -231,7 +233,7 @@ async fn main() -> Result<()> {
                 use_cache,
                 cli.ai_provider,
                 "[2/5]",
-                work_type.as_deref(),
+                effective_work_type.as_deref(),
                 variety.as_deref(),
             ).await?;
             println!("✔ 解析完了\n");
