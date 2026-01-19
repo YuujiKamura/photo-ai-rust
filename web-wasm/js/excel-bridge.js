@@ -39,6 +39,14 @@ const ROW_HEIGHT_PT = Math.floor((PHOTO_HEIGHT_PT / PHOTO_ROWS) * SCALE);  // 26
 const COL_A_WIDTH = 56.1;  // 写真列
 const COL_B_WIDTH = 11;    // ラベル列
 const COL_C_WIDTH = 28.6;  // 値列
+const FONT_NAME = 'MS Mincho';
+const FONT_SIZE = 10;
+const BORDER_THIN = {
+  top: { style: 'thin', color: { argb: 'FFB5B5B5' } },
+  left: { style: 'thin', color: { argb: 'FFB5B5B5' } },
+  right: { style: 'thin', color: { argb: 'FFB5B5B5' } },
+  bottom: { style: 'thin', color: { argb: 'FFB5B5B5' } }
+};
 
 // ============================================
 // フィールド定義 (LAYOUT_FIELDS)
@@ -140,12 +148,7 @@ export async function generateExcel(photosJson, optionsJson) {
       const photoEndRow = endRow - GAP_ROWS;
       sheet.mergeCells(startRow, 1, photoEndRow, 1);
       const imgCell = sheet.getCell(startRow, 1);
-      imgCell.border = {
-        top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
-        left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
-        right: { style: 'thin', color: { argb: 'FFCCCCCC' } },
-        bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } }
-      };
+      imgCell.border = BORDER_THIN;
 
       const imageDataUrl = photo.imageDataUrl || photo.filePath;
       // 画像を追加
@@ -198,30 +201,21 @@ function createFieldCell(sheet, row, label, value, rowSpan) {
   // ラベルセル（列B）
   const labelCell = sheet.getCell(row, 2);
   labelCell.value = label;
-  labelCell.font = { bold: true, size: 9, color: { argb: 'FF555555' } };
+  labelCell.font = { name: FONT_NAME, size: FONT_SIZE };
   labelCell.alignment = { vertical: 'middle', horizontal: 'center' };
   labelCell.fill = {
     type: 'pattern',
     pattern: 'solid',
     fgColor: { argb: 'FFF5F5F5' }
   };
-  labelCell.border = {
-    top: { style: 'hair', color: { argb: 'FFAAAAAA' } },
-    left: { style: 'hair', color: { argb: 'FFAAAAAA' } },
-    right: { style: 'hair', color: { argb: 'FFAAAAAA' } },
-    bottom: { style: 'hair', color: { argb: 'FFAAAAAA' } }
-  };
+  labelCell.border = BORDER_THIN;
 
   // 値セル（列C）
   const valueCell = sheet.getCell(row, 3);
   valueCell.value = value;
   valueCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
-  valueCell.font = { size: 11 };
-  valueCell.border = {
-    top: { style: 'hair', color: { argb: 'FFCCCCCC' } },
-    right: { style: 'hair', color: { argb: 'FFCCCCCC' } },
-    bottom: { style: 'hair', color: { argb: 'FFCCCCCC' } }
-  };
+  valueCell.font = { name: FONT_NAME, size: FONT_SIZE };
+  valueCell.border = BORDER_THIN;
 
   // 複数行の場合はマージ
   if (rowSpan > 1) {
