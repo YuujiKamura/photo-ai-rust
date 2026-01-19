@@ -154,7 +154,7 @@ export async function generatePdf(photosJson, layoutJson, optionsJson) {
         { label: '撮影日', value: photo.date || '' },
         { label: '工種', value: photo.workType || '' },
         { label: '種別', value: photo.variety || '' },
-        { label: '細別', value: photo.detail || '' },
+        { label: '作業段階', value: photo.subphase || photo.detail || '' },
         { label: '測点', value: photo.station || '' },
         { label: '写真区分', value: photo.photoCategory || '' },
         { label: '計測値', value: photo.measurements || '' },

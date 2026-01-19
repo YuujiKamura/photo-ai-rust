@@ -9,7 +9,8 @@ pub struct ResultItem {
     pub photo_category: String,
     pub work_type: String,
     pub variety: String,
-    pub detail: String,
+    #[serde(alias = "detail")]
+    pub subphase: String,
     pub remarks: String,
     pub station: String,
     pub description: String,

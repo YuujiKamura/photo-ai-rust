@@ -87,7 +87,7 @@
         '打換': '舗装打換え工',
         'オーバーレイ': '舗装オーバーレイ工'
       },
-      detail: {
+      subphase: {
         '表層': '表層工',
         '基層': '基層工',
         '上層路盤': '上層路盤工',
@@ -122,7 +122,7 @@
       applyAlias('打換え', PAVEMENT_ALIASES.variety),
       '舗装打換え工');
     assertEqual('表層 → 表層工',
-      applyAlias('表層', PAVEMENT_ALIASES.detail),
+      applyAlias('表層', PAVEMENT_ALIASES.subphase),
       '表層工');
 
     // 部分一致テスト
@@ -166,7 +166,7 @@
         if (depth === 0) newCtx.photoCategory = key;
         else if (depth === 1) newCtx.workType = key;
         else if (depth === 2) newCtx.variety = key;
-        else if (depth === 3) newCtx.detail = key;
+        else if (depth === 3) newCtx.subphase = key;
         else if (depth === 4) newCtx.remark = key;
 
         if (typeof value === 'object' && value !== null) {
@@ -184,7 +184,7 @@
     test('マスタエントリ数 = 2', entries.length === 2);
 
     // 温度測定エントリ確認
-    const tempEntry = entries.find(e => e.detail === '表層工');
+    const tempEntry = entries.find(e => e.subphase === '表層工');
     test('温度測定エントリが存在', !!tempEntry);
     test('温度測定: photoCategory = 品質管理写真', tempEntry?.photoCategory === '品質管理写真');
     test('温度測定: workType = 舗装工', tempEntry?.workType === '舗装工');
@@ -223,13 +223,13 @@
     const tempMatch = matchEntry('到着温度 160.4℃', '品質管理', entries);
     test('温度マッチング: 結果あり', !!tempMatch);
     test('温度マッチング: workType = 舗装工', tempMatch?.workType === '舗装工');
-    test('温度マッチング: detail = 表層工', tempMatch?.detail === '表層工');
+    test('温度マッチング: subphase = 表層工', tempMatch?.subphase === '表層工');
     test('温度マッチング: 「到着温度」にマッチ', tempMatch?.matchedPatterns?.includes('到着温度'));
 
     // 密度マッチング
     const densityMatch = matchEntry('RI計器による密度測定', '品質管理', entries);
     test('密度マッチング: 結果あり', !!densityMatch);
-    test('密度マッチング: detail = 上層路盤工', densityMatch?.detail === '上層路盤工');
+    test('密度マッチング: subphase = 上層路盤工', densityMatch?.subphase === '上層路盤工');
     test('密度マッチング: 2パターン以上マッチ', (densityMatch?.matchedPatterns?.length || 0) >= 2);
 
     // マッチなし

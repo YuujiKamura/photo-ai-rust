@@ -1,7 +1,7 @@
 //! マスタ照合モジュール
 //!
 //! 既存の constructionHierarchyData.ts と同じJSON構造を読み込み、
-//! AI解析結果と照合して工種・種別・細別を特定する。
+//! AI解析結果と照合して工種・種別・作業段階を特定する。
 //!
 //! ## 階層構造
 //! ```text
@@ -9,7 +9,7 @@
 //!   └─ 写真区分（品質管理写真、施工状況写真...）
 //!       └─ 工種（舗装工、区画線工...）
 //!           └─ 種別（舗装打換え工...）
-//!               └─ 細別（表層工、上層路盤工...）
+//!               └─ 作業段階（表層工、上層路盤工...）
 //!                   └─ 備考キー or { matchPatterns: [...] }
 //! ```
 //!
@@ -33,7 +33,7 @@ pub struct MatchResult {
     pub photo_category: String,
     pub work_type: String,
     pub variety: String,
-    pub detail: String,
+    pub subphase: String,
     pub remark: String,
     pub matched_patterns: Vec<String>,
 }
@@ -44,7 +44,7 @@ struct TraverseContext {
     photo_category: String,
     work_type: String,
     variety: String,
-    detail: String,
+    subphase: String,
 }
 
 /// マスタJSONを読み込み
@@ -58,7 +58,7 @@ fn load_master_json(master_path: &Path) -> Result<Value> {
 /// Excelマスタを読み込み、JSON構造に変換
 ///
 /// ## Excel形式
-/// | 写真区分 | 工種 | 種別 | 細別 | 備考 | matchPatterns |
+/// | 写真区分 | 工種 | 種別 | 作業段階 | 備考 | matchPatterns |
 /// |---------|------|------|------|------|---------------|
 /// | 品質管理写真 | 舗装工 | 舗装打換え工 | 表層工 | アスファルト混合物温度測定 | 温度管理,到着温度,敷均し温度 |
 fn load_master_excel(master_path: &Path) -> Result<Value> {
@@ -88,7 +88,7 @@ fn load_master_excel(master_path: &Path) -> Result<Value> {
     let col_photo_category = find_column(&headers, &["写真区分"])?;
     let col_work_type = find_column(&headers, &["工種"])?;
     let col_variety = find_column(&headers, &["種別"])?;
-    let col_detail = find_column(&headers, &["細別"])?;
+    let col_subphase = find_column(&headers, &["細別", "作業段階"])?;
     let col_remark = find_column(&headers, &["備考"]).ok();
     let col_patterns = find_column(&headers, &["matchPatterns", "マッチパターン", "パターン"])?;
 
@@ -99,7 +99,7 @@ fn load_master_excel(master_path: &Path) -> Result<Value> {
         let photo_category = get_cell_string(row, col_photo_category);
         let work_type = get_cell_string(row, col_work_type);
         let variety = get_cell_string(row, col_variety);
-        let detail = get_cell_string(row, col_detail);
+        let subphase = get_cell_string(row, col_subphase);
         let remark = col_remark.map_or(String::new(), |i| get_cell_string(row, i));
         let patterns_str = get_cell_string(row, col_patterns);
 
@@ -138,20 +138,20 @@ fn load_master_excel(master_path: &Path) -> Result<Value> {
             .as_object_mut()
             .unwrap();
 
-        let detail_obj = variety_obj
-            .entry(detail)
+        let subphase_obj = variety_obj
+            .entry(subphase)
             .or_insert_with(|| json!({}))
             .as_object_mut()
             .unwrap();
 
         // 備考がある場合は備考キー下に、なければ直接matchPatternsを設定
         if !remark.is_empty() {
-            detail_obj.insert(
+            subphase_obj.insert(
                 remark,
                 json!({ "matchPatterns": patterns }),
             );
         } else {
-            detail_obj.insert("matchPatterns".to_string(), Value::Array(patterns));
+            subphase_obj.insert("matchPatterns".to_string(), Value::Array(patterns));
         }
     }
 
@@ -216,7 +216,7 @@ fn collect_match_entries(
                     .filter_map(|v| v.as_str().map(String::from))
                     .collect();
                 if !patterns.is_empty() {
-                    // 親キー（細別または備考）をremarkとして記録
+                    // 親キー（作業段階または備考）をremarkとして記録
                     entries.push((ctx.clone(), String::new(), patterns));
                 }
             }
@@ -238,7 +238,7 @@ fn collect_match_entries(
                 ..ctx.clone()
             },
             3 => TraverseContext {
-                detail: key.clone(),
+                subphase: key.clone(),
                 ..ctx.clone()
             },
             _ => ctx.clone(),
@@ -254,7 +254,7 @@ fn collect_match_entries(
                         .collect();
                     if !patterns.is_empty() {
                         let ctx_with_remark = TraverseContext {
-                            detail: if depth >= 3 { new_ctx.detail.clone() } else { key.clone() },
+                            subphase: if depth >= 3 { new_ctx.subphase.clone() } else { key.clone() },
                             ..new_ctx.clone()
                         };
                         entries.push((ctx_with_remark, key.clone(), patterns));
@@ -313,7 +313,7 @@ fn match_entry(
                 photo_category: ctx.photo_category.clone(),
                 work_type: ctx.work_type.clone(),
                 variety: ctx.variety.clone(),
-                detail: ctx.detail.clone(),
+                subphase: ctx.subphase.clone(),
                 remark: remark.clone(),
                 matched_patterns,
             });
@@ -344,7 +344,7 @@ pub fn match_with_master(
         photo_category: String::new(),
         work_type: String::new(),
         variety: String::new(),
-        detail: String::new(),
+        subphase: String::new(),
     };
     collect_match_entries(root, &initial_ctx, 0, &mut entries);
 
@@ -366,8 +366,8 @@ pub fn match_with_master(
                 if updated.variety.is_empty() {
                     updated.variety = m.variety;
                 }
-                if updated.detail.is_empty() {
-                    updated.detail = m.detail;
+                if updated.subphase.is_empty() {
+                    updated.subphase = m.subphase;
                 }
             }
 
@@ -426,14 +426,14 @@ mod tests {
             photo_category: String::new(),
             work_type: String::new(),
             variety: String::new(),
-            detail: String::new(),
+            subphase: String::new(),
         };
         collect_match_entries(root, &initial_ctx, 0, &mut entries);
 
         assert_eq!(entries.len(), 3);
 
         // 温度測定エントリを確認
-        let temp_entry = entries.iter().find(|(ctx, _, _)| ctx.detail == "表層工");
+        let temp_entry = entries.iter().find(|(ctx, _, _)| ctx.subphase == "表層工");
         assert!(temp_entry.is_some());
         let (ctx, remark, patterns) = temp_entry.unwrap();
         assert_eq!(ctx.photo_category, "品質管理写真");
@@ -453,7 +453,7 @@ mod tests {
             photo_category: String::new(),
             work_type: String::new(),
             variety: String::new(),
-            detail: String::new(),
+            subphase: String::new(),
         };
         collect_match_entries(root, &initial_ctx, 0, &mut entries);
 
@@ -470,7 +470,7 @@ mod tests {
         let m = matched.unwrap();
         assert_eq!(m.work_type, "舗装工");
         assert_eq!(m.variety, "舗装打換え工");
-        assert_eq!(m.detail, "表層工");
+        assert_eq!(m.subphase, "表層工");
         assert!(m.matched_patterns.contains(&"到着温度".to_string()));
     }
 
@@ -484,7 +484,7 @@ mod tests {
             photo_category: String::new(),
             work_type: String::new(),
             variety: String::new(),
-            detail: String::new(),
+            subphase: String::new(),
         };
         collect_match_entries(root, &initial_ctx, 0, &mut entries);
 
@@ -499,7 +499,7 @@ mod tests {
         assert!(matched.is_some());
 
         let m = matched.unwrap();
-        assert_eq!(m.detail, "上層路盤工");
+        assert_eq!(m.subphase, "上層路盤工");
         assert!(m.matched_patterns.len() >= 2); // "密度測定" と "RI計器"
     }
 
@@ -513,7 +513,7 @@ mod tests {
             photo_category: String::new(),
             work_type: String::new(),
             variety: String::new(),
-            detail: String::new(),
+            subphase: String::new(),
         };
         collect_match_entries(root, &initial_ctx, 0, &mut entries);
 
@@ -574,8 +574,8 @@ mod tests {
         let category = root.get("品質管理写真").unwrap();
         let work_type = category.get("舗装工").unwrap();
         let variety = work_type.get("舗装打換え工").unwrap();
-        let detail = variety.get("表層工").unwrap();
-        let remark = detail.get("アスファルト混合物温度測定").unwrap();
+        let subphase = variety.get("表層工").unwrap();
+        let remark = subphase.get("アスファルト混合物温度測定").unwrap();
         let patterns = remark.get("matchPatterns").unwrap().as_array().unwrap();
 
         assert!(patterns.iter().any(|p| p.as_str() == Some("温度管理")));
@@ -627,7 +627,7 @@ mod tests {
             photo_category: String::new(),
             work_type: String::new(),
             variety: String::new(),
-            detail: String::new(),
+            subphase: String::new(),
         };
 
         collect_match_entries(excel_root, &initial_ctx, 0, &mut excel_entries);
@@ -637,8 +637,8 @@ mod tests {
         assert_eq!(excel_entries.len(), 1);
 
         // 温度測定のエントリを比較
-        let excel_temp = excel_entries.iter().find(|(ctx, _, _)| ctx.detail == "表層工");
-        let json_temp = json_entries.iter().find(|(ctx, _, _)| ctx.detail == "表層工");
+        let excel_temp = excel_entries.iter().find(|(ctx, _, _)| ctx.subphase == "表層工");
+        let json_temp = json_entries.iter().find(|(ctx, _, _)| ctx.subphase == "表層工");
 
         assert!(excel_temp.is_some());
         assert!(json_temp.is_some());
@@ -649,7 +649,7 @@ mod tests {
         assert_eq!(excel_ctx.photo_category, json_ctx.photo_category);
         assert_eq!(excel_ctx.work_type, json_ctx.work_type);
         assert_eq!(excel_ctx.variety, json_ctx.variety);
-        assert_eq!(excel_ctx.detail, json_ctx.detail);
+        assert_eq!(excel_ctx.subphase, json_ctx.subphase);
         assert_eq!(excel_remark, json_remark);
         assert_eq!(excel_patterns.len(), json_patterns.len());
 

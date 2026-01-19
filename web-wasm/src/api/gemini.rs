@@ -295,7 +295,7 @@ pub async fn analyze_photo(
 {
   "workType": "工種（舗装工、道路土工など）",
   "variety": "種別（舗装打換え工など）",
-  "detail": "細別（表層工、上層路盤工など）",
+  "subphase": "作業段階（表層工、上層路盤工など）",
   "photoCategory": "写真区分（施工状況写真、品質管理写真、出来形管理写真、安全管理写真、使用材料写真など）",
   "station": "測点（黒板から読み取れる場合）",
   "remarks": "備考（補足情報）",
@@ -378,11 +378,15 @@ fn parse_analysis_result(response_text: &str, fallback_file_name: &str) -> Resul
         return Err("JSON object not found".to_string());
     };
 
+    let subphase = get_string(map, "subphase")
+        .or_else(|| get_string(map, "detail"))
+        .unwrap_or_default();
+
     Ok(AnalysisResult {
         file_name: get_string(map, "fileName").unwrap_or_else(|| fallback_file_name.to_string()),
         work_type: get_string(map, "workType").unwrap_or_default(),
         variety: get_string(map, "variety").unwrap_or_default(),
-        detail: get_string(map, "detail").unwrap_or_default(),
+        subphase,
         photo_category: get_string(map, "photoCategory").unwrap_or_default(),
         station: get_string(map, "station").unwrap_or_default(),
         remarks: get_string(map, "remarks").unwrap_or_default(),

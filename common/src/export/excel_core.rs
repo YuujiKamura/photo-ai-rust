@@ -23,7 +23,7 @@ pub trait PhotoData {
     fn photo_category(&self) -> &str;
     fn work_type(&self) -> &str;
     fn variety(&self) -> &str;
-    fn detail(&self) -> &str;
+    fn subphase(&self) -> &str;
     fn station(&self) -> &str;
     fn remarks(&self) -> &str;
     fn measurements(&self) -> &str;
@@ -36,7 +36,7 @@ impl PhotoData for crate::types::AnalysisResult {
     fn photo_category(&self) -> &str { &self.photo_category }
     fn work_type(&self) -> &str { &self.work_type }
     fn variety(&self) -> &str { &self.variety }
-    fn detail(&self) -> &str { &self.detail }
+    fn subphase(&self) -> &str { &self.subphase }
     fn station(&self) -> &str { &self.station }
     fn remarks(&self) -> &str { &self.remarks }
     fn measurements(&self) -> &str { &self.measurements }
@@ -52,7 +52,7 @@ fn get_field_value<'a, T: PhotoData>(data: &'a T, key: &str) -> &'a str {
         "photoCategory" => data.photo_category(),
         "workType" => data.work_type(),
         "variety" => data.variety(),
-        "detail" => data.detail(),
+        "subphase" => data.subphase(),
         "station" => data.station(),
         "remarks" => data.remarks(),
         "measurements" => data.measurements(),

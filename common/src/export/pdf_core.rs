@@ -90,7 +90,7 @@ fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
         "photoCategory" => &result.photo_category,
         "workType" => &result.work_type,
         "variety" => &result.variety,
-        "detail" => &result.detail,
+        "subphase" => &result.subphase,
         "station" => &result.station,
         "remarks" => &result.remarks,
         "measurements" => &result.measurements,
