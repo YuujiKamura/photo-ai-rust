@@ -308,6 +308,64 @@ async fn main() -> Result<()> {
                 }
             }
         }
+
+        Commands::Normalize { input, output, dry_run, threshold, no_station, no_work_type, no_protect_measurements } => {
+            use photo_ai_rust::normalizer::{self, NormalizationOptions};
+
+            println!("🔧 photo-ai-rust - 正規化\n");
+
+            // JSONを読み込み
+            let content = std::fs::read_to_string(&input)?;
+            let mut results: Vec<analyzer::AnalysisResult> = serde_json::from_str(&content)?;
+            println!("読み込み: {}件", results.len());
+
+            // 正規化オプション
+            let options = NormalizationOptions {
+                normalize_station: !no_station,
+                normalize_work_type: !no_work_type,
+                threshold,
+                protect_measurements: !no_protect_measurements,
+            };
+
+            // 正規化実行
+            let result = normalizer::normalize_results(&results, &options);
+
+            // 統計表示
+            println!("\n📊 正規化結果:");
+            println!("  総レコード数: {}", result.stats.total_records);
+            println!("  修正対象: {}件", result.stats.corrected_records);
+            println!("  - 測点修正: {}件", result.stats.station_corrections);
+            println!("  - 工種修正: {}件", result.stats.work_type_corrections);
+            println!("  スキップ（計測値保護）: {}件", result.stats.skipped_due_to_measurements);
+
+            // 修正内容を表示
+            if !result.corrections.is_empty() {
+                println!("\n📝 修正内容:");
+                for correction in &result.corrections {
+                    println!(
+                        "  {} [{}]: {} → {}",
+                        correction.file_name,
+                        correction.field,
+                        correction.original,
+                        correction.corrected
+                    );
+                }
+            }
+
+            // ドライランでなければ適用
+            if !dry_run && !result.corrections.is_empty() {
+                normalizer::apply_corrections(&mut results, &result.corrections);
+
+                let output_path = output.unwrap_or(input);
+                let json = serde_json::to_string_pretty(&results)?;
+                std::fs::write(&output_path, json)?;
+                println!("\n✔ 保存: {}", output_path.display());
+            } else if dry_run {
+                println!("\n[ドライラン] 変更は適用されませんでした");
+            }
+
+            println!("\n✅ 正規化完了");
+        }
     }
 
     Ok(())
