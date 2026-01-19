@@ -8,6 +8,8 @@ web-wasm/target
 *.xlsx
 *.pdf
 test-photos/
+.env
+.env.*
 
 # CCPM (Claude Code PM)
 .claude/settings.local.json
