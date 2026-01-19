@@ -1,5 +1,5 @@
 use clap::Parser;
-use photo_ai_rust::{ai_provider::AiProvider, cli, config, error, scanner, analyzer, matcher, export, station};
+use photo_ai_rust::{ai_provider::AiProvider, cli, config, error, scanner, analyzer, matcher, export, station, master_selector};
 use cli::{Cli, Commands};
 use config::Config;
 use error::Result;
@@ -32,11 +32,17 @@ async fn run_analysis(
     }
 }
 
-fn resolve_master_path(master: Option<PathBuf>) -> Option<PathBuf> {
+fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<PathBuf> {
     if master.is_some() {
         return master;
     }
 
+    // 対話式選択
+    if interactive {
+        return master_selector::select_master_interactive();
+    }
+
+    // デフォルトマスタ
     let default_path = PathBuf::from("master").join("construction_hierarchy.csv");
     if default_path.exists() {
         Some(default_path)
@@ -54,12 +60,8 @@ async fn main() -> Result<()> {
         Commands::Analyze { folder, output, batch_size, master, use_cache, recursive, include_all } => {
             println!("📸 photo-ai-rust - 写真解析\n");
             let has_master_arg = master.is_some();
-            let master_path = resolve_master_path(master);
-            if !has_master_arg {
-                if let Some(path) = master_path.as_ref() {
-                    println!("- デフォルトマスタを使用: {}", path.display());
-                }
-            }
+            let master_path = resolve_master_path(master, !has_master_arg);
+
 
             // 1. 画像スキャン
             println!("[1/3] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
@@ -135,12 +137,8 @@ async fn main() -> Result<()> {
         Commands::Run { folder, output, format, batch_size, master, pdf_quality, use_cache, recursive, include_all } => {
             println!("🚀 photo-ai-rust - 一括処理\n");
             let has_master_arg = master.is_some();
-            let master_path = resolve_master_path(master);
-            if !has_master_arg {
-                if let Some(path) = master_path.as_ref() {
-                    println!("- デフォルトマスタを使用: {}", path.display());
-                }
-            }
+            let master_path = resolve_master_path(master, !has_master_arg);
+
 
             // 1. Scan
             println!("[1/5] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
