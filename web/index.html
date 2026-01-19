@@ -156,7 +156,7 @@
         '打換': '舗装打換え工',
         'オーバーレイ': '舗装オーバーレイ工'
       },
-      detail: {
+      subphase: {
         '表層': '表層工',
         '基層': '基層工',
         '上層路盤': '上層路盤工',
@@ -185,7 +185,7 @@
         photoCategory: applyAlias(result.photoCategory, PAVEMENT_ALIASES.photoCategory),
         workType: applyAlias(result.workType, PAVEMENT_ALIASES.workType),
         variety: applyAlias(result.variety, PAVEMENT_ALIASES.variety),
-        detail: applyAlias(result.detail, PAVEMENT_ALIASES.detail)
+        subphase: applyAlias(result.subphase || result.detail, PAVEMENT_ALIASES.subphase)
       };
     }
 
@@ -386,7 +386,7 @@
 - photoCategory: 写真区分（施工状況, 品質管理, 出来形管理, 材料検収, 安全管理, 使用材料 など）
 - workType: 工種（舗装工, 区画線工 など）
 - variety: 種別（アスファルト舗装, 溶融式区画線 など）
-- detail: 細別
+- subphase: 作業段階
 - station: 測点（NO.10+5.0 など）
 - remarks: 備考
 - description: 写真の説明
@@ -395,7 +395,7 @@
 入力順序と同じ順序でJSON配列を返してください。`;
 
       const prompt = `${batch.length}枚の写真を解析してください。
-各写真について fileName, photoCategory, workType, variety, detail, station, remarks, description, reasoning を含むJSONオブジェクトの配列を返してください。
+各写真について fileName, photoCategory, workType, variety, subphase, station, remarks, description, reasoning を含むJSONオブジェクトの配列を返してください。
 入力順序と同じ順序で出力してください。
 
 ファイル名: ${batch.map(p => p.fileName).join(', ')}`;
@@ -497,7 +497,7 @@
             { label: '写真区分', value: r.photoCategory || '-' },
             { label: '工種', value: r.workType || '-' },
             { label: '種別', value: r.variety || '-' },
-            { label: '細別', value: r.detail || '-' },
+            { label: '作業段階', value: r.subphase || r.detail || '-' },
             { label: '測点', value: r.station || '-' },
             { label: '備考', value: r.remarks || '-' }
           ];
@@ -540,7 +540,7 @@
         '写真区分': p.result?.photoCategory || '',
         '工種': p.result?.workType || '',
         '種別': p.result?.variety || '',
-        '細別': p.result?.detail || '',
+        '作業段階': p.result?.subphase || p.result?.detail || '',
         '測点': p.result?.station || '',
         '備考': p.result?.remarks || '',
         '説明': p.result?.description || ''
@@ -557,7 +557,7 @@
         { wch: 12 }, // 写真区分
         { wch: 15 }, // 工種
         { wch: 15 }, // 種別
-        { wch: 15 }, // 細別
+        { wch: 15 }, // 作業段階
         { wch: 12 }, // 測点
         { wch: 20 }, // 備考
         { wch: 30 }  // 説明

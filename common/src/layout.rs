@@ -114,7 +114,7 @@ pub const LAYOUT_FIELDS: &[FieldDefinition] = &[
     FieldDefinition { key: "photoCategory", label: "区分", row_span: 1 },
     FieldDefinition { key: "workType", label: "工種", row_span: 1 },
     FieldDefinition { key: "variety", label: "種別", row_span: 1 },
-    FieldDefinition { key: "detail", label: "細別", row_span: 1 },
+    FieldDefinition { key: "subphase", label: "作業段階", row_span: 1 },
     FieldDefinition { key: "station", label: "測点", row_span: 1 },
     FieldDefinition { key: "remarks", label: "備考", row_span: 1 },
     FieldDefinition { key: "measurements", label: "測定値", row_span: 3 },

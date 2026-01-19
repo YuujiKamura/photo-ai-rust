@@ -241,7 +241,7 @@ Some additional text."#;
     "fileName": "test.jpg",
     "workType": "舗装工",
     "variety": "舗装打換え工",
-    "detail": "表層工",
+    "subphase": "表層工",
     "station": "No.10",
     "description": "舗設状況",
     "reasoning": "温度測定写真のため"
@@ -254,7 +254,7 @@ Some additional text."#;
         assert_eq!(result[0].file_name, "test.jpg");
         assert_eq!(result[0].work_type, "舗装工");
         assert_eq!(result[0].variety, "舗装打換え工");
-        assert_eq!(result[0].detail, "表層工");
+        assert_eq!(result[0].subphase, "表層工");
         assert_eq!(result[0].station, "No.10");
         assert_eq!(result[0].description, "舗設状況");
         assert_eq!(result[0].reasoning, "温度測定写真のため");
@@ -269,7 +269,7 @@ Some additional text."#;
         assert_eq!(result[0].file_name, "test.jpg");
         assert_eq!(result[0].work_type, "区画線工");
         assert_eq!(result[0].variety, ""); // デフォルト値
-        assert_eq!(result[0].detail, ""); // デフォルト値
+        assert_eq!(result[0].subphase, ""); // デフォルト値
     }
 
     #[test]

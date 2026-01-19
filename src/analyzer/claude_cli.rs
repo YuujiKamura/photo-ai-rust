@@ -443,11 +443,11 @@ fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMas
                         candidates = filtered;
                     }
                 }
-                if !result.detail.is_empty() {
+                if !result.subphase.is_empty() {
                     let filtered: Vec<_> = candidates
                         .iter()
                         .copied()
-                        .filter(|row| row.detail == result.detail)
+                        .filter(|row| row.subphase == result.subphase)
                         .collect();
                     if !filtered.is_empty() {
                         candidates = filtered;
@@ -458,7 +458,7 @@ fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMas
                     result.photo_category = row.photo_type.clone();
                     result.work_type = row.work_type.clone();
                     result.variety = row.variety.clone();
-                    result.detail = row.detail.clone();
+                    result.subphase = row.subphase.clone();
                 }
             }
         }
@@ -476,7 +476,7 @@ fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMas
             if !has_work {
                 result.work_type.clear();
                 result.variety.clear();
-                result.detail.clear();
+                result.subphase.clear();
                 result.remarks.clear();
                 continue;
             }
@@ -488,7 +488,7 @@ fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMas
             if !work_types.contains(&result.work_type.as_str()) {
                 result.work_type.clear();
                 result.variety.clear();
-                result.detail.clear();
+                result.subphase.clear();
                 result.remarks.clear();
                 continue;
             }
@@ -504,40 +504,40 @@ fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMas
             });
             if !has_variety {
                 result.variety.clear();
-                result.detail.clear();
+                result.subphase.clear();
                 result.remarks.clear();
             }
         } else {
             result.variety.clear();
-            result.detail.clear();
+            result.subphase.clear();
             result.remarks.clear();
         }
 
-        // 4) detail の整合
-        if !result.work_type.is_empty() && !result.variety.is_empty() && !result.detail.is_empty() {
+        // 4) subphase の整合
+        if !result.work_type.is_empty() && !result.variety.is_empty() && !result.subphase.is_empty() {
             let has_detail = master.rows().iter().any(|row| {
                 row.work_type == result.work_type
                     && row.variety == result.variety
-                    && row.detail == result.detail
+                    && row.subphase == result.subphase
                     && (result.photo_category.is_empty()
                         || row.photo_type == result.photo_category)
             });
             if !has_detail {
-                result.detail.clear();
+                result.subphase.clear();
                 result.remarks.clear();
             }
         } else {
-            result.detail.clear();
+            result.subphase.clear();
             result.remarks.clear();
         }
 
-        // 5) remarks の整合（同一の photoCategory/work/var/detail の行に存在する備考のみ許可）
+        // 5) remarks の整合（同一の photoCategory/work/var/subphase の行に存在する備考のみ許可）
         if !result.remarks.is_empty() {
             let has_remarks = master.rows().iter().any(|row| {
                 row.remarks == result.remarks
                     && row.work_type == result.work_type
                     && row.variety == result.variety
-                    && row.detail == result.detail
+                    && row.subphase == result.subphase
                     && (result.photo_category.is_empty()
                         || row.photo_type == result.photo_category)
             });
