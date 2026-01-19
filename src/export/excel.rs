@@ -90,7 +90,7 @@ fn generate_excel_via_exceljs(
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| PhotoAiError::ExcelGeneration(format!("時刻取得エラー: {}", e)))?
-        .as_millis();
+        .as_nanos();
     temp_path.push(format!("photo-ai-exceljs-{}.json", stamp));
 
     let json = serde_json::to_vec_pretty(&payload)
