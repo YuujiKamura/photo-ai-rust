@@ -122,8 +122,8 @@ pub fn build_single_step_prompt(
 
 ## 制約
 - 工種は「{work_type}」固定{variety_hint}
-- 種別・細別・備考は必ずマスタに存在する値を選択
-- 該当なしの場合は空文字""
+- 撮影内容（備考）だけをマスタから選択（判断不可なら空文字）
+- 上位階層はシステム側で自動決定するため、workType/variety/detail は空文字でよい
 
 ## 出力形式（厳密にこのJSON配列形式で出力）
 [
@@ -134,11 +134,8 @@ pub fn build_single_step_prompt(
     "measurements": "数値データ（温度、寸法等）単位付き",
     "description": "写真の説明",
     "photoCategory": "写真区分から選択",
-    "workType": "{work_type}",
-    "variety": "種別（マスタから選択）",
-    "detail": "細別（マスタから選択）",
     "station": "測点（黒板から読み取れた場合）",
-    "remarks": "備考（マスタから選択）"
+    "remarks": "撮影内容（マスタの備考から選択）"
   }}
 ]
 
