@@ -69,7 +69,7 @@ pub enum Commands {
         #[arg(required = true)]
         input: PathBuf,
 
-        /// 出力形式 (pdf/excel/both)
+        /// 出力形式 (pdf/excel/xml/both)
         #[arg(short, long, default_value = "both")]
         format: ExportFormat,
 
@@ -108,7 +108,7 @@ pub enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
 
-        /// 出力形式 (pdf/excel/both)
+        /// 出力形式 (pdf/excel/xml/both)
         #[arg(short, long, default_value = "pdf")]
         format: ExportFormat,
 
@@ -206,6 +206,7 @@ pub enum Commands {
 pub enum ExportFormat {
     Pdf,
     Excel,
+    PhotoXml,
     #[default]
     Both,
 }
@@ -217,8 +218,9 @@ impl std::str::FromStr for ExportFormat {
         match s.to_lowercase().as_str() {
             "pdf" => Ok(ExportFormat::Pdf),
             "excel" | "xlsx" => Ok(ExportFormat::Excel),
+            "xml" | "photo-xml" | "photo.xml" => Ok(ExportFormat::PhotoXml),
             "both" => Ok(ExportFormat::Both),
-            _ => Err(format!("Unknown format: {}. Use pdf, excel, or both", s)),
+            _ => Err(format!("Unknown format: {}. Use pdf, excel, xml, or both", s)),
         }
     }
 }
