@@ -1,8 +1,8 @@
 //! Claude CLI連携モジュール
 //!
-//! 2段階解析処理:
-//! - Step1 (Vision): 画像から生データを抽出（OCR、数値、シーン説明）
-//! - Step2 (Text): 階層マスタとの照合で分類
+//! 解析処理:
+//! - 1ステップ解析: 工種指定時、1回のAI呼び出しで画像認識と分類を実行
+//! - 基本解析: 工種未指定時、画像認識のみ実行
 //!
 //! 共通ロジックは photo_ai_common から使用
 
@@ -14,12 +14,10 @@ use std::process::Command;
 
 // 共通モジュールから型と関数をインポート
 use photo_ai_common::{
-    AnalysisResult, RawImageData, Step2Result, HierarchyMaster, ImageMeta,
-    build_step1_prompt, build_step2_prompt, build_single_step_prompt,
+    AnalysisResult, RawImageData, HierarchyMaster,
+    build_step1_prompt, build_single_step_prompt,
     parse_step1_response as common_parse_step1,
-    parse_step2_response as common_parse_step2,
     parse_single_step_response as common_parse_single_step,
-    detect_work_types, merge_results as common_merge_results,
 };
 
 /// Step1: 画像認識を実行
@@ -68,74 +66,7 @@ pub async fn analyze_batch_step1(
     parse_step1_response(&response)
 }
 
-/// Step2: マスタ照合を実行
-pub async fn analyze_batch_step2(
-    raw_data: &[RawImageData],
-    master: &HierarchyMaster,
-    verbose: bool,
-    provider: AiProvider,
-) -> Result<Vec<Step2Result>> {
-    // 共通プロンプト生成を使用
-    let step2_prompt = build_step2_prompt(raw_data, master);
-    let full_prompt = step2_prompt.replace('\n', " ").replace('"', "\\\"");
-
-    if verbose {
-        println!("  [Step2] プロンプト長: {} chars", full_prompt.len());
-    }
-
-    // Claude CLI呼び出し（画像なし）
-    let response = run_ai_cli(&full_prompt, None, verbose, provider)?;
-
-    if verbose {
-        println!("  [Step2] レスポンス長: {} chars", response.len());
-    }
-
-    // 共通パーサーを使用
-    parse_step2_response(&response)
-}
-
-/// Step1とStep2の結果をマージ
-pub fn merge_results(
-    raw_data: &[RawImageData],
-    step2_results: &[Step2Result],
-    images: &[ImageInfo],
-) -> Vec<AnalysisResult> {
-    // ImageInfoからImageMetaへ変換
-    let image_metas: Vec<ImageMeta> = images
-        .iter()
-        .map(|img| ImageMeta {
-            file_name: img.file_name.clone(),
-            file_path: img.path.display().to_string(),
-            date: img.date.clone().unwrap_or_default(),
-        })
-        .collect();
-
-    // 共通マージ関数を使用
-    let common_results = common_merge_results(raw_data, step2_results, &image_metas);
-
-    // photo_ai_common::AnalysisResult から crate::analyzer::AnalysisResult へ変換
-    common_results
-        .into_iter()
-        .map(|r| AnalysisResult {
-            file_name: r.file_name,
-            file_path: r.file_path,
-            date: r.date,
-            work_type: r.work_type,
-            variety: r.variety,
-            detail: r.detail,
-            station: r.station,
-            remarks: r.remarks,
-            description: r.description,
-            has_board: r.has_board,
-            detected_text: r.detected_text,
-            measurements: r.measurements,
-            photo_category: r.photo_category,
-            reasoning: r.reasoning,
-        })
-        .collect()
-}
-
-/// 2段階解析を実行（後方互換性のため維持）
+/// 基本解析を実行（マスタなし）
 pub async fn analyze_batch(
     images: &[ImageInfo],
     verbose: bool,
@@ -175,53 +106,6 @@ pub async fn analyze_batch(
         })
         .collect();
 
-    Ok(results)
-}
-
-/// 2段階解析を実行（マスタあり）
-pub async fn analyze_batch_with_master(
-    images: &[ImageInfo],
-    master: &HierarchyMaster,
-    verbose: bool,
-    provider: AiProvider,
-) -> Result<Vec<AnalysisResult>> {
-    // Step1: 画像認識
-    if verbose {
-        println!("  Step1: 画像認識開始...");
-    }
-    let raw_data = analyze_batch_step1(images, verbose, provider).await?;
-    if verbose {
-        println!("  Step1: 完了 ({}件)", raw_data.len());
-    }
-
-    // Step1結果から工種を自動判定してマスタをフィルタ（共通関数を使用）
-    let detected_types = detect_work_types(&raw_data);
-    let filtered_master = if detected_types.is_empty() {
-        if verbose {
-            println!("  工種判定: 該当なし → 全マスタ使用 ({}件)", master.rows().len());
-        }
-        master.clone()
-    } else {
-        let filtered = master.filter_by_work_types(&detected_types);
-        if verbose {
-            println!("  工種判定: {:?} → マスタ絞込み ({}件 → {}件)",
-                detected_types, master.rows().len(), filtered.rows().len());
-        }
-        filtered
-    };
-
-    // Step2: マスタ照合（フィルタ済みマスタを使用）
-    if verbose {
-        println!("  Step2: マスタ照合開始...");
-    }
-    let step2_results = analyze_batch_step2(&raw_data, &filtered_master, verbose, provider).await?;
-    if verbose {
-        println!("  Step2: 完了 ({}件)", step2_results.len());
-    }
-
-    // 結果マージ
-    let mut results = merge_results(&raw_data, &step2_results, images);
-    sanitize_classification(&mut results, &filtered_master);
     Ok(results)
 }
 
@@ -520,12 +404,6 @@ fn parse_step1_response(response: &str) -> Result<Vec<RawImageData>> {
         .map_err(|e| PhotoAiError::ApiParse(format!("Step1 JSONパースエラー: {}", e)))
 }
 
-/// Step2レスポンスをパース（共通パーサーをラップ）
-fn parse_step2_response(response: &str) -> Result<Vec<Step2Result>> {
-    common_parse_step2(response)
-        .map_err(|e| PhotoAiError::ApiParse(format!("Step2 JSONパースエラー: {}", e)))
-}
-
 fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMaster) {
     for result in results.iter_mut() {
         // 未舗装部舗装工は自動選択しない（デフォルトは舗装打換え工）
@@ -651,27 +529,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_step2_response() {
-        let response = r#"```json
-[
-  {
-    "fileName": "test.jpg",
-    "workType": "舗装工",
-    "variety": "舗装打換え工",
-    "detail": "表層工",
-    "station": "No.10",
-    "description": "舗設状況"
-  }
-]
-```"#;
-        let result = parse_step2_response(response).unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].work_type, "舗装工");
-        assert_eq!(result[0].variety, "舗装打換え工");
-        assert_eq!(result[0].detail, "表層工");
-    }
-
-    #[test]
     fn test_build_step1_prompt() {
         let images = vec![ImageInfo {
             path: PathBuf::from("test.jpg"),
@@ -688,42 +545,4 @@ mod tests {
         assert!(prompt.contains("JSON配列のみ出力"));
     }
 
-    #[test]
-    fn test_merge_results_with_image_info() {
-        let raw_data = vec![RawImageData {
-            file_name: "test.jpg".to_string(),
-            has_board: true,
-            detected_text: "温度測定".to_string(),
-            measurements: "160℃".to_string(),
-            scene_description: "舗装工事".to_string(),
-            photo_category: "到着温度".to_string(),
-        }];
-
-        let step2_results = vec![Step2Result {
-            file_name: "test.jpg".to_string(),
-            work_type: "舗装工".to_string(),
-            variety: "舗装打換え工".to_string(),
-            detail: "表層工".to_string(),
-            station: "No.10".to_string(),
-            remarks: "備考".to_string(),
-            description: "舗設状況".to_string(),
-            reasoning: "温度測定のため".to_string(),
-        }];
-
-        let images = vec![ImageInfo {
-            path: PathBuf::from("/path/to/test.jpg"),
-            file_name: "test.jpg".to_string(),
-            date: Some("2025-01-18".to_string()),
-        }];
-
-        let results = merge_results(&raw_data, &step2_results, &images);
-
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].file_name, "test.jpg");
-        assert_eq!(results[0].work_type, "舗装工");
-        assert_eq!(results[0].variety, "舗装打換え工");
-        assert!(results[0].has_board);
-        assert_eq!(results[0].detected_text, "温度測定");
-        assert_eq!(results[0].date, "2025-01-18");
-    }
 }
