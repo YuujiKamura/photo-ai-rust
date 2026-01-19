@@ -1,7 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -10,6 +11,11 @@ import 'package:csv/csv.dart';
 import 'models/result_item.dart';
 import 'widgets/detail_panel.dart';
 import 'widgets/field_grid.dart';
+import 'services/gemini_api.dart';
+import 'utils/web_utils_stub.dart'
+    if (dart.library.html) 'utils/web_utils.dart' as web_utils;
+import 'utils/platform_io_stub.dart'
+    if (dart.library.io) 'utils/platform_io.dart' as pio;
 
 void main() {
   runApp(const PhotoAiApp());
@@ -73,13 +79,18 @@ class _ViewerScreenState extends State<ViewerScreen>
   List<String> workTypeOptions = [];
   AnimationController? _pulseController;
   Animation<Color?>? _pulseColor;
-  Process? _analyzeProcess;
+  pio.ProcessHandle? _analyzeProcess;
   bool _analyzeCancelRequested = false;
   bool _awaitingWorkType = false;
   String? _pendingAnalyzeFolder;
   String? _pendingAnalyzeOutput;
   final TextEditingController _terminalInputController = TextEditingController();
   ClipboardPayload? _clipboardPayload;
+
+  // Web用: Gemini APIキー
+  String _geminiApiKey = '';
+  // Web用: 読み込んだ画像データ (path使えないため)
+  Map<String, Uint8List> _webImageCache = {};
 
   @override
   void initState() {
@@ -122,11 +133,49 @@ class _ViewerScreenState extends State<ViewerScreen>
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['json'],
+      withData: kIsWeb,  // Webではbytesを取得
     );
     if (result == null || result.files.isEmpty) return;
-    final path = result.files.single.path;
-    if (path == null) return;
-    await loadFromPath(path);
+
+    if (kIsWeb) {
+      // Web: bytesから読み込み
+      final bytes = result.files.single.bytes;
+      if (bytes == null) return;
+      final content = utf8.decode(bytes);
+      final fileName = result.files.single.name;
+      await loadFromContent(content, fileName);
+    } else {
+      // Desktop: pathから読み込み
+      final path = result.files.single.path;
+      if (path == null) return;
+      await loadFromPath(path);
+    }
+  }
+
+  /// Web用: コンテンツから直接読み込み
+  Future<void> loadFromContent(String content, String fileName) async {
+    try {
+      final data = jsonDecode(content);
+      if (data is! List) {
+        setStatus('result.json should be an array');
+        return;
+      }
+      items = data
+          .map((e) => ResultItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+      if (stationOverride.isNotEmpty) {
+        items = items.map((item) => item.copyWith(station: stationOverride)).toList();
+      }
+      originalItems = List<ResultItem>.from(items);
+      selectedIndices = items.isEmpty ? {} : {0};
+      sourcePath = fileName;  // Webではファイル名のみ
+      setStatus('Loaded $fileName');
+      appendLog('Loaded $fileName');
+      setState(() {});
+    } catch (err) {
+      setStatus('Load failed: $err');
+      appendLog('Load failed: $err');
+    }
   }
 
   Future<void> reloadJson() async {
@@ -139,7 +188,7 @@ class _ViewerScreenState extends State<ViewerScreen>
 
   Future<void> loadFromPath(String path) async {
     try {
-      final file = File(path);
+      final file = pio.PlatformFile(path);
       final content = await file.readAsString();
       final data = jsonDecode(content);
       if (data is! List) {
@@ -337,10 +386,17 @@ class _ViewerScreenState extends State<ViewerScreen>
 
   Future<void> saveToSource() async {
     if (items.isEmpty || sourcePath == null) return;
-    final file = File(sourcePath!);
     final jsonText = const JsonEncoder.withIndent('  ')
         .convert(items.map((e) => e.toJson()).toList());
-    await file.writeAsString(jsonText);
+
+    if (kIsWeb) {
+      // Web: ダウンロードとして保存
+      _downloadJson(jsonText, p.basename(sourcePath!));
+    } else {
+      // Desktop: ファイルに直接書き込み
+      final file = pio.PlatformFile(sourcePath!);
+      await file.writeAsString(jsonText);
+    }
     originalItems = List<ResultItem>.from(items);
     setStatus('Saved to ${p.basename(sourcePath!)}');
     appendLog('Saved to ${p.basename(sourcePath!)}');
@@ -351,17 +407,32 @@ class _ViewerScreenState extends State<ViewerScreen>
     final defaultName = sourcePath != null
         ? p.basename(sourcePath!).replaceAll('.json', '.sorted.json')
         : 'result.sorted.json';
-    final output = await FilePicker.platform.saveFile(
-      dialogTitle: 'Save sorted JSON',
-      fileName: defaultName,
-    );
-    if (output == null) return;
-    final file = File(output);
     final jsonText = const JsonEncoder.withIndent('  ')
         .convert(items.map((e) => e.toJson()).toList());
-    await file.writeAsString(jsonText);
-    setStatus('Saved ${p.basename(output)}');
-    appendLog('Saved ${p.basename(output)}');
+
+    if (kIsWeb) {
+      // Web: ダウンロードとして保存
+      _downloadJson(jsonText, defaultName);
+      setStatus('Downloaded $defaultName');
+      appendLog('Downloaded $defaultName');
+    } else {
+      // Desktop: ファイル選択ダイアログ
+      final output = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save sorted JSON',
+        fileName: defaultName,
+      );
+      if (output == null) return;
+      final file = pio.PlatformFile(output);
+      await file.writeAsString(jsonText);
+      setStatus('Saved ${p.basename(output)}');
+      appendLog('Saved ${p.basename(output)}');
+    }
+  }
+
+  /// Web用: JSONをダウンロード
+  void _downloadJson(String content, String fileName) {
+    web_utils.downloadFile(content, fileName);
+    appendLog('Download: $fileName (${content.length} bytes)');
   }
 
   Future<void> resetOrder() async {
@@ -394,6 +465,10 @@ class _ViewerScreenState extends State<ViewerScreen>
   }
 
   Future<void> runAnalyzeForFolder(String folder, {String? outputPath}) async {
+    if (kIsWeb) {
+      setAnalyzeStatus('Folder analyze not supported on web');
+      return;
+    }
     if (analyzing) return;
     if (workTypeInput.isEmpty) {
       setAnalyzeStatus('Work type required');
@@ -421,7 +496,7 @@ class _ViewerScreenState extends State<ViewerScreen>
       final resolvedCli = await resolveCliPath();
       appendLog('Analyze CLI: $resolvedCli');
       appendLog('Analyze args: ${buildAnalyzeArgs(folder, output).join(' ')}');
-      final process = await Process.start(
+      final process = await pio.startProcess(
         resolvedCli,
         buildAnalyzeArgs(folder, output),
         workingDirectory: resolveRepoRoot(),
@@ -471,9 +546,9 @@ class _ViewerScreenState extends State<ViewerScreen>
     _analyzeCancelRequested = true;
     setAnalyzeStatus('Canceling analyze...');
     appendLog('Analyze cancel requested');
-    final killed = process.kill(ProcessSignal.sigkill);
-    if (!killed && Platform.isWindows) {
-      Process.run('taskkill', ['/PID', process.pid.toString(), '/T', '/F'])
+    final killed = process.kill();
+    if (!killed && pio.isWindows) {
+      pio.runProcess('taskkill', ['/PID', process.pid.toString(), '/T', '/F'])
           .then((result) => appendLog('taskkill: ${result.exitCode}'))
           .catchError((err) => appendLog('taskkill failed: $err'));
     } else if (!killed) {
@@ -521,6 +596,10 @@ class _ViewerScreenState extends State<ViewerScreen>
   }
 
   Future<void> reanalyzeEntry(ResultItem item) async {
+    if (kIsWeb) {
+      // Web版はreanalyzeEntryWebを使用
+      return;
+    }
     if (analyzing) return;
     if (item.filePath.isEmpty) return;
     if (workTypeInput.isEmpty) {
@@ -531,14 +610,14 @@ class _ViewerScreenState extends State<ViewerScreen>
       openAnalyzeOptions();
       return;
     }
-    final srcFile = File(item.filePath);
+    final srcFile = pio.PlatformFile(item.filePath);
     if (!srcFile.existsSync()) {
       setAnalyzeStatus('File not found: ${item.fileName}');
       appendLog('File not found: ${item.filePath}');
       return;
     }
-    final tempDir = Directory.systemTemp.createTempSync('photo-ai-single');
-    final tempFile = File(p.join(tempDir.path, p.basename(item.filePath)));
+    final tempDir = pio.PlatformDirectory.systemTemp.createTempSync('photo-ai-single');
+    final tempFile = pio.PlatformFile(p.join(tempDir.path, p.basename(item.filePath)));
     await tempFile.writeAsBytes(await srcFile.readAsBytes());
     final output = p.join(tempDir.path, 'result.json');
 
@@ -547,7 +626,7 @@ class _ViewerScreenState extends State<ViewerScreen>
       _analyzeCancelRequested = false;
       setState(() {});
       final resolvedCli = await resolveCliPath();
-      final process = await Process.start(
+      final process = await pio.startProcess(
         resolvedCli,
         buildAnalyzeArgs(tempDir.path, output),
         workingDirectory: resolveRepoRoot(),
@@ -575,7 +654,7 @@ class _ViewerScreenState extends State<ViewerScreen>
         return;
       }
 
-      final data = jsonDecode(await File(output).readAsString());
+      final data = jsonDecode(await pio.PlatformFile(output).readAsString());
       if (data is! List || data.isEmpty) {
         setAnalyzeStatus('Analyze produced no results');
         appendLog('Analyze produced no results');
@@ -614,7 +693,135 @@ class _ViewerScreenState extends State<ViewerScreen>
     }
   }
 
+  /// Web用: Gemini APIで解析
+  Future<void> reanalyzeEntryWeb(ResultItem item) async {
+    if (analyzing) return;
+
+    // APIキー確認
+    if (_geminiApiKey.isEmpty) {
+      final key = await _showApiKeyDialog();
+      if (key == null || key.isEmpty) {
+        setAnalyzeStatus('API key required');
+        return;
+      }
+      _geminiApiKey = key;
+    }
+
+    // 画像データ取得 (キャッシュまたはファイル選択)
+    Uint8List? imageBytes = _webImageCache[item.filePath];
+    if (imageBytes == null) {
+      setAnalyzeStatus('Select image file for: ${item.fileName}');
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty || result.files.single.bytes == null) {
+        setAnalyzeStatus('Image selection cancelled');
+        return;
+      }
+      imageBytes = result.files.single.bytes!;
+      _webImageCache[item.filePath] = imageBytes;
+    }
+
+    try {
+      analyzing = true;
+      setState(() {});
+      setAnalyzeStatus('Analyzing with Gemini API...');
+      appendLog('Web analyze: ${item.fileName}');
+
+      final api = GeminiApi(apiKey: _geminiApiKey);
+      final base64Image = ImageUtils.bytesToBase64(imageBytes);
+      final mimeType = ImageUtils.getMimeType(item.fileName);
+
+      final result = await api.analyzePhoto(
+        base64Image: base64Image,
+        mimeType: mimeType,
+        fileName: item.fileName,
+      );
+
+      // 結果をResultItemに変換
+      final updated = ResultItem(
+        fileName: item.fileName,
+        filePath: item.filePath,
+        date: result['date'] as String? ?? item.date,
+        photoCategory: result['photoCategory'] as String? ?? '',
+        workType: result['workType'] as String? ?? '',
+        variety: result['variety'] as String? ?? '',
+        subphase: result['detail'] as String? ?? '',
+        remarks: result['remarks'] as String? ?? '',
+        station: result['station'] as String? ?? '',
+        measurements: result['measurements'] as String? ?? '',
+        description: result['description'] as String? ?? '',
+        detectedText: result['detectedText'] as String? ?? '',
+        hasBoard: result['hasBoard'] as bool? ?? false,
+        reasoning: result['reasoning'] as String? ?? '',
+      );
+
+      final preservedStation =
+          stationOverride.isNotEmpty ? stationOverride : item.station;
+      final normalized = allowStationFromAnalyze
+          ? (preservedStation.isNotEmpty && updated.station.isEmpty
+              ? updated.copyWith(station: preservedStation)
+              : updated)
+          : updated.copyWith(
+              station: preservedStation.isNotEmpty ? preservedStation : '',
+            );
+
+      setState(() {
+        final index = items.indexWhere((e) => e.filePath == item.filePath);
+        if (index != -1) {
+          items[index] = normalized;
+        }
+        final originalIndex = originalItems.indexWhere((e) => e.filePath == item.filePath);
+        if (originalIndex != -1) {
+          originalItems[originalIndex] = normalized;
+        }
+      });
+      setAnalyzeStatus('Re-analyze complete (Web)');
+      appendLog('Re-analyze complete: ${item.fileName}');
+    } catch (err) {
+      setAnalyzeStatus('Analyze failed: $err');
+      appendLog('Analyze failed: $err');
+    } finally {
+      analyzing = false;
+      setState(() {});
+    }
+  }
+
+  /// APIキー入力ダイアログ
+  Future<String?> _showApiKeyDialog() async {
+    final controller = TextEditingController(text: _geminiApiKey);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Gemini API Key'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: 'API Key',
+            hintText: 'Enter your Gemini API key',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> runExport(ExportFormat format) async {
+    if (kIsWeb) {
+      setExportStatus('Export not supported on web');
+      return;
+    }
     if (items.isEmpty || exporting) return;
     if (sourcePath == null) {
       setExportStatus('No source file loaded');
@@ -634,8 +841,8 @@ class _ViewerScreenState extends State<ViewerScreen>
       fileName: suggestedName,
     );
     if (outputPath == null) return;
-    final tempDir = Directory.systemTemp.createTempSync('photo-ai-export');
-    final tempJson = File(p.join(tempDir.path, 'result.sorted.json'));
+    final tempDir = pio.PlatformDirectory.systemTemp.createTempSync('photo-ai-export');
+    final tempJson = pio.PlatformFile(p.join(tempDir.path, 'result.sorted.json'));
     final jsonText = const JsonEncoder.withIndent('  ')
         .convert(items.map((e) => e.toJson()).toList());
     await tempJson.writeAsString(jsonText);
@@ -652,7 +859,7 @@ class _ViewerScreenState extends State<ViewerScreen>
       setState(() {});
       final resolvedCli = await resolveCliPath();
       appendLog('Export start: $resolvedCli export ${tempJson.path} --format $formatArg --output $outputPath');
-      final process = await Process.start(
+      final process = await pio.startProcess(
         resolvedCli,
         ['export', tempJson.path, '--format', formatArg, '--output', outputPath],
         workingDirectory: resolveRepoRoot(),
@@ -687,24 +894,24 @@ class _ViewerScreenState extends State<ViewerScreen>
 
   Future<String> resolveCliPath() async {
     if (cliPath.isNotEmpty) return cliPath;
-    final current = Directory.current.path;
+    final current = pio.PlatformDirectory.currentPath;
     final repoRoot = resolveRepoRoot();
-    final candidate = Platform.isWindows ? 'photo-ai-rust.exe' : 'photo-ai-rust';
+    final candidate = pio.isWindows ? 'photo-ai-rust.exe' : 'photo-ai-rust';
     final debugPath = p.join(repoRoot, 'target', 'debug', candidate);
     final releasePath = p.join(repoRoot, 'target', 'release', candidate);
-    if (File(debugPath).existsSync()) return debugPath;
-    if (File(releasePath).existsSync()) return releasePath;
+    if (pio.PlatformFile(debugPath).existsSync()) return debugPath;
+    if (pio.PlatformFile(releasePath).existsSync()) return releasePath;
     final legacyDebug = p.join(current, '..', 'target', 'debug', candidate);
     final legacyRelease = p.join(current, '..', 'target', 'release', candidate);
-    if (File(legacyDebug).existsSync()) return legacyDebug;
-    if (File(legacyRelease).existsSync()) return legacyRelease;
+    if (pio.PlatformFile(legacyDebug).existsSync()) return legacyDebug;
+    if (pio.PlatformFile(legacyRelease).existsSync()) return legacyRelease;
     return candidate;
   }
 
   Future<void> pickCliPath() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: Platform.isWindows ? ['exe'] : null,
+      allowedExtensions: pio.isWindows ? ['exe'] : null,
     );
     if (result == null || result.files.isEmpty) return;
     cliPath = result.files.single.path ?? '';
@@ -902,7 +1109,7 @@ class _ViewerScreenState extends State<ViewerScreen>
   }
 
   String resolveRepoRoot() {
-    final current = Directory.current.path;
+    final current = pio.PlatformDirectory.currentPath;
     final candidates = <String>[
       current,
       p.normalize(p.join(current, '..')),
@@ -914,7 +1121,7 @@ class _ViewerScreenState extends State<ViewerScreen>
     for (final dir in candidates) {
       final cargo = p.join(dir, 'Cargo.toml');
       final srcDir = p.join(dir, 'src');
-      if (File(cargo).existsSync() && Directory(srcDir).existsSync()) {
+      if (pio.PlatformFile(cargo).existsSync() && pio.PlatformDirectory(srcDir).existsSync()) {
         return dir;
       }
     }
@@ -925,7 +1132,7 @@ class _ViewerScreenState extends State<ViewerScreen>
   String? resolveByWorkTypeDir() {
     final root = resolveRepoRoot();
     final dirPath = p.normalize(p.join(root, 'master', 'by_work_type'));
-    if (Directory(dirPath).existsSync()) {
+    if (pio.PlatformDirectory(dirPath).existsSync()) {
       return dirPath;
     }
     return null;
@@ -935,7 +1142,7 @@ class _ViewerScreenState extends State<ViewerScreen>
     final dir = resolveByWorkTypeDir();
     if (dir == null) return null;
     final csvPath = p.join(dir, '$workType.csv');
-    if (File(csvPath).existsSync()) {
+    if (pio.PlatformFile(csvPath).existsSync()) {
       return csvPath;
     }
     return null;
@@ -945,11 +1152,11 @@ class _ViewerScreenState extends State<ViewerScreen>
     try {
       final dirPath = resolveByWorkTypeDir();
       if (dirPath == null) return [];
-      final dir = Directory(dirPath);
+      final dir = pio.PlatformDirectory(dirPath);
       final files = await dir.list().toList();
       final types = <String>[];
       for (final file in files) {
-        if (file is File && file.path.endsWith('.csv')) {
+        if (file is dynamic && file.path.endsWith('.csv')) {
           final name = p.basenameWithoutExtension(file.path);
           types.add(name);
         }
@@ -1276,7 +1483,11 @@ class _ViewerScreenState extends State<ViewerScreen>
                             final folder = p.dirname(item.filePath);
                             await runAnalyzeForFolder(folder);
                           } else if (selected == 'reanalyze_entry') {
-                            await reanalyzeEntry(item);
+                            if (kIsWeb) {
+                              await reanalyzeEntryWeb(item);
+                            } else {
+                              await reanalyzeEntry(item);
+                            }
                           } else if (selected == 'copy_master') {
                             await _copyMaster(item);
                           } else if (selected == 'paste_master') {
@@ -1347,7 +1558,11 @@ class _ViewerScreenState extends State<ViewerScreen>
                           } else if (selected == 'reanalyze_group') {
                             final selectedItems = selectedIndices.map((i) => items[i]).toList();
                             for (final selectedItem in selectedItems) {
-                              await reanalyzeEntry(selectedItem);
+                              if (kIsWeb) {
+                                await reanalyzeEntryWeb(selectedItem);
+                              } else {
+                                await reanalyzeEntry(selectedItem);
+                              }
                             }
                           } else if (selected == 'edit_station_group') {
                             final controller = TextEditingController();
@@ -1407,12 +1622,21 @@ class _ViewerScreenState extends State<ViewerScreen>
                                 height: 130,
                                 child: item.filePath.isEmpty
                                     ? const Center(child: Text('No image'))
-                                    : Image.file(
-                                        File(item.filePath),
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            const Center(child: Text('No preview')),
-                                      ),
+                                    : kIsWeb
+                                        ? (_webImageCache[item.filePath] != null
+                                            ? Image.memory(
+                                                _webImageCache[item.filePath]!,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) =>
+                                                    const Center(child: Text('No preview')),
+                                              )
+                                            : const Center(child: Text('Load image to preview')))
+                                        : pio.buildImageFromPath(
+                                            item.filePath,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) =>
+                                                const Center(child: Text('No preview')),
+                                          ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
