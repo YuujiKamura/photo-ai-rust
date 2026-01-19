@@ -66,7 +66,6 @@ class _ViewerScreenState extends State<ViewerScreen>
   String stationInput = '';
   String stationOverride = '';
   List<String> workTypeOptions = [];
-  String masterCsvPath = '';
   AnimationController? _pulseController;
   Animation<Color?>? _pulseColor;
 
@@ -411,7 +410,6 @@ class _ViewerScreenState extends State<ViewerScreen>
   }
 
   List<String> buildAnalyzeArgs(String folder, String output) {
-    final resolvedMaster = resolveMasterPath();
     final args = <String>[
       'analyze',
       folder,
@@ -426,20 +424,19 @@ class _ViewerScreenState extends State<ViewerScreen>
       args.add('--verbose');
     }
     if (workTypeInput.isNotEmpty) {
-      if (resolvedMaster != null && masterCsvPath.isEmpty) {
-        masterCsvPath = resolvedMaster;
-        appendLog('Master set: $masterCsvPath');
-      }
       args.addAll(['--work-type', workTypeInput]);
+      // 工種に対応するマスタCSVを自動解決
+      final workTypeMaster = getMasterPathForWorkType(workTypeInput);
+      if (workTypeMaster != null) {
+        args.addAll(['--master', workTypeMaster]);
+        appendLog('Master: $workTypeMaster');
+      }
     }
     if (varietyInput.isNotEmpty) {
       args.addAll(['--variety', varietyInput]);
     }
     if (stationInput.isNotEmpty) {
       args.addAll(['--station', stationInput]);
-    }
-    if (workTypeInput.isNotEmpty && masterCsvPath.isNotEmpty) {
-      args.addAll(['--master', masterCsvPath]);
     }
     return args;
   }
@@ -473,26 +470,11 @@ class _ViewerScreenState extends State<ViewerScreen>
                       children: [
                         TextButton.icon(
                           onPressed: () async {
-                            final path = await loadDefaultMasterCsv();
-                            if (path == null) return;
+                            await loadDefaultMasterCsv();
                             setStateDialog(() {});
                           },
                           icon: const Icon(Icons.auto_fix_high),
-                          label: const Text('Load Default Master'),
-                        ),
-                        TextButton.icon(
-                          onPressed: () async {
-                            final path = await pickMasterCsv();
-                            if (path == null) return;
-                            final types = await loadWorkTypesFromCsv(path);
-                            setState(() {
-                              workTypeOptions = types;
-                              masterCsvPath = path;
-                            });
-                            setStateDialog(() {});
-                          },
-                          icon: const Icon(Icons.upload_file),
-                          label: const Text('Load Master CSV'),
+                          label: const Text('Load Work Types'),
                         ),
                       ],
                     ),
@@ -582,33 +564,23 @@ class _ViewerScreenState extends State<ViewerScreen>
     appendLog('Applied station to all: $value');
   }
 
-  Future<String?> pickMasterCsv() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['csv'],
-    );
-    if (result == null || result.files.isEmpty) return null;
-    return result.files.single.path;
-  }
-
-  Future<String?> loadDefaultMasterCsv() async {
-    final defaultPath = resolveMasterPath();
-    if (defaultPath == null) {
-      setStatus('Default master not found');
-      appendLog('Default master not found');
-      return null;
+  Future<void> loadDefaultMasterCsv() async {
+    final dirPath = resolveByWorkTypeDir();
+    if (dirPath == null) {
+      setStatus('by_work_type directory not found');
+      appendLog('by_work_type directory not found');
+      return;
     }
-    if (!File(defaultPath).existsSync()) {
-      setStatus('Default master not found: $defaultPath');
-      appendLog('Default master not found: $defaultPath');
-      return null;
+    final types = await loadWorkTypesFromDirectory();
+    if (types.isEmpty) {
+      setStatus('No work type masters found');
+      appendLog('No work type masters found in: $dirPath');
+      return;
     }
-    final types = await loadWorkTypesFromCsv(defaultPath);
     setState(() {
       workTypeOptions = types;
-      masterCsvPath = defaultPath;
     });
-    return defaultPath;
+    appendLog('Loaded ${types.length} work types from by_work_type/');
   }
 
   String resolveRepoRoot() {
@@ -616,37 +588,40 @@ class _ViewerScreenState extends State<ViewerScreen>
     return p.normalize(p.join(current, '..'));
   }
 
-  String? resolveMasterPath() {
+  String? resolveByWorkTypeDir() {
     final root = resolveRepoRoot();
-    final defaultPath = p.normalize(p.join(root, 'master', 'construction_hierarchy.csv'));
-    if (File(defaultPath).existsSync()) {
-      return defaultPath;
+    final dirPath = p.normalize(p.join(root, 'master', 'by_work_type'));
+    if (Directory(dirPath).existsSync()) {
+      return dirPath;
     }
     return null;
   }
 
-  Future<List<String>> loadWorkTypesFromCsv(String path) async {
+  String? getMasterPathForWorkType(String workType) {
+    final dir = resolveByWorkTypeDir();
+    if (dir == null) return null;
+    final csvPath = p.join(dir, '$workType.csv');
+    if (File(csvPath).existsSync()) {
+      return csvPath;
+    }
+    return null;
+  }
+
+  Future<List<String>> loadWorkTypesFromDirectory() async {
     try {
-      final file = File(path);
-      final content = await file.readAsString();
-      final rows = const CsvToListConverter(
-        fieldDelimiter: ',',
-        eol: '\n',
-        shouldParseNumbers: false,
-      ).convert(content);
-      if (rows.isEmpty) return [];
-      final headers = rows.first.map((e) => e.toString()).toList();
-      final workIndex = headers.indexOf('工種');
-      if (workIndex == -1) return [];
-      final types = <String>{};
-      for (var i = 1; i < rows.length; i++) {
-        final row = rows[i];
-        if (row.length <= workIndex) continue;
-        final value = row[workIndex]?.toString() ?? '';
-        if (value.isNotEmpty) types.add(value);
+      final dirPath = resolveByWorkTypeDir();
+      if (dirPath == null) return [];
+      final dir = Directory(dirPath);
+      final files = await dir.list().toList();
+      final types = <String>[];
+      for (final file in files) {
+        if (file is File && file.path.endsWith('.csv')) {
+          final name = p.basenameWithoutExtension(file.path);
+          types.add(name);
+        }
       }
-      final sorted = types.toList()..sort();
-      return sorted;
+      types.sort();
+      return types;
     } catch (_) {
       return [];
     }
@@ -1038,7 +1013,7 @@ class _FieldGrid extends StatelessWidget {
     FieldDef(key: 'photoCategory', label: '区分'),
     FieldDef(key: 'workType', label: '工種'),
     FieldDef(key: 'variety', label: '種別'),
-    FieldDef(key: 'detail', label: '細別'),
+    FieldDef(key: 'subphase', label: '作業段階'),
     FieldDef(key: 'station', label: '測点'),
     FieldDef(key: 'remarks', label: '備考'),
     FieldDef(key: 'measurements', label: '測定値'),
@@ -1102,7 +1077,7 @@ class _DetailPanel extends StatelessWidget {
           _DetailRow(label: 'Photo Category', value: it.photoCategory),
           _DetailRow(label: 'Work Type', value: it.workType),
           _DetailRow(label: 'Variety', value: it.variety),
-          _DetailRow(label: 'Detail', value: it.detail),
+          _DetailRow(label: 'Subphase', value: it.subphase),
           _DetailRow(label: 'Remarks', value: it.remarks),
           _DetailRow(label: 'Station', value: it.station),
           _DetailRow(label: 'Measurements', value: it.measurements),
@@ -1183,7 +1158,7 @@ class ResultItem {
     required this.photoCategory,
     required this.workType,
     required this.variety,
-    required this.detail,
+    required this.subphase,
     required this.remarks,
     required this.station,
     required this.description,
@@ -1199,7 +1174,7 @@ class ResultItem {
   final String photoCategory;
   final String workType;
   final String variety;
-  final String detail;
+  final String subphase;
   final String remarks;
   final String station;
   final String description;
@@ -1218,8 +1193,8 @@ class ResultItem {
         return workType;
       case 'variety':
         return variety;
-      case 'detail':
-        return detail;
+      case 'subphase':
+        return subphase;
       case 'station':
         return station;
       case 'remarks':
@@ -1238,7 +1213,7 @@ class ResultItem {
       'photoCategory': photoCategory,
       'workType': workType,
       'variety': variety,
-      'detail': detail,
+      'subphase': subphase,
       'remarks': remarks,
       'station': station,
       'description': description,
@@ -1257,7 +1232,7 @@ class ResultItem {
       photoCategory: json['photoCategory']?.toString() ?? '',
       workType: json['workType']?.toString() ?? '',
       variety: json['variety']?.toString() ?? '',
-      detail: json['detail']?.toString() ?? '',
+      subphase: (json['subphase'] ?? json['detail'])?.toString() ?? '',
       remarks: json['remarks']?.toString() ?? '',
       station: json['station']?.toString() ?? '',
       description: json['description']?.toString() ?? '',
@@ -1278,7 +1253,7 @@ class ResultItem {
       photoCategory: photoCategory,
       workType: workType,
       variety: variety,
-      detail: detail,
+      subphase: subphase,
       remarks: remarks,
       station: station ?? this.station,
       description: description,
