@@ -1090,17 +1090,12 @@ class _ViewerScreenState extends State<ViewerScreen>
                 ),
                 const Divider(height: 1),
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: logs.length,
-                    itemBuilder: (context, index) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                        child: SelectableText(
-                          logs[index],
-                          style: const TextStyle(fontSize: 11, color: Colors.white70),
-                        ),
-                      );
-                    },
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    child: SelectableText(
+                      logs.join('\n'),
+                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                    ),
                   ),
                 ),
               ],
@@ -1122,7 +1117,7 @@ class _FieldGrid extends StatelessWidget {
     FieldDef(key: 'photoCategory', label: '区分'),
     FieldDef(key: 'workType', label: '工種'),
     FieldDef(key: 'variety', label: '種別'),
-    FieldDef(key: 'subphase', label: '細別'),
+    FieldDef(key: 'subphase', label: '作業段階'),
     FieldDef(key: 'station', label: '測点'),
     FieldDef(key: 'remarks', label: '備考'),
     FieldDef(key: 'measurements', label: '測定値'),
