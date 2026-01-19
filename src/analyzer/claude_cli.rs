@@ -406,13 +406,70 @@ fn parse_step1_response(response: &str) -> Result<Vec<RawImageData>> {
 
 fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMaster) {
     for result in results.iter_mut() {
+        // remarks から階層を確定（撮影内容ベース）
+        if !result.remarks.is_empty() {
+            let mut candidates: Vec<_> = master.rows().iter()
+                .filter(|row| row.remarks == result.remarks)
+                .collect();
+
+            if !candidates.is_empty() {
+                if !result.photo_category.is_empty() {
+                    let filtered: Vec<_> = candidates
+                        .iter()
+                        .copied()
+                        .filter(|row| row.photo_type == result.photo_category)
+                        .collect();
+                    if !filtered.is_empty() {
+                        candidates = filtered;
+                    }
+                }
+                if !result.work_type.is_empty() {
+                    let filtered: Vec<_> = candidates
+                        .iter()
+                        .copied()
+                        .filter(|row| row.work_type == result.work_type)
+                        .collect();
+                    if !filtered.is_empty() {
+                        candidates = filtered;
+                    }
+                }
+                if !result.variety.is_empty() {
+                    let filtered: Vec<_> = candidates
+                        .iter()
+                        .copied()
+                        .filter(|row| row.variety == result.variety)
+                        .collect();
+                    if !filtered.is_empty() {
+                        candidates = filtered;
+                    }
+                }
+                if !result.detail.is_empty() {
+                    let filtered: Vec<_> = candidates
+                        .iter()
+                        .copied()
+                        .filter(|row| row.detail == result.detail)
+                        .collect();
+                    if !filtered.is_empty() {
+                        candidates = filtered;
+                    }
+                }
+
+                if let Some(row) = candidates.first() {
+                    result.photo_category = row.photo_type.clone();
+                    result.work_type = row.work_type.clone();
+                    result.variety = row.variety.clone();
+                    result.detail = row.detail.clone();
+                }
+            }
+        }
+
         // 未舗装部舗装工は自動選択しない（デフォルトは舗装打換え工）
         if result.work_type == "舗装工" && result.variety == "未舗装部舗装工" {
             result.variety = "舗装打換え工".to_string();
         }
 
         // 1) photoCategory (写真種別) と workType の整合
-        if !result.photo_category.is_empty() {
+        if !result.photo_category.is_empty() && !result.work_type.is_empty() {
             let has_work = master.rows().iter().any(|row| {
                 row.photo_type == result.photo_category && row.work_type == result.work_type
             });
