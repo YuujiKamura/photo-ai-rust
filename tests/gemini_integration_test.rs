@@ -38,7 +38,8 @@ async fn gemini_step1_integration() {
 
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("{}?key={}", GEMINI_API_URL, api_key))
+        .post(GEMINI_API_URL)
+        .header("x-goog-api-key", api_key)
         .json(&body)
         .send()
         .await
