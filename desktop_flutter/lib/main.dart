@@ -207,6 +207,8 @@ class _ViewerScreenState extends State<ViewerScreen>
       analyzing = true;
       setState(() {});
       final resolvedCli = await resolveCliPath();
+      appendLog('Analyze CLI: $resolvedCli');
+      appendLog('Analyze args: ${buildAnalyzeArgs(folder, output).join(' ')}');
       final process = await Process.start(
         resolvedCli,
         buildAnalyzeArgs(folder, output),
@@ -590,6 +592,22 @@ class _ViewerScreenState extends State<ViewerScreen>
 
   String resolveRepoRoot() {
     final current = Directory.current.path;
+    final candidates = <String>[
+      current,
+      p.normalize(p.join(current, '..')),
+      p.normalize(p.join(current, '..', '..')),
+      p.normalize(p.join(current, '..', '..', '..')),
+      p.normalize(p.join(current, '..', '..', '..', '..')),
+    ];
+
+    for (final dir in candidates) {
+      final cargo = p.join(dir, 'Cargo.toml');
+      final srcDir = p.join(dir, 'src');
+      if (File(cargo).existsSync() && Directory(srcDir).existsSync()) {
+        return dir;
+      }
+    }
+
     return p.normalize(p.join(current, '..'));
   }
 
@@ -1173,7 +1191,8 @@ class _DetailPanel extends StatelessWidget {
       decoration: const BoxDecoration(
         color: Color(0xFF0F121A),
       ),
-      child: ListView(
+      child: SelectionArea(
+        child: ListView(
         children: [
           if (selectedCount > 1)
             Padding(
