@@ -1252,7 +1252,7 @@ class _DetailRow extends StatelessWidget {
           children: [
             Text(label, style: const TextStyle(color: Colors.white70)),
             const SizedBox(height: 4),
-            Text(
+            SelectableText(
               value.isEmpty ? '-' : value,
               style: const TextStyle(color: Colors.white),
             ),
