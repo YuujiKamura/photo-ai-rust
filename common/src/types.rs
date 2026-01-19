@@ -26,7 +26,8 @@ pub struct Step2Result {
     pub file_name: String,
     pub work_type: String,
     pub variety: String,
-    pub detail: String,
+    #[serde(alias = "detail")]
+    pub subphase: String,
     pub remarks: String,
     pub station: String,
     pub description: String,
@@ -54,7 +55,8 @@ pub struct AnalysisResult {
     pub variety: String,          // 種別
 
     #[serde(default)]
-    pub detail: String,           // 細別
+    #[serde(alias = "detail")]
+    pub subphase: String,         // 作業段階
 
     #[serde(default)]
     pub station: String,          // 測点
@@ -145,7 +147,7 @@ mod tests {
             date: "2025-01-18".to_string(),
             work_type: "舗装工".to_string(),
             variety: "舗装打換え工".to_string(),
-            detail: "表層工".to_string(),
+            subphase: "表層工".to_string(),
             station: "No.10".to_string(),
             remarks: "備考テスト".to_string(),
             description: "説明テスト".to_string(),
@@ -229,7 +231,7 @@ mod tests {
             file_name: "test.jpg".to_string(),
             work_type: "舗装工".to_string(),
             variety: "舗装打換え工".to_string(),
-            detail: "表層工".to_string(),
+            subphase: "表層工".to_string(),
             station: "No.10".to_string(),
             remarks: "備考".to_string(),
             description: "舗設状況".to_string(),
@@ -239,7 +241,7 @@ mod tests {
         let json = serde_json::to_string(&result).expect("シリアライズ失敗");
         assert!(json.contains("\"workType\":\"舗装工\""));
         assert!(json.contains("\"variety\":\"舗装打換え工\""));
-        assert!(json.contains("\"detail\":\"表層工\""));
+        assert!(json.contains("\"subphase\":\"表層工\""));
     }
 
     #[test]
@@ -248,7 +250,7 @@ mod tests {
             "fileName": "test.jpg",
             "workType": "区画線工",
             "variety": "区画線工",
-            "detail": "実線",
+            "subphase": "実線",
             "station": "No.5+10.0"
         }"#;
 
@@ -256,7 +258,7 @@ mod tests {
         assert_eq!(result.file_name, "test.jpg");
         assert_eq!(result.work_type, "区画線工");
         assert_eq!(result.variety, "区画線工");
-        assert_eq!(result.detail, "実線");
+        assert_eq!(result.subphase, "実線");
         assert_eq!(result.station, "No.5+10.0");
         assert_eq!(result.remarks, ""); // デフォルト値
     }

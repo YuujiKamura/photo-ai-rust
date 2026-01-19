@@ -18,8 +18,8 @@ pub struct HierarchyRow {
     pub work_type: String,
     /// 種別
     pub variety: String,
-    /// 細別
-    pub detail: String,
+    /// 作業段階
+    pub subphase: String,
     /// 備考（マスタの最下層）
     pub remarks: String,
     /// 検索パターン（|区切り）
@@ -35,8 +35,8 @@ pub struct HierarchyMaster {
     work_types: HashSet<String>,
     /// 工種→種別のマッピング
     work_type_to_varieties: HashMap<String, HashSet<String>>,
-    /// (工種, 種別)→細別のマッピング
-    variety_to_details: HashMap<(String, String), HashSet<String>>,
+    /// (工種, 種別)→作業段階のマッピング
+    variety_to_subphases: HashMap<(String, String), HashSet<String>>,
 }
 
 impl HierarchyMaster {
@@ -51,7 +51,7 @@ impl HierarchyMaster {
         let mut rows = Vec::new();
         let mut work_types = HashSet::new();
         let mut work_type_to_varieties: HashMap<String, HashSet<String>> = HashMap::new();
-        let mut variety_to_details: HashMap<(String, String), HashSet<String>> = HashMap::new();
+        let mut variety_to_subphases: HashMap<(String, String), HashSet<String>> = HashMap::new();
 
         // ヘッダーをスキップ
         for line in content.lines().skip(1) {
@@ -65,7 +65,7 @@ impl HierarchyMaster {
                 photo_type: fields[1].to_string(),
                 work_type: fields[2].to_string(),
                 variety: fields[3].to_string(),
-                detail: fields[4].to_string(),
+                subphase: fields[4].to_string(),
                 remarks: fields[5].to_string(),
                 search_patterns: fields[6].to_string(),
             };
@@ -80,11 +80,11 @@ impl HierarchyMaster {
                         .or_default()
                         .insert(row.variety.clone());
 
-                    if !row.detail.is_empty() {
-                        variety_to_details
+                    if !row.subphase.is_empty() {
+                        variety_to_subphases
                             .entry((row.work_type.clone(), row.variety.clone()))
                             .or_default()
-                            .insert(row.detail.clone());
+                            .insert(row.subphase.clone());
                     }
                 }
             }
@@ -96,7 +96,7 @@ impl HierarchyMaster {
             rows,
             work_types,
             work_type_to_varieties,
-            variety_to_details,
+            variety_to_subphases,
         })
     }
 
@@ -119,9 +119,9 @@ impl HierarchyMaster {
             .unwrap_or_default()
     }
 
-    /// (工種, 種別)に対応する細別一覧を取得
-    pub fn get_details(&self, work_type: &str, variety: &str) -> Vec<&str> {
-        self.variety_to_details
+    /// (工種, 種別)に対応する作業段階一覧を取得
+    pub fn get_subphases(&self, work_type: &str, variety: &str) -> Vec<&str> {
+        self.variety_to_subphases
             .get(&(work_type.to_string(), variety.to_string()))
             .map(|set| {
                 let mut v: Vec<_> = set.iter().map(|s| s.as_str()).collect();
@@ -140,8 +140,8 @@ impl HierarchyMaster {
 
             if let Some(varieties) = self.work_type_to_varieties.get(work_type) {
                 for variety in varieties {
-                    let details = self.get_details(work_type, variety);
-                    varieties_map.insert(variety.clone(), details.iter().map(|s| s.to_string()).collect());
+                    let subphases = self.get_subphases(work_type, variety);
+                    varieties_map.insert(variety.clone(), subphases.iter().map(|s| s.to_string()).collect());
                 }
             }
 
@@ -152,7 +152,7 @@ impl HierarchyMaster {
     }
 
     /// 1ステップ解析用のチェーンレコードJSONを生成
-    /// (photoType/workType/variety/detail/remarks/patterns)
+    /// (photoType/workType/variety/subphase/remarks/patterns)
     pub fn to_chain_records_json(&self) -> serde_json::Value {
         let records: Vec<serde_json::Value> = self.rows
             .iter()
@@ -161,7 +161,7 @@ impl HierarchyMaster {
                     "photoType": row.photo_type,
                     "workType": row.work_type,
                     "variety": row.variety,
-                    "detail": row.detail,
+                    "subphase": row.subphase,
                     "remarks": row.remarks,
                     "patterns": row.search_patterns,
                 })
@@ -218,7 +218,7 @@ impl HierarchyMaster {
 
         let mut work_types_set = HashSet::new();
         let mut work_type_to_varieties: HashMap<String, HashSet<String>> = HashMap::new();
-        let mut variety_to_details: HashMap<(String, String), HashSet<String>> = HashMap::new();
+        let mut variety_to_subphases: HashMap<(String, String), HashSet<String>> = HashMap::new();
 
         for row in &filtered_rows {
             if !row.work_type.is_empty() {
@@ -230,11 +230,11 @@ impl HierarchyMaster {
                         .or_default()
                         .insert(row.variety.clone());
 
-                    if !row.detail.is_empty() {
-                        variety_to_details
+                    if !row.subphase.is_empty() {
+                        variety_to_subphases
                             .entry((row.work_type.clone(), row.variety.clone()))
                             .or_default()
-                            .insert(row.detail.clone());
+                            .insert(row.subphase.clone());
                     }
                 }
             }
@@ -244,7 +244,7 @@ impl HierarchyMaster {
             rows: filtered_rows,
             work_types: work_types_set,
             work_type_to_varieties,
-            variety_to_details,
+            variety_to_subphases,
         }
     }
 
@@ -266,7 +266,7 @@ impl HierarchyMaster {
 
         let mut work_types_set = HashSet::new();
         let mut work_type_to_varieties: HashMap<String, HashSet<String>> = HashMap::new();
-        let mut variety_to_details: HashMap<(String, String), HashSet<String>> = HashMap::new();
+        let mut variety_to_subphases: HashMap<(String, String), HashSet<String>> = HashMap::new();
 
         for row in &filtered_rows {
             if !row.work_type.is_empty() {
@@ -278,11 +278,11 @@ impl HierarchyMaster {
                         .or_default()
                         .insert(row.variety.clone());
 
-                    if !row.detail.is_empty() {
-                        variety_to_details
+                    if !row.subphase.is_empty() {
+                        variety_to_subphases
                             .entry((row.work_type.clone(), row.variety.clone()))
                             .or_default()
-                            .insert(row.detail.clone());
+                            .insert(row.subphase.clone());
                     }
                 }
             }
@@ -292,7 +292,7 @@ impl HierarchyMaster {
             rows: filtered_rows,
             work_types: work_types_set,
             work_type_to_varieties,
-            variety_to_details,
+            variety_to_subphases,
         }
     }
 }
@@ -375,10 +375,10 @@ mod tests {
     }
 
     #[test]
-    fn test_get_details() {
+    fn test_get_subphases() {
         let master = HierarchyMaster::from_csv_str(TEST_CSV).unwrap();
-        let details = master.get_details("舗装工", "舗装打換え工");
-        assert!(details.contains(&"表層工"));
+        let subphases = master.get_subphases("舗装工", "舗装打換え工");
+        assert!(subphases.contains(&"表層工"));
     }
 
     #[test]

@@ -115,7 +115,7 @@ pub fn merge_results(
                 photo_category: normalize_photo_category(&raw.photo_category),
                 work_type: step2.map(|s| s.work_type.clone()).unwrap_or_default(),
                 variety: step2.map(|s| s.variety.clone()).unwrap_or_default(),
-                detail: step2.map(|s| s.detail.clone()).unwrap_or_default(),
+                subphase: step2.map(|s| s.subphase.clone()).unwrap_or_default(),
                 station: step2.map(|s| s.station.clone()).unwrap_or_default(),
                 remarks: step2.map(|s| s.remarks.clone()).unwrap_or_default(),
                 remarks_candidates: Vec::new(),
@@ -291,7 +291,7 @@ mod tests {
                 file_name: "test1.jpg".to_string(),
                 work_type: "舗装工".to_string(),
                 variety: "舗装打換え工".to_string(),
-                detail: "表層工".to_string(),
+                subphase: "表層工".to_string(),
                 station: "No.10".to_string(),
                 description: "到着温度測定".to_string(),
                 reasoning: "温度計測写真".to_string(),
@@ -325,7 +325,7 @@ mod tests {
         assert_eq!(r1.detected_text, "温度 160.4℃");
         assert_eq!(r1.work_type, "舗装工");
         assert_eq!(r1.variety, "舗装打換え工");
-        assert_eq!(r1.detail, "表層工");
+        assert_eq!(r1.subphase, "表層工");
         assert_eq!(r1.station, "No.10");
         assert_eq!(r1.description, "到着温度測定");
         assert_eq!(r1.reasoning, "温度計測写真");

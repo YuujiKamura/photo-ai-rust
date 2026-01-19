@@ -17,7 +17,7 @@ fn create_test_result(index: usize) -> AnalysisResult {
         date: "2026-01-18".to_string(),
         work_type: "舗装工事".to_string(),
         variety: "表層工".to_string(),
-        detail: format!("テスト写真{}", index),
+        subphase: format!("テスト写真{}", index),
         station: format!("No.{}+0.0", index * 10),
         remarks: "備考テスト".to_string(),
         description: format!("テスト説明{}", index),
@@ -164,7 +164,7 @@ fn test_pdf_excel_both_generation() {
 ///
 /// 写真台帳形式のレイアウト:
 /// - A列(0): 写真セル（マージ）
-/// - B列(1): ラベル（日時、区分、工種、種別、細別、測点、備考、測定値）
+/// - B列(1): ラベル（日時、区分、工種、種別、作業段階、測点、備考、測定値）
 /// - C列(2): 値
 /// - 各写真ブロックは11行（写真10行 + ギャップ1行）
 #[test]
@@ -180,7 +180,7 @@ fn test_excel_data_consistency() {
             date: "2026-01-15".to_string(),
             work_type: "舗装工事".to_string(),
             variety: "表層工".to_string(),
-            detail: "アスファルト舗設".to_string(),
+            subphase: "アスファルト舗設".to_string(),
             station: "No.5+10.0".to_string(),
             remarks: "1層目".to_string(),
             description: String::new(),
@@ -243,7 +243,7 @@ fn test_excel_japanese_text() {
             date: "令和8年1月18日".to_string(),
             work_type: "道路舗装工事".to_string(),
             variety: "アスファルト表層工".to_string(),
-            detail: "敷均し・締固め".to_string(),
+            subphase: "敷均し・締固め".to_string(),
             station: "測点No.10+5.5".to_string(),
             remarks: "天候：晴れ　気温：15℃".to_string(),
             description: String::new(),

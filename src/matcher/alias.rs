@@ -20,9 +20,9 @@ pub struct AliasConfig {
     /// 種別のエイリアス
     #[serde(default)]
     pub variety: HashMap<String, String>,
-    /// 細別のエイリアス
+    /// 作業段階のエイリアス
     #[serde(default)]
-    pub detail: HashMap<String, String>,
+    pub subphase: HashMap<String, String>,
 }
 
 impl AliasConfig {
@@ -69,11 +69,11 @@ impl AliasConfig {
         config.variety.insert("打換".into(), "舗装打換え工".into());
         config.variety.insert("オーバーレイ".into(), "舗装オーバーレイ工".into());
 
-        // 細別
-        config.detail.insert("表層".into(), "表層工".into());
-        config.detail.insert("基層".into(), "基層工".into());
-        config.detail.insert("上層路盤".into(), "上層路盤工".into());
-        config.detail.insert("下層路盤".into(), "下層路盤工".into());
+        // 作業段階
+        config.subphase.insert("表層".into(), "表層工".into());
+        config.subphase.insert("基層".into(), "基層工".into());
+        config.subphase.insert("上層路盤".into(), "上層路盤工".into());
+        config.subphase.insert("下層路盤".into(), "下層路盤工".into());
 
         config
     }
@@ -150,7 +150,7 @@ impl AliasConfig {
         updated.photo_category = self.transform_field(&result.photo_category, &self.photo_category);
         updated.work_type = self.transform_field(&result.work_type, &self.work_type);
         updated.variety = self.transform_field(&result.variety, &self.variety);
-        updated.detail = self.transform_field(&result.detail, &self.detail);
+        updated.subphase = self.transform_field(&result.subphase, &self.subphase);
 
         updated
     }
@@ -172,7 +172,7 @@ pub fn apply_aliases(
             config.photo_category.extend(preset_config.photo_category);
             config.work_type.extend(preset_config.work_type);
             config.variety.extend(preset_config.variety);
-            config.detail.extend(preset_config.detail);
+            config.subphase.extend(preset_config.subphase);
         } else {
             eprintln!("警告: 不明なプリセット '{}' (pavement/marking/general)", preset_name);
         }
@@ -184,7 +184,7 @@ pub fn apply_aliases(
         config.photo_category.extend(custom_config.photo_category);
         config.work_type.extend(custom_config.work_type);
         config.variety.extend(custom_config.variety);
-        config.detail.extend(custom_config.detail);
+        config.subphase.extend(custom_config.subphase);
     }
 
     // 変換を適用

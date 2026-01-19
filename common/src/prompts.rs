@@ -125,14 +125,14 @@ pub fn build_single_step_prompt(
 - photoType: 写真種別（施工状況写真、品質管理写真など）
 - workType: 工種
 - variety: 種別
-- detail: 細別
+- subphase: 作業段階
 - remarks: 撮影内容（最下層。ここだけを選ぶ）
 - patterns: 備考に紐づく検索パターン
 
 ## 制約
 - 工種は「{work_type}」固定{variety_hint}
 - 撮影内容（備考）だけをマスタから選択（判断不可なら空文字）
-- 上位階層はシステム側で自動決定するため、workType/variety/detail は空文字でよい
+- 上位階層はシステム側で自動決定するため、workType/variety/subphase は空文字でよい
 
 ## 出力形式（厳密にこのJSON配列形式で出力）
 [
@@ -209,7 +209,7 @@ OCRテキスト: {}
 
 ## 出力ルール
 1. photoCategory は写真種別（マスタの写真種別と一致）を選択
-2. workType, variety, detail は必ずマスタに存在する値を選択
+2. workType, variety, subphase は必ずマスタに存在する値を選択
 3. 選んだ photoCategory と一致する行の組み合わせのみ使用
 4. remarks はマスタの「備考」から選択（該当なしは空文字）
 5. 該当なしの場合は空文字""
@@ -221,7 +221,7 @@ OCRテキスト: {}
     "fileName": "ファイル名",
     "workType": "工種（マスタから選択）",
     "variety": "種別（マスタから選択）",
-    "detail": "細別（マスタから選択）",
+    "subphase": "作業段階（マスタから選択）",
     "remarks": "備考",
     "station": "測点（黒板から読み取れた場合）",
     "description": "写真の説明",
@@ -405,7 +405,7 @@ mod tests {
 
         assert!(prompt.contains("\"workType\""));
         assert!(prompt.contains("\"variety\""));
-        assert!(prompt.contains("\"detail\""));
+        assert!(prompt.contains("\"subphase\""));
         assert!(prompt.contains("\"remarks\""));
         assert!(prompt.contains("\"station\""));
         assert!(prompt.contains("\"description\""));
