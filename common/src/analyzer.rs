@@ -118,6 +118,7 @@ pub fn merge_results(
                 detail: step2.map(|s| s.detail.clone()).unwrap_or_default(),
                 station: step2.map(|s| s.station.clone()).unwrap_or_default(),
                 remarks: step2.map(|s| s.remarks.clone()).unwrap_or_default(),
+                remarks_candidates: Vec::new(),
                 reasoning: step2.map(|s| s.reasoning.clone()).unwrap_or_default(),
             }
         })

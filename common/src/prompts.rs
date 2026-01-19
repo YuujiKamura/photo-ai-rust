@@ -135,7 +135,8 @@ pub fn build_single_step_prompt(
     "description": "写真の説明",
     "photoCategory": "写真区分から選択",
     "station": "測点（黒板から読み取れた場合）",
-    "remarks": "撮影内容（マスタの備考から選択）"
+    "remarks": "撮影内容（マスタの備考から1つ選択）",
+    "remarksCandidates": ["備考候補1", "備考候補2", "備考候補3"]
   }}
 ]
 
@@ -143,6 +144,8 @@ pub fn build_single_step_prompt(
 - 黒板のテキストは正確にOCR
 - 数値は単位も含めて正確に
 - JSON配列のみ出力。説明文は不要
+- remarks は空にせず、必ずマスタの備考から選択
+- remarksCandidates はマスタの備考から候補を3つ挙げ、最初の候補は remarks と一致させる
 
 対象写真:
 {photo_list}"#
