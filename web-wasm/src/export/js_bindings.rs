@@ -189,6 +189,7 @@ mod tests {
             subphase: "作業段階".to_string(),
             station: "No.10".to_string(),
             remarks: "備考".to_string(),
+            remarks_candidates: Vec::new(),
             description: "説明".to_string(),
             measurements: "厚さ50mm".to_string(),
             photo_category: "品質管理写真".to_string(),
