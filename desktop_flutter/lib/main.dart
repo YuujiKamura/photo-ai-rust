@@ -1226,6 +1226,7 @@ class _DetailPanel extends StatelessWidget {
           _DetailRow(label: 'Reasoning', value: it.reasoning),
         ],
       ),
+      ),
     );
   }
 }
