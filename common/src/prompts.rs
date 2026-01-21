@@ -3,9 +3,8 @@
 //! CLIとWeb(WASM)で共有されるプロンプト生成ロジック:
 //! - PHOTO_CATEGORIES: 写真区分の定数
 //! - build_step1_prompt: Step1（画像認識）用プロンプト
-//! - build_step2_prompt: Step2（マスタ照合）用プロンプト
+//! - build_single_step_prompt: 1ステップ解析用プロンプト
 
-use crate::types::RawImageData;
 use crate::hierarchy::HierarchyMaster;
 
 /// 写真区分（工種階層マスタの写真種別）
@@ -64,6 +63,9 @@ pub fn build_step1_prompt(images: &[(&str, Option<&str>)]) -> String {
 - 数値は単位も含めて正確に（例: "160.4℃", "厚さ50mm"）
 - 同じ場所・同じ作業の写真は一貫した分類を
 - 推測せず、見えるものだけを記載
+- 乳剤散布状況と養生砂散布状況の判別: スプレイヤーで乳剤を散布する人と飛散防止のベニヤ板を持って立つ人が並ぶ場合は乳剤散布状況
+- 処分関連の写真（アスガラ処分）: 処分施設、許可票、計量、処分状況を区別
+- 黒板に「処分状況」等が書いてあれば、そのテキストを優先
 - 写真区分は上記リスト以外を出力しない（該当なしは空文字）
 - JSON配列のみ出力。説明文は不要
 
@@ -157,80 +159,11 @@ pub fn build_single_step_prompt(
 - remarks は空にせず、必ずマスタの備考から選択
 - remarksCandidates はマスタの備考から候補を3つ挙げ、すべて remarks と同じ「備考」カテゴリにする
 - reasoning は remarks を選んだ根拠を1〜2文で書く
+- 乳剤散布状況と養生砂散布状況の判別: スプレイヤーで乳剤を散布する人と飛散防止のベニヤ板を持って立つ人が並ぶ場合は乳剤散布状況
+- 処分関連（アスガラ処分）: 黒板に「処分状況」と書かれていれば「アスファルト塊処分状況」、許可票が写っていれば「As塊処分施設許可票」、計量台の上なら「アスファルト塊計量状況」
 
 対象写真:
 {photo_list}"#
-    )
-}
-
-/// Step2プロンプト生成（マスタ照合用）
-///
-/// # Arguments
-/// * `raw_data` - Step1で抽出した生データ
-/// * `master` - 階層マスタ
-///
-/// # Returns
-/// Step2照合用のプロンプト文字列
-pub fn build_step2_prompt(raw_data: &[RawImageData], master: &HierarchyMaster) -> String {
-    let hierarchy_json = master.to_hierarchy_json();
-    let hierarchy_str = serde_json::to_string(&hierarchy_json).unwrap_or_default();
-
-    let raw_data_str = raw_data
-        .iter()
-        .map(|d| {
-            format!(
-                r#"
-ファイル: {}
-黒板: {}
-OCRテキスト: {}
-数値: {}
-シーン: {}
-写真区分: {}"#,
-                d.file_name,
-                if d.has_board { "あり" } else { "なし" },
-                if d.detected_text.is_empty() { "なし" } else { &d.detected_text },
-                if d.measurements.is_empty() { "なし" } else { &d.measurements },
-                d.scene_description,
-                d.photo_category
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n---\n");
-
-    format!(
-        r#"あなたは工事写真の分類専門家です。
-以下の画像解析結果を、工種マスタに基づいて正確に分類してください。
-
-## 工種マスタ（階層構造）
-{hierarchy_str}
-
-## 画像解析結果
-{raw_data_str}
-
-## 出力ルール
-1. photoCategory は写真種別（マスタの写真種別と一致）を選択
-2. workType, variety, subphase は必ずマスタに存在する値を選択
-3. 選んだ photoCategory と一致する行の組み合わせのみ使用
-4. remarks はマスタの「備考」から選択（該当なしは空文字）
-5. 該当なしの場合は空文字""
-
-## 出力形式（JSON配列）
-```json
-[
-  {{
-    "fileName": "ファイル名",
-    "workType": "工種（マスタから選択）",
-    "variety": "種別（マスタから選択）",
-    "subphase": "作業段階（マスタから選択）",
-    "remarks": "備考",
-    "station": "測点（黒板から読み取れた場合）",
-    "description": "写真の説明",
-    "reasoning": "分類理由"
-  }}
-]
-```
-
-出力はJSON配列のみ。説明不要。"#
     )
 }
 
@@ -320,105 +253,4 @@ mod tests {
         assert!(prompt.contains("施工状況写真"));
     }
 
-    // =============================================
-    // build_step2_prompt テスト
-    // =============================================
-
-    #[test]
-    fn test_build_step2_prompt_single_raw_data() {
-        let raw_data = vec![RawImageData {
-            file_name: "test.jpg".to_string(),
-            has_board: true,
-            detected_text: "温度 160.4℃".to_string(),
-            measurements: "160.4℃".to_string(),
-            scene_description: "アスファルト舗装工事".to_string(),
-            photo_category: "到着温度".to_string(),
-        }];
-        let master = HierarchyMaster::default();
-        let prompt = build_step2_prompt(&raw_data, &master);
-
-        assert!(prompt.contains("test.jpg"));
-        assert!(prompt.contains("黒板: あり"));
-        assert!(prompt.contains("温度 160.4℃"));
-        assert!(prompt.contains("到着温度"));
-    }
-
-    #[test]
-    fn test_build_step2_prompt_no_board() {
-        let raw_data = vec![RawImageData {
-            file_name: "test.jpg".to_string(),
-            has_board: false,
-            ..Default::default()
-        }];
-        let master = HierarchyMaster::default();
-        let prompt = build_step2_prompt(&raw_data, &master);
-
-        assert!(prompt.contains("黒板: なし"));
-    }
-
-    #[test]
-    fn test_build_step2_prompt_empty_fields() {
-        let raw_data = vec![RawImageData {
-            file_name: "test.jpg".to_string(),
-            has_board: false,
-            detected_text: "".to_string(),
-            measurements: "".to_string(),
-            scene_description: "工事現場".to_string(),
-            photo_category: "施工状況".to_string(),
-        }];
-        let master = HierarchyMaster::default();
-        let prompt = build_step2_prompt(&raw_data, &master);
-
-        assert!(prompt.contains("OCRテキスト: なし"));
-        assert!(prompt.contains("数値: なし"));
-    }
-
-    #[test]
-    fn test_build_step2_prompt_multiple_raw_data() {
-        let raw_data = vec![
-            RawImageData {
-                file_name: "photo1.jpg".to_string(),
-                has_board: true,
-                detected_text: "テスト1".to_string(),
-                ..Default::default()
-            },
-            RawImageData {
-                file_name: "photo2.jpg".to_string(),
-                has_board: false,
-                detected_text: "テスト2".to_string(),
-                ..Default::default()
-            },
-        ];
-        let master = HierarchyMaster::default();
-        let prompt = build_step2_prompt(&raw_data, &master);
-
-        assert!(prompt.contains("photo1.jpg"));
-        assert!(prompt.contains("photo2.jpg"));
-        assert!(prompt.contains("---")); // 区切り
-    }
-
-    #[test]
-    fn test_build_step2_prompt_contains_json_format() {
-        let raw_data = vec![RawImageData::default()];
-        let master = HierarchyMaster::default();
-        let prompt = build_step2_prompt(&raw_data, &master);
-
-        assert!(prompt.contains("\"workType\""));
-        assert!(prompt.contains("\"variety\""));
-        assert!(prompt.contains("\"subphase\""));
-        assert!(prompt.contains("\"remarks\""));
-        assert!(prompt.contains("\"station\""));
-        assert!(prompt.contains("\"description\""));
-        assert!(prompt.contains("\"reasoning\""));
-    }
-
-    #[test]
-    fn test_build_step2_prompt_contains_rules() {
-        let raw_data = vec![RawImageData::default()];
-        let master = HierarchyMaster::default();
-        let prompt = build_step2_prompt(&raw_data, &master);
-
-        assert!(prompt.contains("マスタに存在する値を選択"));
-        assert!(prompt.contains("該当なしの場合は空文字"));
-    }
 }
