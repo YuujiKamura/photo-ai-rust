@@ -6,67 +6,32 @@
 // <script src="https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
 // ============================================
-// レイアウト定数 (layoutConfig.ts から移植)
+// レイアウト定数 (layout-constants.generated.js から読み込み)
 // ============================================
 
-const MM_TO_PT = 2.835;
-
-// A4サイズ
-const A4_WIDTH_MM = 210;
-const A4_HEIGHT_MM = 297;
-const MARGIN_MM = 10;
-const PHOTO_GAP_MM = 10;
-
-// 比率
-const IMAGE_RATIO = 0.65;
-const INFO_RATIO = 0.35;
-
-// 計算値
-const USABLE_WIDTH_MM = A4_WIDTH_MM - MARGIN_MM * 2;  // 190mm
-const PHOTO_WIDTH_MM = USABLE_WIDTH_MM * IMAGE_RATIO;  // 123.5mm
-const PHOTO_HEIGHT_MM = (A4_HEIGHT_MM - MARGIN_MM * 2 - PHOTO_GAP_MM * 2) / 3;  // 85.67mm
-
-// Excel用設定
-const SCALE = 1.1;
-const PHOTO_ROWS = 10;  // 写真部分の行数
-const GAP_ROWS = 1;     // 余白行数
-const ROWS_PER_BLOCK = PHOTO_ROWS + GAP_ROWS;  // 11行/ブロック
-
-const PHOTO_HEIGHT_PT = PHOTO_HEIGHT_MM * MM_TO_PT;
-const ROW_HEIGHT_PT = Math.floor((PHOTO_HEIGHT_PT / PHOTO_ROWS) * SCALE);  // 26pt
-
-// 列幅
-const COL_A_WIDTH = 56.1;  // 写真列
-const COL_B_WIDTH = 11;    // ラベル列
-const COL_C_WIDTH = 28.6;  // 値列
-const FONT_NAME = 'MS Mincho';
-const FONT_SIZE = 10;
-const BORDER_THIN = {
-  top: { style: 'thin', color: { argb: 'FFB5B5B5' } },
-  left: { style: 'thin', color: { argb: 'FFB5B5B5' } },
-  right: { style: 'thin', color: { argb: 'FFB5B5B5' } },
-  bottom: { style: 'thin', color: { argb: 'FFB5B5B5' } }
-};
-
-// ============================================
-// フィールド定義 (LAYOUT_FIELDS)
-// ============================================
-
-const LAYOUT_FIELDS = [
-  { key: 'date', label: '日時', rowSpan: 1 },
-  { key: 'photoCategory', label: '区分', rowSpan: 1 },
-  { key: 'workType', label: '工種', rowSpan: 1 },
-  { key: 'variety', label: '種別', rowSpan: 1 },
-  { key: 'subphase', label: '細別', rowSpan: 1 },
-  { key: 'station', label: '測点', rowSpan: 1 },
-  { key: 'remarks', label: '備考', rowSpan: 2 },
-  { key: 'measurements', label: '測定値', rowSpan: 2 },
-];
-
-// 2枚/ページ用のフィールド（測点と備考のみ）
-const LAYOUT_FIELDS_2UP = LAYOUT_FIELDS.filter(
-  f => f.key === 'station' || f.key === 'remarks'
-);
+import {
+  MM_TO_PT,
+  A4_WIDTH_MM,
+  A4_HEIGHT_MM,
+  MARGIN_MM,
+  PHOTO_GAP_MM,
+  IMAGE_RATIO,
+  INFO_RATIO,
+  SCALE,
+  PHOTO_ROWS,
+  GAP_ROWS,
+  ROWS_PER_BLOCK,
+  PHOTO_HEIGHT_PT,
+  ROW_HEIGHT_PT,
+  COL_A_WIDTH,
+  COL_B_WIDTH,
+  COL_C_WIDTH,
+  FONT_NAME,
+  FONT_SIZE,
+  BORDER_THIN,
+  LAYOUT_FIELDS,
+  LAYOUT_FIELDS_2UP
+} from './layout-constants.generated.js';
 
 // ============================================
 // メイン関数
