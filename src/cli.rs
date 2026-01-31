@@ -14,7 +14,7 @@ pub struct Cli {
     pub verbose: bool,
 
     /// AIプロバイダ (claude/codex/gemini)
-    #[arg(long, default_value = "claude", global = true)]
+    #[arg(long, default_value = "gemini", global = true)]
     pub ai_provider: AiProvider,
 }
 
