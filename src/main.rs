@@ -165,6 +165,22 @@ async fn main() -> Result<()> {
                 apply_station(&mut results, st);
             }
 
+            // 正規化（3枚セット内で黒板アップの値に統一）
+            {
+                use photo_ai_rust::normalizer::{self, NormalizationOptions};
+                let options = NormalizationOptions::default();
+                let norm_result = normalizer::normalize_results(&results, &options);
+                if !norm_result.corrections.is_empty() {
+                    if cli.verbose {
+                        println!("  計測値統一: {}件", norm_result.stats.measurement_corrections);
+                        for c in &norm_result.corrections {
+                            println!("    {} → {} ({})", c.file_name, c.corrected, c.reason);
+                        }
+                    }
+                    normalizer::apply_corrections(&mut results, &norm_result.corrections);
+                }
+            }
+
             // 3. 結果保存
             println!("[3/3] 結果を保存中...");
             let output_path = output.unwrap_or_else(|| folder.join("result.json"));
@@ -266,17 +282,45 @@ async fn main() -> Result<()> {
                 apply_station(&mut results, st);
             }
 
+            // 正規化（3枚セット内で黒板アップの値に統一）
+            {
+                use photo_ai_rust::normalizer::{self, NormalizationOptions};
+                let options = NormalizationOptions::default();
+                let norm_result = normalizer::normalize_results(&results, &options);
+                if !norm_result.corrections.is_empty() {
+                    if cli.verbose {
+                        println!("  計測値統一: {}件", norm_result.stats.measurement_corrections);
+                        for c in &norm_result.corrections {
+                            println!("    {} → {} ({})", c.file_name, c.corrected, c.reason);
+                        }
+                    }
+                    normalizer::apply_corrections(&mut results, &norm_result.corrections);
+                }
+            }
+
             // 3. 結果保存
-            let output_dir = output.unwrap_or_else(|| folder.clone());
+            // output がファイルパス(.pdf等)の場合、result.json は入力フォルダに保存
+            let (json_dir, export_path) = if let Some(ref out) = output {
+                if out.extension().is_some() && !out.is_dir() {
+                    // ファイルパス指定: result.json は入力フォルダ、エクスポートは指定パス
+                    (folder.clone(), out.clone())
+                } else {
+                    // ディレクトリ指定
+                    (out.clone(), out.clone())
+                }
+            } else {
+                // 未指定: 入力フォルダを使用
+                (folder.clone(), folder.clone())
+            };
             println!("[3/4] 結果を保存中...");
-            let json_path = output_dir.join("result.json");
+            let json_path = json_dir.join("result.json");
             let json = serde_json::to_string_pretty(&results)?;
             std::fs::write(&json_path, &json)?;
             println!("✔ 結果を保存: {}", json_path.display());
 
             // 4. Export
             println!("[4/4] エクスポート中...");
-            export::export_results(&results, &format, &output_dir, 3, "工事写真帳", pdf_quality)?;
+            export::export_results(&results, &format, &export_path, 3, "工事写真帳", pdf_quality)?;
 
             println!("\n✅ 完了");
         }
@@ -331,7 +375,7 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Normalize { input, output, dry_run } => {
+        Commands::Normalize { input, output, station, dry_run } => {
             use photo_ai_rust::normalizer::{self, NormalizationOptions};
 
             println!("🔧 photo-ai-rust - 正規化\n");
@@ -340,6 +384,12 @@ async fn main() -> Result<()> {
             let content = std::fs::read_to_string(&input)?;
             let mut results: Vec<analyzer::AnalysisResult> = serde_json::from_str(&content)?;
             println!("読み込み: {}件", results.len());
+
+            // 測点一括適用
+            if let Some(ref st) = station {
+                println!("測点を一括適用: {}", st);
+                apply_station(&mut results, st);
+            }
 
             // 正規化オプション
             let options = NormalizationOptions::default();
@@ -368,7 +418,8 @@ async fn main() -> Result<()> {
             }
 
             // ドライランでなければ適用
-            if !dry_run && !result.corrections.is_empty() {
+            let has_changes = station.is_some() || !result.corrections.is_empty();
+            if !dry_run && has_changes {
                 normalizer::apply_corrections(&mut results, &result.corrections);
 
                 let output_path = output.unwrap_or(input);

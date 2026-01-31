@@ -84,6 +84,10 @@ class _ViewerScreenState extends State<ViewerScreen>
   bool _awaitingWorkType = false;
   String? _pendingAnalyzeFolder;
   String? _pendingAnalyzeOutput;
+  String? _analyzingImagePath;
+  String? _analyzingFolder;
+  int? _analyzingIndex;
+  int? _analyzingTotal;
   final TextEditingController _terminalInputController = TextEditingController();
   ClipboardPayload? _clipboardPayload;
 
@@ -214,7 +218,7 @@ class _ViewerScreenState extends State<ViewerScreen>
   }
 
   void _applyStationPolicy() {
-    final enforced = stationOverride;
+    final enforced = stationOverride.isNotEmpty ? stationOverride : stationInput;
     if (allowStationFromAnalyze && enforced.isEmpty) return;
     items = items
         .map(
@@ -492,6 +496,10 @@ class _ViewerScreenState extends State<ViewerScreen>
     try {
       analyzing = true;
       _analyzeCancelRequested = false;
+      _analyzingFolder = folder;
+      _analyzingImagePath = null;
+      _analyzingIndex = null;
+      _analyzingTotal = null;
       setState(() {});
       final resolvedCli = await resolveCliPath();
       appendLog('Analyze CLI: $resolvedCli');
@@ -503,16 +511,10 @@ class _ViewerScreenState extends State<ViewerScreen>
         runInShell: false,
       );
       _analyzeProcess = process;
-      process.stdout
-          .transform(const Utf8Decoder(allowMalformed: true))
-          .transform(const LineSplitter())
-          .listen((line) {
+      process.stdout.listen((line) {
         appendLog(line);
       });
-      process.stderr
-          .transform(const Utf8Decoder(allowMalformed: true))
-          .transform(const LineSplitter())
-          .listen((line) {
+      process.stderr.listen((line) {
         appendLog(line);
       });
 
@@ -536,6 +538,10 @@ class _ViewerScreenState extends State<ViewerScreen>
       analyzing = false;
       _analyzeProcess = null;
       _analyzeCancelRequested = false;
+      _analyzingFolder = null;
+      _analyzingImagePath = null;
+      _analyzingIndex = null;
+      _analyzingTotal = null;
       setState(() {});
     }
   }
@@ -624,6 +630,10 @@ class _ViewerScreenState extends State<ViewerScreen>
     try {
       analyzing = true;
       _analyzeCancelRequested = false;
+      _analyzingFolder = p.dirname(item.filePath);
+      _analyzingImagePath = item.filePath;
+      _analyzingIndex = 1;
+      _analyzingTotal = 1;
       setState(() {});
       final resolvedCli = await resolveCliPath();
       final process = await pio.startProcess(
@@ -633,14 +643,8 @@ class _ViewerScreenState extends State<ViewerScreen>
         runInShell: false,
       );
       _analyzeProcess = process;
-      process.stdout
-          .transform(const Utf8Decoder(allowMalformed: true))
-          .transform(const LineSplitter())
-          .listen(appendLog);
-      process.stderr
-          .transform(const Utf8Decoder(allowMalformed: true))
-          .transform(const LineSplitter())
-          .listen(appendLog);
+      process.stdout.listen(appendLog);
+      process.stderr.listen(appendLog);
 
       final exitCode = await process.exitCode;
       if (_analyzeCancelRequested) {
@@ -689,6 +693,10 @@ class _ViewerScreenState extends State<ViewerScreen>
       analyzing = false;
       _analyzeProcess = null;
       _analyzeCancelRequested = false;
+      _analyzingFolder = null;
+      _analyzingImagePath = null;
+      _analyzingIndex = null;
+      _analyzingTotal = null;
       setState(() {});
     }
   }
@@ -865,14 +873,8 @@ class _ViewerScreenState extends State<ViewerScreen>
         workingDirectory: resolveRepoRoot(),
         runInShell: true,
       );
-      process.stdout
-          .transform(const Utf8Decoder(allowMalformed: true))
-          .transform(const LineSplitter())
-          .listen(appendLog);
-      process.stderr
-          .transform(const Utf8Decoder(allowMalformed: true))
-          .transform(const LineSplitter())
-          .listen(appendLog);
+      process.stdout.listen(appendLog);
+      process.stderr.listen(appendLog);
 
       final exitCode = await process.exitCode;
       if (exitCode != 0) {
@@ -1175,11 +1177,49 @@ class _ViewerScreenState extends State<ViewerScreen>
   void setExportStatus(String value) => setState(() => exportStatus = value);
 
   void appendLog(String message) {
+    _maybeUpdateAnalyzeStateFromLog(message);
     logs.add('${DateTime.now().toIso8601String()}  $message');
     if (logs.length > 200) {
       logs.removeAt(0);
     }
     setState(() {});
+  }
+
+  void _maybeUpdateAnalyzeStateFromLog(String message) {
+    if (!analyzing) return;
+    final progressMatch = RegExp(r'\[(\d+)\/(\d+)\]').firstMatch(message);
+    if (progressMatch != null) {
+      _analyzingIndex = int.tryParse(progressMatch.group(1) ?? '');
+      _analyzingTotal = int.tryParse(progressMatch.group(2) ?? '');
+    }
+
+    final pathMatch = RegExp(
+      r'([A-Za-z]:[\\/][^\r\n]*?\.(?:jpg|jpeg|png|heic|webp|bmp|tif|tiff))',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (pathMatch != null) {
+      var rawPath = pathMatch.group(1) ?? '';
+      rawPath = rawPath.replaceAll('"', '').replaceAll("'", '');
+      final normalized = rawPath.replaceAll('/', '\\');
+      if (normalized.isNotEmpty && pio.PlatformFile(normalized).existsSync()) {
+        _analyzingImagePath = normalized;
+        _analyzingFolder = p.dirname(normalized);
+        return;
+      }
+    }
+
+    if (_analyzingFolder == null) return;
+    final nameMatch = RegExp(
+      r'([^\s\\/]+\.(?:jpg|jpeg|png|heic|webp|bmp|tif|tiff))',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (nameMatch == null) return;
+    final fileName = nameMatch.group(1) ?? '';
+    if (fileName.isEmpty) return;
+    final candidate = p.join(_analyzingFolder!, fileName);
+    if (pio.PlatformFile(candidate).existsSync()) {
+      _analyzingImagePath = candidate;
+    }
   }
 
   Widget _buildAnalyzeStatus() {
@@ -1195,6 +1235,104 @@ class _ViewerScreenState extends State<ViewerScreen>
       analyzeStatus.isEmpty ? status : analyzeStatus,
       style: const TextStyle(fontSize: 12),
     );
+  }
+
+  Widget _buildAnalyzePreview() {
+    if (!analyzing) return const SizedBox.shrink();
+    final imagePath = _analyzingImagePath;
+    final progressText = _formatAnalyzeProgress();
+    final progressValue = (_analyzingIndex != null &&
+            _analyzingTotal != null &&
+            _analyzingTotal! > 0)
+        ? _analyzingIndex! / _analyzingTotal!
+        : null;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0B0E14),
+        border: Border(bottom: BorderSide(color: Color(0xFF2A2F3A))),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 120,
+            height: 90,
+            child: imagePath == null || imagePath.isEmpty
+                ? const Center(
+                    child: Text(
+                      '画像待機中',
+                      style: TextStyle(fontSize: 11, color: Colors.white54),
+                    ),
+                  )
+                : _buildAnalyzePreviewImage(imagePath),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '解析中の画像',
+                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  imagePath == null || imagePath.isEmpty
+                      ? 'ログから画像名を取得中...'
+                      : p.basename(imagePath),
+                  style: const TextStyle(fontSize: 12, color: Colors.white),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (progressText != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    progressText,
+                    style: const TextStyle(fontSize: 11, color: Colors.white54),
+                  ),
+                ],
+                if (progressValue != null) ...[
+                  const SizedBox(height: 4),
+                  LinearProgressIndicator(
+                    value: progressValue.clamp(0.0, 1.0),
+                    minHeight: 4,
+                    backgroundColor: const Color(0xFF1E2430),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFF6C445)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalyzePreviewImage(String imagePath) {
+    if (kIsWeb) {
+      final bytes = _webImageCache[imagePath];
+      if (bytes == null) {
+        return const Center(child: Text('No preview', style: TextStyle(fontSize: 11)));
+      }
+      return Image.memory(
+        bytes,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            const Center(child: Text('No preview', style: TextStyle(fontSize: 11))),
+      );
+    }
+    return pio.buildImageFromPath(
+      imagePath,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) =>
+          const Center(child: Text('No preview', style: TextStyle(fontSize: 11))),
+    );
+  }
+
+  String? _formatAnalyzeProgress() {
+    if (_analyzingIndex == null || _analyzingTotal == null) return null;
+    return '進捗 ${_analyzingIndex}/${_analyzingTotal}';
   }
 
   Widget _buildExportStatus() {
@@ -1238,9 +1376,18 @@ class _ViewerScreenState extends State<ViewerScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): () {
+          if (items.isEmpty || sourcePath == null) return;
+          saveToSource();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          body: Column(
+            children: [
           MenuBar(
             children: [
               SubmenuButton(
@@ -1374,6 +1521,7 @@ class _ViewerScreenState extends State<ViewerScreen>
               _buildExportStatus(),
             ],
           ),
+          _buildAnalyzePreview(),
           Expanded(
             child: Row(
               children: [
@@ -1764,7 +1912,9 @@ class _ViewerScreenState extends State<ViewerScreen>
               ],
             ),
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

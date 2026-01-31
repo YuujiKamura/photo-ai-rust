@@ -13,7 +13,7 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
-    /// AIプロバイダ (claude/codex)
+    /// AIプロバイダ (claude/codex/gemini)
     #[arg(long, default_value = "claude", global = true)]
     pub ai_provider: AiProvider,
 }
@@ -195,6 +195,10 @@ pub enum Commands {
         /// 出力ファイル（省略時は上書き）
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// 測点を一括指定（例: "12月26日"）
+        #[arg(short = 'S', long)]
+        station: Option<String>,
 
         /// ドライラン（変更を適用せずプレビュー）
         #[arg(long)]

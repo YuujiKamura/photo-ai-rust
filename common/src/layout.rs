@@ -108,16 +108,15 @@ pub struct FieldDefinition {
     pub row_span: u8,
 }
 
-/// レイアウトフィールド（React版 LAYOUT_FIELDS と同等）
+/// レイアウトフィールド（参照PDF準拠）
 pub const LAYOUT_FIELDS: &[FieldDefinition] = &[
     FieldDefinition { key: "date", label: "日時", row_span: 1 },
-    FieldDefinition { key: "photoCategory", label: "区分", row_span: 1 },
     FieldDefinition { key: "workType", label: "工種", row_span: 1 },
     FieldDefinition { key: "variety", label: "種別", row_span: 1 },
-    FieldDefinition { key: "subphase", label: "作業段階", row_span: 1 },
+    FieldDefinition { key: "subphase", label: "細別", row_span: 1 },
     FieldDefinition { key: "station", label: "測点", row_span: 1 },
     FieldDefinition { key: "remarks", label: "備考", row_span: 1 },
-    FieldDefinition { key: "measurements", label: "測定値", row_span: 3 },
+    FieldDefinition { key: "measurements", label: "測定値", row_span: 1 },
 ];
 
 // ============================================
@@ -384,13 +383,15 @@ mod tests {
 
     #[test]
     fn test_layout_fields() {
-        // フィールド数の確認
-        assert_eq!(LAYOUT_FIELDS.len(), 8);
+        // フィールド数の確認（7フィールド: 測定値行追加）
+        assert_eq!(LAYOUT_FIELDS.len(), 7);
 
         // 最初と最後のフィールド確認
         assert_eq!(LAYOUT_FIELDS[0].key, "date");
         assert_eq!(LAYOUT_FIELDS[0].label, "日時");
-        assert_eq!(LAYOUT_FIELDS[7].key, "measurements");
-        assert_eq!(LAYOUT_FIELDS[7].row_span, 3);
+        assert_eq!(LAYOUT_FIELDS[5].key, "remarks");
+        assert_eq!(LAYOUT_FIELDS[5].label, "備考");
+        assert_eq!(LAYOUT_FIELDS[6].key, "measurements");
+        assert_eq!(LAYOUT_FIELDS[6].label, "測定値");
     }
 }

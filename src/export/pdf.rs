@@ -397,7 +397,7 @@ fn add_header_ops(
     ops: &mut Vec<Op>,
     title: &str,
     page_num: usize,
-    total_pages: usize,
+    _total_pages: usize,
     fonts: &FontSet,
     layout: &pdf_core::PdfLayoutCore,
 ) {
@@ -414,11 +414,11 @@ fn add_header_ops(
         fonts,
     );
 
-    // ページ番号
+    // ページ番号（参照PDF準拠: "Page X" 形式）
     add_text_ops(
         ops,
-        &format!("Page {} / {}", page_num, total_pages),
-        layout.page_width_pt - layout.margin_pt - 80.0,
+        &format!("Page {}", page_num),
+        layout.page_width_pt - layout.margin_pt - 50.0,
         layout.page_height_pt - layout.margin_pt - 20.0,
         UNIFIED_FONT_SIZE,
         fonts,
@@ -549,7 +549,26 @@ fn add_fitted_text_ops(
     }
 }
 
-/// 情報欄テキスト描画オペレーション追加
+/// 水平線描画オペレーション追加
+fn add_horizontal_line_ops(ops: &mut Vec<Op>, x1_pt: f32, x2_pt: f32, y_pt: f32) {
+    ops.push(Op::SetOutlineColor { col: Color::Rgb(Rgb { r: 0.7, g: 0.7, b: 0.7, icc_profile: None }) });
+    ops.push(Op::SetOutlineThickness { pt: Pt(0.5) });
+
+    let points = vec![
+        LinePoint { p: Point { x: Pt(x1_pt), y: Pt(y_pt) }, bezier: false },
+        LinePoint { p: Point { x: Pt(x2_pt), y: Pt(y_pt) }, bezier: false },
+    ];
+
+    ops.push(Op::DrawPolygon {
+        polygon: Polygon {
+            rings: vec![PolygonRing { points }],
+            mode: PaintMode::Stroke,
+            winding_order: WindingOrder::NonZero,
+        },
+    });
+}
+
+/// 情報欄テキスト描画オペレーション追加（参照PDF準拠レイアウト）
 fn add_info_field_ops(
     ops: &mut Vec<Op>,
     result: &AnalysisResult,
@@ -558,30 +577,39 @@ fn add_info_field_ops(
     photo_height_pt: f32,
     fonts: &FontSet,
 ) {
-    let mut y_offset = 0u8;
-    let text_config = TextFitConfig::default();
+    let fields = pdf_core::build_pdf_info_fields(result);
+    let field_count = fields.len();
+    let row_height = photo_height_pt / (field_count as f32 + 0.5); // フィールド数で等分
+    let label_width = 35.0; // ラベル列の幅
 
     ops.push(Op::SetFillColor { col: Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None }) });
 
-    for field in pdf_core::build_pdf_info_fields(result).iter() {
-        let y_pt = row_y_pt + photo_height_pt - 15.0 - (y_offset as f32 * 18.0);
+    let text_config = TextFitConfig {
+        max_width_chars: 18,
+        ..TextFitConfig::default()
+    };
 
-        if y_pt > row_y_pt + 5.0 {
+    for (i, field) in fields.iter().enumerate() {
+        let field_top = row_y_pt + photo_height_pt - (i as f32 * row_height);
+        let text_y = field_top - row_height * 0.7; // 行の上部から70%の位置
+
+        if text_y > row_y_pt + 5.0 {
             let label_text = process_text(field.label, fonts.is_japanese());
             let value_text = process_text(&field.value, fonts.is_japanese());
 
-            // ラベル
-            add_text_ops(ops, &format!("{}:", label_text), info_x_pt + 5.0, y_pt, UNIFIED_FONT_SIZE, fonts);
+            // ラベル（左寄せ）
+            add_text_ops(ops, &label_text, info_x_pt + 5.0, text_y, UNIFIED_FONT_SIZE, fonts);
 
-            // 値（自動調整）
-            add_fitted_text_ops(ops, &value_text, info_x_pt + 45.0, y_pt, fonts, &text_config);
+            // 値（ラベル右側）
+            add_fitted_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, fonts, &text_config);
+
+            // 行の下に水平線（最後の行以外）
+            if i < field_count - 1 {
+                let line_y = field_top - row_height;
+                add_horizontal_line_ops(ops, info_x_pt, info_x_pt + 180.0, line_y);
+            }
         }
-
-        y_offset += field.row_span;
     }
-
-    // ファイル名
-    add_text_ops(ops, &result.file_name, info_x_pt + 5.0, row_y_pt + 5.0, UNIFIED_FONT_SIZE, fonts);
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@ use serde_json::json;
 const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent";
 
 #[tokio::test]
+#[ignore] // 手動実行: cargo test gemini_step1_integration -- --ignored
 async fn gemini_step1_integration() {
     let api_key = match std::env::var("GEMINI_API_KEY") {
         Ok(key) if !key.trim().is_empty() => key,
