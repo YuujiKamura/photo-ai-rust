@@ -4,6 +4,7 @@ use clap::ValueEnum;
 pub enum AiProvider {
     Claude,
     Codex,
+    Gemini,
 }
 
 impl AiProvider {
@@ -11,6 +12,7 @@ impl AiProvider {
         match self {
             AiProvider::Claude => "claude",
             AiProvider::Codex => "codex",
+            AiProvider::Gemini => "gemini",
         }
     }
 }

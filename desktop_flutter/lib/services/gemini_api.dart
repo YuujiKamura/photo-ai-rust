@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+part 'gemini_api_step2.dart';
+
 /// Gemini API サービス (Web版解析用)
 class GeminiApi {
   final String apiKey;
@@ -26,7 +28,8 @@ class GeminiApi {
 
     // Step 2: マスタ照合 (マスタがあれば)
     if (masterCsv != null && masterCsv.isNotEmpty) {
-      return await _analyzeStep2(
+      return await GeminiStep2.analyze(
+        this,
         rawData: step1Result,
         masterCsv: masterCsv,
       );
@@ -72,36 +75,6 @@ class GeminiApi {
     return result;
   }
 
-  /// Step 2: マスタ照合
-  Future<Map<String, dynamic>> _analyzeStep2({
-    required Map<String, dynamic> rawData,
-    required String masterCsv,
-  }) async {
-    final prompt = _buildStep2Prompt(rawData, masterCsv);
-
-    final request = {
-      'contents': [
-        {
-          'parts': [
-            {'text': prompt}
-          ]
-        }
-      ],
-      'generationConfig': {
-        'temperature': 0.1,
-        'responseMimeType': 'application/json',
-      }
-    };
-
-    final response = await _callApi(request);
-    final result = _parseResponse(response);
-
-    // 元データをマージ
-    return {
-      ...rawData,
-      ...result,
-    };
-  }
 
   /// API呼び出し
   Future<String> _callApi(Map<String, dynamic> request) async {
@@ -186,28 +159,6 @@ class GeminiApi {
 ''';
   }
 
-  /// Step 2 プロンプト
-  String _buildStep2Prompt(Map<String, dynamic> rawData, String masterCsv) {
-    return '''
-以下の解析結果をマスタデータと照合し、正しい工種階層に修正してください。
-
-## 解析結果
-${jsonEncode(rawData)}
-
-## マスタデータ (CSV)
-$masterCsv
-
-## 出力形式
-{
-  "workType": "マスタに合致する工種",
-  "variety": "マスタに合致する種別",
-  "detail": "マスタに合致する細別",
-  "photoCategory": "写真区分"
-}
-
-マスタに完全一致しなくても、最も近い項目を選択してください。
-''';
-  }
 }
 
 /// 画像をBase64に変換するユーティリティ

@@ -73,26 +73,63 @@ pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
     LAYOUT_FIELDS
         .iter()
         .map(|field| {
-            let raw = get_field_value(result, field.key);
-            let value = if raw.is_empty() { "-" } else { raw };
+            let value = match field.key {
+                "date" => format_date(&result.date),
+                "remarks" => {
+                    // 備考はマスタから選択した値のみ
+                    if result.remarks.is_empty() { "-".to_string() } else { result.remarks.clone() }
+                }
+                "measurements" => {
+                    // 測定値は別行として表示
+                    if result.measurements.is_empty() { "-".to_string() } else { result.measurements.clone() }
+                }
+                _ => {
+                    let raw = get_field_value(result, field.key);
+                    if raw.is_empty() { "-".to_string() } else { raw.to_string() }
+                }
+            };
             PdfInfoField {
                 label: field.label,
-                value: value.to_string(),
+                value,
                 row_span: field.row_span,
             }
         })
         .collect()
 }
 
+/// 日時フォーマット変換: "2025-12-26 13:47:52" → "2025/12/26 13:47"
+fn format_date(date: &str) -> String {
+    if date.is_empty() {
+        return "-".to_string();
+    }
+    // "YYYY-MM-DD HH:MM:SS" → "YYYY/MM/DD HH:MM"
+    let formatted = date.replace('-', "/");
+    // 秒を削除（最後の:SS部分）
+    if formatted.len() > 16 {
+        formatted[..16].to_string()
+    } else {
+        formatted
+    }
+}
+
 fn get_field_value<'a>(result: &'a AnalysisResult, key: &str) -> &'a str {
     match key {
-        "date" => if result.date.is_empty() { "-" } else { &result.date },
+        "date" => "", // 特殊処理（format_dateを使用）
         "photoCategory" => &result.photo_category,
         "workType" => &result.work_type,
         "variety" => &result.variety,
         "subphase" => &result.subphase,
         "station" => &result.station,
-        "remarks" => &result.remarks,
+        // 備考: measurementsがあればそれを優先（温度等の具体的な値）
+        "remarks" => {
+            if !result.measurements.is_empty() {
+                &result.measurements
+            } else if !result.remarks.is_empty() {
+                &result.remarks
+            } else {
+                ""
+            }
+        },
         "measurements" => &result.measurements,
         _ => "-",
     }

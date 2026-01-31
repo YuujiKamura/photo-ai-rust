@@ -27,6 +27,7 @@ fn create_test_result(index: usize) -> AnalysisResult {
         detected_text: String::new(),
         reasoning: String::new(),
         remarks_candidates: Vec::new(),
+        focus_target: String::new(),
     }
 }
 
@@ -195,6 +196,7 @@ fn test_excel_data_consistency() {
             detected_text: String::new(),
             reasoning: String::new(),
             remarks_candidates: Vec::new(),
+            focus_target: String::new(),
         },
     ];
 
@@ -260,6 +262,7 @@ fn test_excel_japanese_text() {
             detected_text: String::new(),
             reasoning: String::new(),
             remarks_candidates: Vec::new(),
+            focus_target: String::new(),
         },
     ];
 

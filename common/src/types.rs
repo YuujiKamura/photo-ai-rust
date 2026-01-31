@@ -2,8 +2,7 @@
 //!
 //! CLIとWeb(WASM)で共有される型:
 //! - RawImageData: Step1（画像認識）の出力
-//! - Step2Result: Step2（マスタ照合）の出力
-//! - AnalysisResult: 最終出力（Step1+Step2をマージ）
+//! - AnalysisResult: 最終出力
 
 use serde::{Deserialize, Serialize};
 
@@ -17,21 +16,6 @@ pub struct RawImageData {
     pub measurements: String,
     pub scene_description: String,
     pub photo_category: String,
-}
-
-/// Step2の出力: マスタ照合結果
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Step2Result {
-    pub file_name: String,
-    pub work_type: String,
-    pub variety: String,
-    #[serde(alias = "detail")]
-    pub subphase: String,
-    pub remarks: String,
-    pub station: String,
-    pub description: String,
-    pub reasoning: String,
 }
 
 /// AI解析結果
@@ -84,6 +68,9 @@ pub struct AnalysisResult {
 
     #[serde(default)]
     pub reasoning: String,        // 分類理由
+
+    #[serde(default)]
+    pub focus_target: String,     // 撮影対象（全景/黒板アップ/温度計アップ等）
 }
 
 #[cfg(test)]
@@ -213,53 +200,4 @@ mod tests {
         assert_eq!(raw.detected_text, ""); // デフォルト値
     }
 
-    // =============================================
-    // Step2Result テスト
-    // =============================================
-
-    #[test]
-    fn test_step2_result_default() {
-        let result = Step2Result::default();
-        assert_eq!(result.file_name, "");
-        assert_eq!(result.work_type, "");
-        assert_eq!(result.variety, "");
-    }
-
-    #[test]
-    fn test_step2_result_serialize() {
-        let result = Step2Result {
-            file_name: "test.jpg".to_string(),
-            work_type: "舗装工".to_string(),
-            variety: "舗装打換え工".to_string(),
-            subphase: "表層工".to_string(),
-            station: "No.10".to_string(),
-            remarks: "備考".to_string(),
-            description: "舗設状況".to_string(),
-            reasoning: "温度測定写真のため".to_string(),
-        };
-
-        let json = serde_json::to_string(&result).expect("シリアライズ失敗");
-        assert!(json.contains("\"workType\":\"舗装工\""));
-        assert!(json.contains("\"variety\":\"舗装打換え工\""));
-        assert!(json.contains("\"subphase\":\"表層工\""));
-    }
-
-    #[test]
-    fn test_step2_result_deserialize() {
-        let json = r#"{
-            "fileName": "test.jpg",
-            "workType": "区画線工",
-            "variety": "区画線工",
-            "subphase": "実線",
-            "station": "No.5+10.0"
-        }"#;
-
-        let result: Step2Result = serde_json::from_str(json).expect("デシリアライズ失敗");
-        assert_eq!(result.file_name, "test.jpg");
-        assert_eq!(result.work_type, "区画線工");
-        assert_eq!(result.variety, "区画線工");
-        assert_eq!(result.subphase, "実線");
-        assert_eq!(result.station, "No.5+10.0");
-        assert_eq!(result.remarks, ""); // デフォルト値
-    }
 }

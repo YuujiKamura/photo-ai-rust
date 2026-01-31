@@ -219,6 +219,7 @@ fn run_ai_cli(
     match provider {
         AiProvider::Claude => run_claude_cli(prompt, verbose),
         AiProvider::Codex => run_codex_cli(prompt, image_paths, verbose),
+        AiProvider::Gemini => run_gemini_cli(prompt, verbose),
     }
 }
 
@@ -290,6 +291,64 @@ fn run_codex_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -
     let response = std::fs::read_to_string(&output_path)
         .map_err(|e| PhotoAiError::ApiCall(format!("Codex出力読み込みエラー: {}", e)))?;
     let _ = std::fs::remove_file(&output_path);
+    Ok(response)
+}
+
+fn run_gemini_cli(prompt: &str, verbose: bool) -> Result<String> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    if verbose {
+        println!("  [Gemini] prompt length: {}", prompt.len());
+    }
+
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        c.args(["/c", "gemini", "--output-format", "text"]);
+        c
+    };
+
+    #[cfg(not(windows))]
+    let mut cmd = Command::new("gemini");
+
+    #[cfg(not(windows))]
+    cmd.args(["--output-format", "text"]);
+
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| PhotoAiError::ApiCall(format!("Gemini CLI実行エラー: {}", e)))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|e| PhotoAiError::ApiCall(format!("Gemini CLI stdin書き込みエラー: {}", e)))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| PhotoAiError::ApiCall(format!("Gemini CLI実行エラー: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(PhotoAiError::ApiCall(format!(
+            "Gemini CLI failed (code {:?}): {}{}",
+            output.status.code(),
+            stderr,
+            if stdout.is_empty() { String::new() } else { format!("\nstdout: {}", stdout) }
+        )));
+    }
+
+    let response = String::from_utf8_lossy(&output.stdout).to_string();
+    if verbose {
+        let preview: String = response.chars().take(500).collect();
+        println!("  [Gemini] response: {}", preview);
+    }
+
     Ok(response)
 }
 

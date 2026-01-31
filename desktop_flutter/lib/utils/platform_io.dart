@@ -1,4 +1,5 @@
 // Desktop用 dart:io ラッパー
+import 'dart:convert';
 import 'dart:io' as io;
 import 'package:flutter/widgets.dart';
 
@@ -60,11 +61,11 @@ class ProcessHandle {
   ProcessHandle(this._process);
 
   Stream<String> get stdout => _process.stdout
-      .transform(const io.SystemEncoding().decoder)
-      .transform(const io.LineSplitter());
+      .transform(const Utf8Decoder(allowMalformed: true))
+      .transform(const LineSplitter());
   Stream<String> get stderr => _process.stderr
-      .transform(const io.SystemEncoding().decoder)
-      .transform(const io.LineSplitter());
+      .transform(const Utf8Decoder(allowMalformed: true))
+      .transform(const LineSplitter());
   Future<int> get exitCode => _process.exitCode;
   io.IOSink get stdin => _process.stdin;
   int get pid => _process.pid;

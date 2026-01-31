@@ -4,7 +4,7 @@
 //! Step1/Step2の結果をパースする
 
 use crate::error::{Error, Result};
-use crate::types::{AnalysisResult, RawImageData, Step2Result};
+use crate::types::{AnalysisResult, RawImageData};
 
 /// APIレスポンスからJSON部分を抽出
 ///
@@ -66,23 +66,6 @@ pub fn parse_step1_response(response: &str) -> Result<Vec<RawImageData>> {
     let raw: Vec<RawImageData> = serde_json::from_str(json_str.trim())
         .map_err(|e| Error::Parse(format!("Step1 JSONパースエラー: {}", e)))?;
     Ok(raw)
-}
-
-/// Step2レスポンスをパース
-///
-/// マスタ照合結果（Step2Result配列）をパースする
-///
-/// # Arguments
-/// * `response` - Step2のAPIレスポンス
-///
-/// # Returns
-/// * `Ok(Vec<Step2Result>)` - パース成功
-/// * `Err` - JSONが見つからないかパース失敗
-pub fn parse_step2_response(response: &str) -> Result<Vec<Step2Result>> {
-    let json_str = extract_json(response)?;
-    let results: Vec<Step2Result> = serde_json::from_str(json_str.trim())
-        .map_err(|e| Error::Parse(format!("Step2 JSONパースエラー: {}", e)))?;
-    Ok(results)
 }
 
 /// 1ステップ解析レスポンスをパース
@@ -226,72 +209,6 @@ Some additional text."#;
         let response = "No JSON here";
 
         let result = parse_step1_response(response);
-        assert!(result.is_err());
-    }
-
-    // =============================================
-    // parse_step2_response テスト
-    // =============================================
-
-    #[test]
-    fn test_parse_step2_response() {
-        let response = r#"```json
-[
-  {
-    "fileName": "test.jpg",
-    "workType": "舗装工",
-    "variety": "舗装打換え工",
-    "subphase": "表層工",
-    "station": "No.10",
-    "description": "舗設状況",
-    "reasoning": "温度測定写真のため"
-  }
-]
-```"#;
-
-        let result = parse_step2_response(response).unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].file_name, "test.jpg");
-        assert_eq!(result[0].work_type, "舗装工");
-        assert_eq!(result[0].variety, "舗装打換え工");
-        assert_eq!(result[0].subphase, "表層工");
-        assert_eq!(result[0].station, "No.10");
-        assert_eq!(result[0].description, "舗設状況");
-        assert_eq!(result[0].reasoning, "温度測定写真のため");
-    }
-
-    #[test]
-    fn test_parse_step2_response_minimal() {
-        let response = r#"[{"fileName": "test.jpg", "workType": "区画線工"}]"#;
-
-        let result = parse_step2_response(response).unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].file_name, "test.jpg");
-        assert_eq!(result[0].work_type, "区画線工");
-        assert_eq!(result[0].variety, ""); // デフォルト値
-        assert_eq!(result[0].subphase, ""); // デフォルト値
-    }
-
-    #[test]
-    fn test_parse_step2_response_multiple() {
-        let response = r#"```json
-[
-  {"fileName": "img1.jpg", "workType": "舗装工", "variety": "表層工"},
-  {"fileName": "img2.jpg", "workType": "区画線工", "variety": "区画線工"}
-]
-```"#;
-
-        let result = parse_step2_response(response).unwrap();
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].work_type, "舗装工");
-        assert_eq!(result[1].work_type, "区画線工");
-    }
-
-    #[test]
-    fn test_parse_step2_response_error() {
-        let response = "Invalid response without JSON";
-
-        let result = parse_step2_response(response);
         assert!(result.is_err());
     }
 
