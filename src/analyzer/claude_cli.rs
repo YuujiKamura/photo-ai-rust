@@ -219,7 +219,7 @@ fn run_ai_cli(
     match provider {
         AiProvider::Claude => run_claude_cli(prompt, verbose),
         AiProvider::Codex => run_codex_cli(prompt, image_paths, verbose),
-        AiProvider::Gemini => run_gemini_cli(prompt, verbose),
+        AiProvider::Gemini => run_gemini_cli(prompt, image_paths, verbose),
     }
 }
 
@@ -294,12 +294,23 @@ fn run_codex_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -
     Ok(response)
 }
 
-fn run_gemini_cli(prompt: &str, verbose: bool) -> Result<String> {
+fn run_gemini_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -> Result<String> {
     use std::io::Write;
     use std::process::Stdio;
 
+    // 画像パスを含むプロンプトを構築
+    let full_prompt = if let Some(paths) = image_paths {
+        let read_commands: Vec<String> = paths
+            .iter()
+            .map(|p| format!("Read the file {}", p.display().to_string().replace('\\', "/")))
+            .collect();
+        format!("{}\n\n{}", read_commands.join("\n"), prompt)
+    } else {
+        prompt.to_string()
+    };
+
     if verbose {
-        println!("  [Gemini] prompt length: {}", prompt.len());
+        println!("  [Gemini] prompt length: {}", full_prompt.len());
     }
 
     #[cfg(windows)]
@@ -324,7 +335,7 @@ fn run_gemini_cli(prompt: &str, verbose: bool) -> Result<String> {
 
     if let Some(mut stdin) = child.stdin.take() {
         stdin
-            .write_all(prompt.as_bytes())
+            .write_all(full_prompt.as_bytes())
             .map_err(|e| PhotoAiError::ApiCall(format!("Gemini CLI stdin書き込みエラー: {}", e)))?;
     }
 
