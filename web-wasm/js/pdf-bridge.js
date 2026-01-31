@@ -1,7 +1,19 @@
 // pdf-bridge.js
 // PDF生成 (pdf-lib使用)
 
-const MM_TO_PT = 2.83465;
+// ============================================
+// レイアウト定数 (layout-constants.generated.js から読み込み)
+// ============================================
+
+import {
+  MM_TO_PT,
+  PDF_GAP_PT,
+  PDF_BASE_FONT_SIZE,
+  PDF_LINE_HEIGHT_MULTIPLIER,
+  PDF_TEXT_PADDING,
+  PDF_TITLE_FONT_SIZE,
+  PDF_PAGE_NUM_FONT_SIZE
+} from './layout-constants.generated.js';
 
 let cachedFont = null;
 
@@ -75,9 +87,9 @@ export async function generatePdf(photosJson, layoutJson, optionsJson) {
   // エントリ間の垂直スペースを計算
   const availableHeight = pageHeight - (2 * margin);
   const entryHeight = availableHeight / photosPerPage;
-  const textPadding = 5;
-  const fontSize = 10;
-  const lineHeight = fontSize * 1.4;
+  const textPadding = PDF_TEXT_PADDING;
+  const fontSize = PDF_BASE_FONT_SIZE;
+  const lineHeight = fontSize * PDF_LINE_HEIGHT_MULTIPLIER;
 
   // 写真をページごとにグループ化して処理
   for (let pageIndex = 0; pageIndex < Math.ceil(photos.length / photosPerPage); pageIndex++) {
@@ -87,7 +99,7 @@ export async function generatePdf(photosJson, layoutJson, optionsJson) {
 
     // タイトルを描画（最初のページのみ）
     if (pageIndex === 0 && options.title) {
-      const titleFontSize = 14;
+      const titleFontSize = PDF_TITLE_FONT_SIZE;
       const titleWidth = font.widthOfTextAtSize(options.title, titleFontSize);
       page.drawText(options.title, {
         x: (pageWidth - titleWidth) / 2,
@@ -190,11 +202,11 @@ export async function generatePdf(photosJson, layoutJson, optionsJson) {
 
     // ページ番号を描画
     const pageNumText = `${pageIndex + 1} / ${Math.ceil(photos.length / photosPerPage)}`;
-    const pageNumWidth = font.widthOfTextAtSize(pageNumText, 9);
+    const pageNumWidth = font.widthOfTextAtSize(pageNumText, PDF_PAGE_NUM_FONT_SIZE);
     page.drawText(pageNumText, {
       x: (pageWidth - pageNumWidth) / 2,
       y: margin / 2,
-      size: 9,
+      size: PDF_PAGE_NUM_FONT_SIZE,
       font: font,
       color: PDFLib.rgb(0.5, 0.5, 0.5),
     });
