@@ -4,7 +4,8 @@
 
 use crate::ai_provider::AiProvider;
 use crate::analysis::{apply_station, ScanAnalysisConfig, prepare_analysis, scan_and_analyze};
-use crate::cli::{ExportFormat, PdfQuality};
+use crate::cli::{Commands, ExportFormat, PdfQuality};
+use crate::config::Config;
 use crate::error::{self, Result};
 use crate::normalizer::{self, NormalizationOptions};
 use crate::{analyzer, export, master_selector, matcher};
@@ -488,5 +489,102 @@ pub fn handle_cache_command(args: CacheCommandArgs) {
             Ok(false) => println!("キャッシュファイルが存在しません"),
             Err(e) => println!("キャッシュ削除エラー: {}", e),
         }
+    }
+}
+
+impl Commands {
+    /// コマンドを実行する
+    pub async fn execute(self, cli_args: &CommonCliArgs, config: Config) -> Result<()> {
+        match self {
+            Commands::Analyze { folder, output, batch_size, master, work_type, variety, station, use_cache, recursive, include_all } => {
+                handle_analyze_command(AnalyzeCommandArgs {
+                    folder,
+                    output,
+                    batch_size,
+                    master,
+                    work_type,
+                    variety,
+                    station,
+                    use_cache,
+                    recursive,
+                    include_all,
+                    cli_args: cli_args.clone(),
+                }).await?;
+            }
+
+            Commands::Export { input, format, output, photos_per_page, title, pdf_quality, preset, alias } => {
+                handle_export_command(ExportCommandArgs {
+                    input,
+                    format,
+                    output,
+                    photos_per_page,
+                    title,
+                    pdf_quality,
+                    preset,
+                    alias,
+                })?;
+            }
+
+            Commands::Run { folder, output, format, batch_size, master, work_type, variety, station, pdf_quality, use_cache, recursive, include_all } => {
+                handle_run_command(RunCommandArgs {
+                    folder,
+                    output,
+                    format,
+                    batch_size,
+                    master,
+                    work_type,
+                    variety,
+                    station,
+                    pdf_quality,
+                    use_cache,
+                    recursive,
+                    include_all,
+                    cli_args: cli_args.clone(),
+                }).await?;
+            }
+
+            Commands::Config { set_api_key, show } => {
+                handle_config_command(ConfigCommandArgs {
+                    set_api_key,
+                    show,
+                    config,
+                })?;
+            }
+
+            Commands::Station { input, output } => {
+                handle_station_command(StationCommandArgs {
+                    input,
+                    output,
+                })?;
+            }
+
+            Commands::Cache { clear, folder, info } => {
+                handle_cache_command(CacheCommandArgs {
+                    clear,
+                    folder,
+                    info,
+                });
+            }
+
+            Commands::Normalize { input, output, station, dry_run } => {
+                handle_normalize_command(NormalizeCommandArgs {
+                    input,
+                    output,
+                    station,
+                    dry_run,
+                })?;
+            }
+
+            Commands::Review { path, watch, model } => {
+                handle_review_command(ReviewCommandArgs {
+                    path,
+                    watch,
+                    model,
+                    cli_args: cli_args.clone(),
+                })?;
+            }
+        }
+
+        Ok(())
     }
 }
