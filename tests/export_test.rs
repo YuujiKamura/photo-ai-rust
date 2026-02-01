@@ -86,7 +86,7 @@ fn test_excel_generation() {
         .map(|i| create_test_result(i))
         .collect();
 
-    let result = excel::generate_excel(&results, &output_path, "テスト写真帳");
+    let result = excel::generate_excel_with_options(&results, &output_path, "テスト写真帳", 3);
 
     assert!(result.is_ok(), "Excel生成に失敗: {:?}", result.err());
     assert!(output_path.exists(), "Excelファイルが作成されていない");
@@ -105,7 +105,7 @@ fn test_excel_generation_empty_results() {
 
     let results: Vec<AnalysisResult> = vec![];
 
-    let result = excel::generate_excel(&results, &output_path, "空のテスト");
+    let result = excel::generate_excel_with_options(&results, &output_path, "空のテスト", 3);
 
     assert!(result.is_ok(), "空のExcel生成に失敗: {:?}", result.err());
 }
@@ -157,7 +157,7 @@ fn test_pdf_excel_both_generation() {
     assert!(pdf_result.is_ok(), "PDF生成に失敗: {:?}", pdf_result.err());
 
     // Excel生成
-    let excel_result = excel::generate_excel(&results, &excel_path, "整合性テスト");
+    let excel_result = excel::generate_excel_with_options(&results, &excel_path, "整合性テスト", 3);
     assert!(excel_result.is_ok(), "Excel生成に失敗: {:?}", excel_result.err());
 
     // 両方のファイルが存在することを確認
@@ -201,7 +201,7 @@ fn test_excel_data_consistency() {
     ];
 
     // Excel生成
-    excel::generate_excel(&results, &excel_path, "データ検証")
+    excel::generate_excel_with_options(&results, &excel_path, "データ検証", 3)
         .expect("Excel生成に失敗");
 
     // Excelを読み戻して検証
@@ -266,7 +266,7 @@ fn test_excel_japanese_text() {
         },
     ];
 
-    excel::generate_excel(&results, &excel_path, "日本語テスト")
+    excel::generate_excel_with_options(&results, &excel_path, "日本語テスト", 3)
         .expect("Excel生成に失敗");
 
     // 読み戻し
