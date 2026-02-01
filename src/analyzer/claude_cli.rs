@@ -180,11 +180,21 @@ pub async fn analyze_batch_single_step(
     Ok(results)
 }
 
-/// 1ステップ解析レスポンスをパース
-fn parse_single_step_response(response: &str) -> Result<Vec<AnalysisResult>> {
-    common_parse_single_step(response)
-        .map_err(|e| PhotoAiError::ApiParse(format!("1ステップ解析 JSONパースエラー: {}", e)))
+/// parse関数のラッパーマクロ
+///
+/// 共通パーサー関数をラップし、エラーメッセージを付与した関数を生成する
+macro_rules! wrap_parse {
+    ($fn_name:ident, $parser:path, $return_type:ty, $error_msg:expr) => {
+        fn $fn_name(response: &str) -> Result<$return_type> {
+            $parser(response)
+                .map_err(|e| PhotoAiError::ApiParse(format!("{}: {}", $error_msg, e)))
+        }
+    };
 }
+
+// マクロを使用してparse関数を生成
+wrap_parse!(parse_single_step_response, common_parse_single_step, Vec<AnalysisResult>, "1ステップ解析 JSONパースエラー");
+wrap_parse!(parse_step1_response, common_parse_step1, Vec<RawImageData>, "Step1 JSONパースエラー");
 
 // =============================================
 // CLI固有の関数
@@ -399,12 +409,6 @@ fn run_claude_cli(prompt: &str, verbose: bool) -> Result<String> {
     };
 
     run_cli_command(config)
-}
-
-/// Step1レスポンスをパース（共通パーサーをラップ）
-fn parse_step1_response(response: &str) -> Result<Vec<RawImageData>> {
-    common_parse_step1(response)
-        .map_err(|e| PhotoAiError::ApiParse(format!("Step1 JSONパースエラー: {}", e)))
 }
 
 fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMaster) {
