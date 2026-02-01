@@ -14,6 +14,13 @@ use std::path::{Path, PathBuf};
 // MasterConfig を再エクスポート
 pub use crate::analysis::MasterConfig;
 
+/// 共通CLI引数
+#[derive(Clone)]
+pub struct CommonCliArgs {
+    pub verbose: bool,
+    pub provider: AiProvider,
+}
+
 /// Analyzeコマンドの引数
 pub struct AnalyzeCommandArgs {
     pub folder: PathBuf,
@@ -26,8 +33,7 @@ pub struct AnalyzeCommandArgs {
     pub use_cache: bool,
     pub recursive: bool,
     pub include_all: bool,
-    pub verbose: bool,
-    pub provider: AiProvider,
+    pub cli_args: CommonCliArgs,
 }
 
 /// Runコマンドの引数
@@ -44,8 +50,7 @@ pub struct RunCommandArgs {
     pub use_cache: bool,
     pub recursive: bool,
     pub include_all: bool,
-    pub verbose: bool,
-    pub provider: AiProvider,
+    pub cli_args: CommonCliArgs,
 }
 
 /// Exportコマンドの引数
@@ -65,7 +70,7 @@ pub struct ReviewCommandArgs {
     pub path: PathBuf,
     pub watch: bool,
     pub model: Option<String>,
-    pub provider: AiProvider,
+    pub cli_args: CommonCliArgs,
 }
 
 /// Normalizeコマンドの引数
@@ -88,6 +93,12 @@ pub struct CacheCommandArgs {
     pub clear: bool,
     pub folder: Option<PathBuf>,
     pub info: bool,
+}
+
+/// Stationコマンドの引数
+pub struct StationCommandArgs {
+    pub input: PathBuf,
+    pub output: Option<PathBuf>,
 }
 
 /// 出力パスの解決結果
@@ -254,8 +265,8 @@ pub async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
         use_cache: args.use_cache,
         recursive: args.recursive,
         include_all: args.include_all,
-        verbose: args.verbose,
-        provider: args.provider,
+        verbose: args.cli_args.verbose,
+        provider: args.cli_args.provider,
     };
     let results = run_common_analysis(
         &params,
@@ -288,8 +299,8 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
         use_cache: args.use_cache,
         recursive: args.recursive,
         include_all: args.include_all,
-        verbose: args.verbose,
-        provider: args.provider,
+        verbose: args.cli_args.verbose,
+        provider: args.cli_args.provider,
     };
     let results = run_common_analysis(
         &params,
@@ -319,7 +330,7 @@ pub fn handle_review_command(args: ReviewCommandArgs) -> Result<()> {
     println!("🔍 photo-ai-rust - コードレビュー\n");
 
     // AIプロバイダからレビューバックエンドへ変換
-    let backend = match args.provider {
+    let backend = match args.cli_args.provider {
         AiProvider::Claude => ReviewBackend::Claude,
         AiProvider::Codex => ReviewBackend::Codex,
         AiProvider::Gemini => ReviewBackend::Gemini,
@@ -439,6 +450,15 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
     }
 
     println!("\n✅ 正規化完了");
+    Ok(())
+}
+
+/// Stationコマンドを処理
+pub fn handle_station_command(args: StationCommandArgs) -> Result<()> {
+    use crate::station;
+
+    println!("📍 photo-ai-rust - 測点入力\n");
+    station::run_interactive_station(&args.input, args.output.as_deref())?;
     Ok(())
 }
 
