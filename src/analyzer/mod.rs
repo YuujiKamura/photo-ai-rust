@@ -13,16 +13,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
 use crate::ai_provider::AiProvider;
 
-pub async fn analyze_images(
-    images: &[ImageInfo],
-    batch_size: usize,
-    verbose: bool,
-    provider: AiProvider,
-) -> Result<Vec<AnalysisResult>> {
-    let mut results = Vec::new();
-    let total_batches = images.len().div_ceil(batch_size);
-
-    // プログレスバーの設定（推定残り時間・処理速度表示）
+/// バッチ処理用のプログレスバーを作成
+fn create_batch_progress_bar(total_batches: usize) -> ProgressBar {
     let pb = ProgressBar::new(total_batches as u64);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -31,15 +23,34 @@ pub async fn analyze_images(
             .progress_chars("=>-"),
     );
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    pb
+}
 
-    // バッチに分割
+/// バッチ処理のverboseログを出力
+fn log_batch_verbose(pb: &ProgressBar, batch_idx: usize, batch_len: usize, extra_info: Option<&str>) {
+    pb.suspend(|| {
+        match extra_info {
+            Some(info) => println!("  バッチ {}: {}枚 ({})", batch_idx + 1, batch_len, info),
+            None => println!("  バッチ {}: {}枚", batch_idx + 1, batch_len),
+        }
+    });
+}
+
+pub async fn analyze_images(
+    images: &[ImageInfo],
+    batch_size: usize,
+    verbose: bool,
+    provider: AiProvider,
+) -> Result<Vec<AnalysisResult>> {
+    let mut results = Vec::new();
+    let total_batches = images.len().div_ceil(batch_size);
+    let pb = create_batch_progress_bar(total_batches);
+
     for (batch_idx, batch) in images.chunks(batch_size).enumerate() {
         pb.set_message(format!("{}枚処理中", batch.len()));
 
         if verbose {
-            pb.suspend(|| {
-                println!("  バッチ {}: {}枚", batch_idx + 1, batch.len());
-            });
+            log_batch_verbose(&pb, batch_idx, batch.len(), None);
         }
 
         let batch_results = claude_cli::analyze_batch(batch, verbose, provider).await?;
@@ -130,25 +141,13 @@ pub async fn analyze_images_single_step(
 ) -> Result<Vec<AnalysisResult>> {
     let mut results = Vec::new();
     let total_batches = images.len().div_ceil(batch_size);
+    let pb = create_batch_progress_bar(total_batches);
 
-    // プログレスバーの設定
-    let pb = ProgressBar::new(total_batches as u64);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} バッチ | 残り {eta} | {msg}")
-            .unwrap()
-            .progress_chars("=>-"),
-    );
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
-
-    // バッチに分割して1ステップ解析
     for (batch_idx, batch) in images.chunks(batch_size).enumerate() {
         pb.set_message(format!("{}枚 1ステップ解析中", batch.len()));
 
         if verbose {
-            pb.suspend(|| {
-                println!("  バッチ {}: {}枚 (1ステップ解析: {})", batch_idx + 1, batch.len(), work_type);
-            });
+            log_batch_verbose(&pb, batch_idx, batch.len(), Some(&format!("1ステップ解析: {}", work_type)));
         }
 
         let batch_results = claude_cli::analyze_batch_single_step(batch, master, work_type, variety, verbose, provider).await?;
