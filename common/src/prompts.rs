@@ -52,7 +52,7 @@ pub fn build_step1_prompt(images: &[(&str, Option<&str>)]) -> String {
     "fileName": "ファイル名",
     "hasBoard": true/false,
     "detectedText": "黒板・看板から読み取った全テキスト",
-    "measurements": "数値データ（温度、寸法、密度等）単位付き",
+    "measurements": "数値と単位のみ（例: 50mm, 160.4℃）注釈・説明不要",
     "sceneDescription": "写真に写っているものの客観的な説明",
     "photoCategory": "写真区分から選択"
   }}
@@ -149,7 +149,7 @@ pub fn build_single_step_prompt(
     "fileName": "ファイル名",
     "hasBoard": true/false,
     "detectedText": "黒板・看板から読み取った全テキスト",
-    "measurements": "数値データ（温度、寸法等）単位付き",
+    "measurements": "数値と単位のみ（例: 50mm, 160.4℃）注釈・説明不要",
     "description": "写真の説明",
     "photoCategory": "写真区分から選択",
     "station": "測点（黒板から読み取れた場合）",

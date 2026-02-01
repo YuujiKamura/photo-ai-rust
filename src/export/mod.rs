@@ -5,6 +5,7 @@ pub mod photo_xml;
 use crate::analyzer::AnalysisResult;
 use crate::cli::{ExportFormat, PdfQuality};
 use crate::error::Result;
+use photo_ai_common::export::pdf_core::embed_analysis_to_pdf;
 use std::path::Path;
 
 fn output_path_for_format(output: &Path, title: &str, extension: &str) -> std::path::PathBuf {
@@ -45,6 +46,12 @@ pub fn export_results(
             let output_path = output_path_for_format(output_dir, title, "pdf");
             println!("- PDFを生成中... (品質: {})", pdf_quality);
             pdf::generate_pdf(results, &output_path, photos_per_page, title, pdf_quality)?;
+            // 解析結果をPDFに埋め込み
+            if let Err(e) = embed_analysis_to_pdf(&output_path, results) {
+                eprintln!("警告: PDF埋め込みに失敗: {}", e);
+            } else {
+                println!("  解析結果をPDFに埋め込みました");
+            }
             println!("✔ PDF出力: {}", output_path.display());
         }
         ExportFormat::Excel => {
@@ -63,6 +70,12 @@ pub fn export_results(
 
             println!("- PDFを生成中... (品質: {})", pdf_quality);
             pdf::generate_pdf(results, &pdf_path, photos_per_page, title, pdf_quality)?;
+            // 解析結果をPDFに埋め込み
+            if let Err(e) = embed_analysis_to_pdf(&pdf_path, results) {
+                eprintln!("警告: PDF埋め込みに失敗: {}", e);
+            } else {
+                println!("  解析結果をPDFに埋め込みました");
+            }
             println!("✔ PDF出力: {}", pdf_path.display());
 
             println!("- Excelを生成中...");
