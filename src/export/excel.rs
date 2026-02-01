@@ -24,14 +24,6 @@ struct JsPhoto {
     measurements: String,
 }
 
-pub fn generate_excel(
-    results: &[AnalysisResult],
-    output_path: &Path,
-    title: &str,
-) -> Result<()> {
-    generate_excel_with_options(results, output_path, title, 3)
-}
-
 pub fn generate_excel_with_options(
     results: &[AnalysisResult],
     output_path: &Path,
