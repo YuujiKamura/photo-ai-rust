@@ -1,5 +1,5 @@
 use clap::Parser;
-use photo_ai_rust::{cli, config, error, station};
+use photo_ai_rust::{cli, config, error};
 use photo_ai_rust::commands::{
     AnalyzeCommandArgs, handle_analyze_command,
     RunCommandArgs, handle_run_command,
@@ -8,6 +8,8 @@ use photo_ai_rust::commands::{
     NormalizeCommandArgs, handle_normalize_command,
     ConfigCommandArgs, handle_config_command,
     CacheCommandArgs, handle_cache_command,
+    StationCommandArgs, handle_station_command,
+    CommonCliArgs,
 };
 use cli::{Cli, Commands};
 use config::Config;
@@ -17,6 +19,12 @@ use error::Result;
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = Config::load()?;
+
+    // 共通CLI引数を一度作成
+    let common_cli_args = CommonCliArgs {
+        verbose: cli.verbose,
+        provider: cli.ai_provider,
+    };
 
     match cli.command {
         Commands::Analyze { folder, output, batch_size, master, work_type, variety, station, use_cache, recursive, include_all } => {
@@ -31,8 +39,7 @@ async fn main() -> Result<()> {
                 use_cache,
                 recursive,
                 include_all,
-                verbose: cli.verbose,
-                provider: cli.ai_provider,
+                cli_args: common_cli_args.clone(),
             }).await?;
         }
 
@@ -63,8 +70,7 @@ async fn main() -> Result<()> {
                 use_cache,
                 recursive,
                 include_all,
-                verbose: cli.verbose,
-                provider: cli.ai_provider,
+                cli_args: common_cli_args.clone(),
             }).await?;
         }
 
@@ -77,8 +83,10 @@ async fn main() -> Result<()> {
         }
 
         Commands::Station { input, output } => {
-            println!("📍 photo-ai-rust - 測点入力\n");
-            station::run_interactive_station(&input, output.as_deref())?;
+            handle_station_command(StationCommandArgs {
+                input,
+                output,
+            })?;
         }
 
         Commands::Cache { clear, folder, info } => {
@@ -103,7 +111,7 @@ async fn main() -> Result<()> {
                 path,
                 watch,
                 model,
-                provider: cli.ai_provider,
+                cli_args: common_cli_args,
             })?;
         }
     }
