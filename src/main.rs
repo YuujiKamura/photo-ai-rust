@@ -14,6 +14,22 @@ struct MasterConfig {
     effective_work_type: Option<String>,
 }
 
+/// スキャンと解析の設定
+struct ScanAnalysisConfig<'a> {
+    folder: &'a Path,
+    batch_size: usize,
+    verbose: bool,
+    master_config: &'a MasterConfig,
+    use_cache: bool,
+    provider: AiProvider,
+    variety: Option<&'a String>,
+    station: Option<&'a String>,
+    recursive: bool,
+    include_all: bool,
+    step_prefix_scan: &'a str,
+    step_prefix_analyze: &'a str,
+}
+
 /// マスタ選択と検証を行う共通関数
 fn prepare_analysis(
     master: Option<PathBuf>,
@@ -47,49 +63,35 @@ fn prepare_analysis(
 }
 
 /// スキャンから正規化までを行う共通関数
-#[allow(clippy::too_many_arguments)]
-async fn scan_and_analyze(
-    folder: &Path,
-    batch_size: usize,
-    verbose: bool,
-    master_config: &MasterConfig,
-    use_cache: bool,
-    provider: AiProvider,
-    variety: Option<&String>,
-    station: Option<&String>,
-    recursive: bool,
-    include_all: bool,
-    step_prefix_scan: &str,
-    step_prefix_analyze: &str,
-) -> Result<Vec<analyzer::AnalysisResult>> {
+async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<analyzer::AnalysisResult>> {
     // 1. 画像スキャン
-    println!("{} 写真をスキャン中...{}", step_prefix_scan, if recursive { " (再帰)" } else { "" });
-    let images = scanner::scan_folder_full(folder, recursive, !include_all)?;
+    println!("{} 写真をスキャン中...{}", config.step_prefix_scan, if config.recursive { " (再帰)" } else { "" });
+    let images = scanner::scan_folder_full(config.folder, config.recursive, !config.include_all)?;
     println!("✔ {}枚の写真を検出\n", images.len());
 
     if images.is_empty() {
         return Err(error::PhotoAiError::NoImagesFound(
-            folder.display().to_string()
+            config.folder.display().to_string()
         ));
     }
 
     // 2. AI解析（1ステップ解析）
     let analysis_options = AnalysisOptions {
-        folder,
-        batch_size,
-        verbose,
-        master: master_config.master_path.as_deref(),
-        use_cache,
-        provider,
-        work_type: master_config.effective_work_type.as_deref(),
-        variety: variety.map(|s| s.as_str()),
-        step_prefix: step_prefix_analyze,
+        folder: config.folder,
+        batch_size: config.batch_size,
+        verbose: config.verbose,
+        master: config.master_config.master_path.as_deref(),
+        use_cache: config.use_cache,
+        provider: config.provider,
+        work_type: config.master_config.effective_work_type.as_deref(),
+        variety: config.variety.map(|s| s.as_str()),
+        step_prefix: config.step_prefix_analyze,
     };
     let mut results = run_analysis(&images, &analysis_options).await?;
     println!("✔ 解析完了\n");
 
     // 3. 測点一括適用
-    if let Some(st) = station {
+    if let Some(st) = config.station {
         println!("  測点を一括適用: {}", st);
         apply_station(&mut results, st);
     }
@@ -98,7 +100,7 @@ async fn scan_and_analyze(
     let norm_options = NormalizationOptions::default();
     let norm_result = normalizer::normalize_results(&results, &norm_options);
     if !norm_result.corrections.is_empty() {
-        if verbose {
+        if config.verbose {
             println!("  計測値統一: {}件", norm_result.stats.measurement_corrections);
             for c in &norm_result.corrections {
                 println!("    {} → {} ({})", c.file_name, c.corrected, c.reason);
@@ -235,20 +237,21 @@ async fn main() -> Result<()> {
             let master_config = prepare_analysis(master, work_type, variety.as_ref())?;
 
             // スキャンから正規化まで
-            let results = scan_and_analyze(
-                &folder,
+            let scan_config = ScanAnalysisConfig {
+                folder: &folder,
                 batch_size,
-                cli.verbose,
-                &master_config,
+                verbose: cli.verbose,
+                master_config: &master_config,
                 use_cache,
-                cli.ai_provider,
-                variety.as_ref(),
-                station.as_ref(),
+                provider: cli.ai_provider,
+                variety: variety.as_ref(),
+                station: station.as_ref(),
                 recursive,
                 include_all,
-                "[1/3]",
-                "[2/3]",
-            ).await?;
+                step_prefix_scan: "[1/3]",
+                step_prefix_analyze: "[2/3]",
+            };
+            let results = scan_and_analyze(&scan_config).await?;
 
             // 3. 結果保存
             println!("[3/3] 結果を保存中...");
@@ -304,20 +307,21 @@ async fn main() -> Result<()> {
             let master_config = prepare_analysis(master, work_type, variety.as_ref())?;
 
             // スキャンから正規化まで
-            let results = scan_and_analyze(
-                &folder,
+            let scan_config = ScanAnalysisConfig {
+                folder: &folder,
                 batch_size,
-                cli.verbose,
-                &master_config,
+                verbose: cli.verbose,
+                master_config: &master_config,
                 use_cache,
-                cli.ai_provider,
-                variety.as_ref(),
-                station.as_ref(),
+                provider: cli.ai_provider,
+                variety: variety.as_ref(),
+                station: station.as_ref(),
                 recursive,
                 include_all,
-                "[1/4]",
-                "[2/4]",
-            ).await?;
+                step_prefix_scan: "[1/4]",
+                step_prefix_analyze: "[2/4]",
+            };
+            let results = scan_and_analyze(&scan_config).await?;
 
             // 3. 結果保存
             // output がファイルパス(.pdf等)の場合、result.json は入力フォルダに保存
