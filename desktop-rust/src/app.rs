@@ -10,6 +10,8 @@ use image::ImageReader;
 use crate::io::{default_sorted_path, load_result_items, save_sorted_items};
 use crate::model::{AppState, ResultItem};
 use photo_ai_common::layout::LAYOUT_FIELDS;
+use photo_ai_common::prompts::build_step1_prompt;
+use cli_ai_analyzer::{analyze, AnalyzeOptions, Backend};
 
 const DETAIL_FIELDS: &[(&str, &str)] = &[
     ("file_name", "File Name"),
@@ -58,7 +60,7 @@ enum ExportFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AnalyzeProvider {
     Claude,
-    Codex,
+    Gemini,
 }
 
 enum UiMessage {
@@ -408,49 +410,27 @@ impl DesktopApp {
             return;
         };
 
-        let provider = match self.analyze_provider {
-            AnalyzeProvider::Claude => "claude",
-            AnalyzeProvider::Codex => "codex",
+        let backend = match self.analyze_provider {
+            AnalyzeProvider::Claude => Backend::Claude,
+            AnalyzeProvider::Gemini => Backend::Gemini,
         };
 
-        let cli = resolve_cli_binary();
-        let batch_arg = self.analyze_batch_size.to_string();
+        let batch_size = self.analyze_batch_size;
         let (tx, rx) = mpsc::channel();
         self.analyze_rx = Some(rx);
         self.analyzing = true;
         self.analyze_status = "Analyze running...".to_string();
 
         std::thread::spawn(move || {
-            let result = std::process::Command::new(cli)
-                .args([
-                    "analyze",
-                    folder.to_string_lossy().as_ref(),
-                    "--output",
-                    output.to_string_lossy().as_ref(),
-                    "--batch-size",
-                    batch_arg.as_str(),
-                    "--ai-provider",
-                    provider,
-                ])
-                .output();
-
-            let message = match result {
-                Ok(out) if out.status.success() => UiMessage::AnalyzeDone {
+            let message = match run_analyze_with_library(&folder, &output, batch_size, backend) {
+                Ok(_) => UiMessage::AnalyzeDone {
                     ok: true,
                     message: "Analyze complete".to_string(),
                     output: Some(output),
                 },
-                Ok(out) => {
-                    let stderr = String::from_utf8_lossy(&out.stderr);
-                    UiMessage::AnalyzeDone {
-                        ok: false,
-                        message: format!("Analyze failed: {}", stderr.trim()),
-                        output: None,
-                    }
-                }
                 Err(err) => UiMessage::AnalyzeDone {
                     ok: false,
-                    message: format!("Analyze failed: {err}"),
+                    message: format!("Analyze failed: {}", err),
                     output: None,
                 },
             };
@@ -581,7 +561,7 @@ impl eframe::App for DesktopApp {
                         ui.add(egui::DragValue::new(&mut self.analyze_batch_size).clamp_range(1..=50));
                     });
                     ui.radio_value(&mut self.analyze_provider, AnalyzeProvider::Claude, "Claude");
-                    ui.radio_value(&mut self.analyze_provider, AnalyzeProvider::Codex, "Codex");
+                    ui.radio_value(&mut self.analyze_provider, AnalyzeProvider::Gemini, "Gemini");
                     if ui.add_enabled(!self.analyzing, egui::Button::new("Run Analyze")).clicked() {
                         self.run_analyze();
                         ui.close_menu();
@@ -638,6 +618,121 @@ impl eframe::App for DesktopApp {
             });
         });
     }
+}
+
+/// Image extensions supported for analysis
+const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "JPG", "JPEG", "PNG"];
+
+/// Scan folder for images
+fn scan_images(folder: &Path) -> Result<Vec<(PathBuf, String)>> {
+    let mut images = Vec::new();
+
+    for entry in std::fs::read_dir(folder)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if !path.is_file() {
+            continue;
+        }
+
+        if let Some(ext) = path.extension() {
+            let ext_str = ext.to_string_lossy();
+            if IMAGE_EXTENSIONS.iter().any(|&e| e == ext_str.as_ref()) {
+                let file_name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                images.push((path, file_name));
+            }
+        }
+    }
+
+    // Sort by filename
+    images.sort_by(|a, b| a.1.cmp(&b.1));
+    Ok(images)
+}
+
+/// Run analyze using cli_ai_analyzer library
+fn run_analyze_with_library(
+    folder: &Path,
+    output: &Path,
+    batch_size: usize,
+    backend: Backend,
+) -> Result<()> {
+    // Scan images in the folder
+    let images = scan_images(folder)?;
+
+    if images.is_empty() {
+        return Err(anyhow::anyhow!("No images found in folder"));
+    }
+
+    let mut all_results: Vec<photo_ai_common::AnalysisResult> = Vec::new();
+
+    // Process in batches
+    for batch in images.chunks(batch_size) {
+        // Build image metadata for prompt
+        let image_meta: Vec<(&str, Option<&str>)> = batch
+            .iter()
+            .map(|(_, name)| (name.as_str(), None::<&str>))
+            .collect();
+
+        // Generate prompt using common crate
+        let prompt = build_step1_prompt(&image_meta);
+
+        // Collect file paths for this batch
+        let file_paths: Vec<PathBuf> = batch.iter().map(|(p, _)| p.clone()).collect();
+
+        // Build the full prompt with image file references
+        let image_list = file_paths
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let full_prompt = format!(
+            "Read the following image files and analyze them: {}\n\n{}",
+            image_list, prompt
+        );
+
+        // Call cli_ai_analyzer
+        let options = AnalyzeOptions::default().with_backend(backend);
+        let response = analyze(&full_prompt, &file_paths, options)?;
+
+        // Parse response using common parser
+        let raw_results = photo_ai_common::parse_step1_response(&response)
+            .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+
+        // Convert RawImageData to AnalysisResult
+        let file_map: HashMap<&str, &PathBuf> = batch
+            .iter()
+            .map(|(p, name)| (name.as_str(), p))
+            .collect();
+
+        for raw in raw_results {
+            let file_path = file_map
+                .get(raw.file_name.as_str())
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+
+            all_results.push(photo_ai_common::AnalysisResult {
+                file_name: raw.file_name,
+                file_path,
+                date: String::new(),
+                has_board: raw.has_board,
+                detected_text: raw.detected_text,
+                measurements: raw.measurements,
+                description: raw.scene_description,
+                photo_category: raw.photo_category,
+                ..Default::default()
+            });
+        }
+    }
+
+    // Save results as JSON
+    let json = serde_json::to_string_pretty(&all_results)?;
+    std::fs::write(output, json)?;
+
+    Ok(())
 }
 
 fn resolve_cli_binary() -> PathBuf {

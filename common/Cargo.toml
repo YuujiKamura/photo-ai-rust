@@ -10,6 +10,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 rust_xlsxwriter = { version = "0.92", optional = true }
+pdf-analysis-embed = { path = "../../pdf-analysis-embed" }
 
 [features]
 default = ["excel"]
