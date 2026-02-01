@@ -204,6 +204,21 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// ソースコードをAIでレビュー
+    Review {
+        /// レビュー対象のファイルまたはフォルダ
+        #[arg(required = true)]
+        path: PathBuf,
+
+        /// ファイル監視モード（変更時に自動レビュー）
+        #[arg(short, long)]
+        watch: bool,
+
+        /// AIモデル指定（プロバイダに依存）
+        #[arg(short, long)]
+        model: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
