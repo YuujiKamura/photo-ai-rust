@@ -10,6 +10,9 @@ description = "工事写真AI解析・写真台帳生成ツール"
 license = "MIT"
 
 [dependencies]
+# PDF解析・埋め込みライブラリ
+pdf-analysis-embed = { path = "../pdf-analysis-embed" }
+
 # 共通ライブラリ
 photo-ai-common = { path = "common" }
 # CLI
