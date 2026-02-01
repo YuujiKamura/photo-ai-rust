@@ -1,11 +1,13 @@
 use clap::Parser;
-use photo_ai_rust::{cli, config, error, analyzer, station};
+use photo_ai_rust::{cli, config, error, station};
 use photo_ai_rust::commands::{
     AnalyzeCommandArgs, handle_analyze_command,
     RunCommandArgs, handle_run_command,
     ExportCommandArgs, handle_export_command,
     ReviewCommandArgs, handle_review_command,
     NormalizeCommandArgs, handle_normalize_command,
+    ConfigCommandArgs, handle_config_command,
+    CacheCommandArgs, handle_cache_command,
 };
 use cli::{Cli, Commands};
 use config::Config;
@@ -67,20 +69,11 @@ async fn main() -> Result<()> {
         }
 
         Commands::Config { set_api_key, show } => {
-            let mut config = config;
-
-            if let Some(key) = set_api_key {
-                config.set_api_key(key)?;
-                println!("✔ APIキーを設定しました");
-            }
-
-            if show {
-                println!("設定:");
-                println!("  モデル: {}", config.model);
-                println!("  最大画像サイズ: {}px", config.max_image_size);
-                println!("  バッチサイズ: {}", config.default_batch_size);
-                println!("  APIキー: {}", if config.api_key.is_some() { "設定済み" } else { "未設定" });
-            }
+            handle_config_command(ConfigCommandArgs {
+                set_api_key,
+                show,
+                config,
+            })?;
         }
 
         Commands::Station { input, output } => {
@@ -89,31 +82,11 @@ async fn main() -> Result<()> {
         }
 
         Commands::Cache { clear, folder, info } => {
-            let target = folder.unwrap_or_else(|| std::path::PathBuf::from("."));
-            let cache_path = analyzer::CacheFile::cache_path(&target);
-
-            if info || !clear {
-                // デフォルトまたは--info: 情報表示
-                if cache_path.exists() {
-                    let cache = analyzer::CacheFile::load(&target);
-                    println!("キャッシュ情報:");
-                    println!("  パス: {}", cache_path.display());
-                    println!("  件数: {}", cache.len());
-                    if let Ok(meta) = std::fs::metadata(&cache_path) {
-                        println!("  サイズ: {} bytes", meta.len());
-                    }
-                } else {
-                    println!("キャッシュファイルが存在しません: {}", cache_path.display());
-                }
-            }
-
-            if clear {
-                match analyzer::CacheFile::clear(&target) {
-                    Ok(true) => println!("✔ キャッシュを削除しました: {}", cache_path.display()),
-                    Ok(false) => println!("キャッシュファイルが存在しません"),
-                    Err(e) => println!("キャッシュ削除エラー: {}", e),
-                }
-            }
+            handle_cache_command(CacheCommandArgs {
+                clear,
+                folder,
+                info,
+            });
         }
 
         Commands::Normalize { input, output, station, dry_run } => {
