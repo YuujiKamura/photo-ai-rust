@@ -48,6 +48,9 @@ pub enum PhotoAiError {
     #[error("CLI実行エラー: {0}")]
     CliExecution(String),
 
+    #[error("コードレビューエラー: {0}")]
+    CodeReview(String),
+
     #[error(transparent)]
     Common(#[from] photo_ai_common::Error),
 }

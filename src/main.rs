@@ -1,5 +1,6 @@
 use clap::Parser;
 use photo_ai_rust::{ai_provider::AiProvider, cli, config, error, scanner, analyzer, matcher, export, station, master_selector};
+use photo_ai_rust::normalizer::{self, NormalizationOptions};
 use cli::{Cli, Commands};
 use config::Config;
 use error::Result;
@@ -7,43 +8,158 @@ use photo_ai_common::HierarchyMaster;
 use std::path::{Path, PathBuf};
 use ai_code_review::{CodeReviewer, Backend as ReviewBackend};
 
-/// AI解析を実行（1ステップ解析優先）
+/// マスタ選択結果
+struct MasterConfig {
+    master_path: Option<PathBuf>,
+    effective_work_type: Option<String>,
+}
+
+/// マスタ選択と検証を行う共通関数
+fn prepare_analysis(
+    master: Option<PathBuf>,
+    work_type: Option<String>,
+    variety: Option<&String>,
+) -> Result<MasterConfig> {
+    // マスタ選択（対話式または引数から）
+    let has_master_arg = master.is_some();
+    let selection = resolve_master_path(master, !has_master_arg && work_type.is_none());
+
+    // work_type: CLI引数優先、なければ選択結果から
+    let effective_work_type = work_type.or_else(|| selection.as_ref().and_then(|s| s.work_type.clone()));
+    let master_path = selection.map(|s| s.path);
+
+    // 検証
+    if variety.is_some() && effective_work_type.is_none() {
+        return Err(error::PhotoAiError::InvalidMaster(
+            "variety指定にはwork_typeが必要です".to_string(),
+        ));
+    }
+    if effective_work_type.is_some() && master_path.is_none() {
+        return Err(error::PhotoAiError::MasterLoad(
+            "work_type指定にはマスタが必要です".to_string(),
+        ));
+    }
+
+    Ok(MasterConfig {
+        master_path,
+        effective_work_type,
+    })
+}
+
+/// スキャンから正規化までを行う共通関数
 #[allow(clippy::too_many_arguments)]
-async fn run_analysis(
-    images: &[scanner::ImageInfo],
+async fn scan_and_analyze(
     folder: &Path,
     batch_size: usize,
     verbose: bool,
-    master: Option<&Path>,
+    master_config: &MasterConfig,
     use_cache: bool,
     provider: AiProvider,
-    work_type: Option<&str>,
-    variety: Option<&str>,
-    _station: Option<&str>,
-    step_prefix: &str,
+    variety: Option<&String>,
+    station: Option<&String>,
+    recursive: bool,
+    include_all: bool,
+    step_prefix_scan: &str,
+    step_prefix_analyze: &str,
+) -> Result<Vec<analyzer::AnalysisResult>> {
+    // 1. 画像スキャン
+    println!("{} 写真をスキャン中...{}", step_prefix_scan, if recursive { " (再帰)" } else { "" });
+    let images = scanner::scan_folder_full(folder, recursive, !include_all)?;
+    println!("✔ {}枚の写真を検出\n", images.len());
+
+    if images.is_empty() {
+        return Err(error::PhotoAiError::NoImagesFound(
+            folder.display().to_string()
+        ));
+    }
+
+    // 2. AI解析（1ステップ解析）
+    let analysis_options = AnalysisOptions {
+        folder,
+        batch_size,
+        verbose,
+        master: master_config.master_path.as_deref(),
+        use_cache,
+        provider,
+        work_type: master_config.effective_work_type.as_deref(),
+        variety: variety.map(|s| s.as_str()),
+        step_prefix: step_prefix_analyze,
+    };
+    let mut results = run_analysis(&images, &analysis_options).await?;
+    println!("✔ 解析完了\n");
+
+    // 3. 測点一括適用
+    if let Some(st) = station {
+        println!("  測点を一括適用: {}", st);
+        apply_station(&mut results, st);
+    }
+
+    // 4. 正規化（3枚セット内で黒板アップの値に統一）
+    let norm_options = NormalizationOptions::default();
+    let norm_result = normalizer::normalize_results(&results, &norm_options);
+    if !norm_result.corrections.is_empty() {
+        if verbose {
+            println!("  計測値統一: {}件", norm_result.stats.measurement_corrections);
+            for c in &norm_result.corrections {
+                println!("    {} → {} ({})", c.file_name, c.corrected, c.reason);
+            }
+        }
+        normalizer::apply_corrections(&mut results, &norm_result.corrections);
+    }
+
+    Ok(results)
+}
+
+/// 工種に対応するマスタファイルのパスを解決する
+///
+/// 優先順位:
+/// 1. 明示的に指定されたマスタパス
+/// 2. 工種別マスタ (master/by_work_type/{work_type}.csv)
+/// 3. デフォルトマスタ (master/construction_hierarchy.csv)
+fn resolve_master_for_work_type(master: Option<&Path>, work_type: &str) -> Result<PathBuf> {
+    if let Some(mp) = master {
+        return Ok(mp.to_path_buf());
+    }
+
+    // 工種別マスタを自動選択
+    let by_work_type = PathBuf::from("master/by_work_type").join(format!("{}.csv", work_type));
+    if by_work_type.exists() {
+        return Ok(by_work_type);
+    }
+
+    // デフォルトマスタ
+    let default = PathBuf::from("master/construction_hierarchy.csv");
+    if default.exists() {
+        return Ok(default);
+    }
+
+    Err(error::PhotoAiError::MasterLoad("マスタファイルが見つかりません".to_string()))
+}
+
+/// AI解析のオプション
+struct AnalysisOptions<'a> {
+    folder: &'a Path,
+    batch_size: usize,
+    verbose: bool,
+    master: Option<&'a Path>,
+    use_cache: bool,
+    provider: AiProvider,
+    work_type: Option<&'a str>,
+    variety: Option<&'a str>,
+    step_prefix: &'a str,
+}
+
+/// AI解析を実行（1ステップ解析優先）
+async fn run_analysis(
+    images: &[scanner::ImageInfo],
+    options: &AnalysisOptions<'_>,
 ) -> Result<Vec<analyzer::AnalysisResult>> {
     // 工種指定時は1ステップ解析（推奨）
-    if let Some(wt) = work_type {
+    if let Some(wt) = options.work_type {
         // マスタパスを決定
-        let master_path_buf: PathBuf = if let Some(mp) = master {
-            mp.to_path_buf()
-        } else {
-            // 工種別マスタを自動選択
-            let by_work_type = PathBuf::from("master/by_work_type").join(format!("{}.csv", wt));
-            if by_work_type.exists() {
-                by_work_type
-            } else {
-                // デフォルトマスタ
-                let default = PathBuf::from("master/construction_hierarchy.csv");
-                if default.exists() {
-                    default
-                } else {
-                    return Err(error::PhotoAiError::MasterLoad("マスタファイルが見つかりません".to_string()));
-                }
-            }
-        };
+        let master_path_buf = resolve_master_for_work_type(options.master, wt)?;
 
-        println!("{} 1ステップ解析中 (工種: {})...", step_prefix, wt);
+        println!("{} 1ステップ解析中 (工種: {})...", options.step_prefix, wt);
         let hierarchy = HierarchyMaster::from_csv(&master_path_buf)
             .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
 
@@ -55,23 +171,23 @@ async fn run_analysis(
             images,
             &filtered,
             wt,
-            variety,
-            batch_size,
-            verbose,
-            provider,
+            options.variety,
+            options.batch_size,
+            options.verbose,
+            options.provider,
         ).await;
     }
 
     // 工種未指定の場合はキャッシュまたは基本解析
     // ※2ステップ解析は廃止（API消費が多いため）
-    if use_cache {
-        println!("{} AI解析中... (キャッシュ有効)", step_prefix);
+    if options.use_cache {
+        println!("{} AI解析中... (キャッシュ有効)", options.step_prefix);
         println!("  ⚠ 工種未指定: --work-type で指定すると精度向上");
-        analyzer::analyze_images_with_cache(images, folder, batch_size, verbose, provider).await
+        analyzer::analyze_images_with_cache(images, options.folder, options.batch_size, options.verbose, options.provider).await
     } else {
-        println!("{} AI解析中...", step_prefix);
+        println!("{} AI解析中...", options.step_prefix);
         println!("  ⚠ 工種未指定: --work-type で指定すると精度向上");
-        analyzer::analyze_images(images, batch_size, verbose, provider).await
+        analyzer::analyze_images(images, options.batch_size, options.verbose, options.provider).await
     }
 }
 
@@ -115,72 +231,24 @@ async fn main() -> Result<()> {
         Commands::Analyze { folder, output, batch_size, master, work_type, variety, station, use_cache, recursive, include_all } => {
             println!("📸 photo-ai-rust - 写真解析\n");
 
-            // マスタ選択（対話式または引数から）
-            let has_master_arg = master.is_some();
-            let selection = resolve_master_path(master, !has_master_arg && work_type.is_none());
+            // マスタ選択と検証
+            let master_config = prepare_analysis(master, work_type, variety.as_ref())?;
 
-            // work_type: CLI引数優先、なければ選択結果から
-            let effective_work_type = work_type.or_else(|| selection.as_ref().and_then(|s| s.work_type.clone()));
-            let master_path = selection.map(|s| s.path);
-            if variety.is_some() && effective_work_type.is_none() {
-                return Err(error::PhotoAiError::InvalidMaster(
-                    "variety指定にはwork_typeが必要です".to_string(),
-                ));
-            }
-            if effective_work_type.is_some() && master_path.is_none() {
-                return Err(error::PhotoAiError::MasterLoad(
-                    "work_type指定にはマスタが必要です".to_string(),
-                ));
-            }
-
-            // 1. 画像スキャン
-            println!("[1/3] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
-            let images = scanner::scan_folder_full(&folder, recursive, !include_all)?;
-            println!("✔ {}枚の写真を検出\n", images.len());
-
-            if images.is_empty() {
-                return Err(error::PhotoAiError::NoImagesFound(
-                    folder.display().to_string()
-                ));
-            }
-
-            // 2. AI解析（1ステップ解析）
-            let mut results = run_analysis(
-                &images,
+            // スキャンから正規化まで
+            let results = scan_and_analyze(
                 &folder,
                 batch_size,
                 cli.verbose,
-                master_path.as_deref(),
+                &master_config,
                 use_cache,
                 cli.ai_provider,
-                effective_work_type.as_deref(),
-                variety.as_deref(),
-                station.as_deref(),
+                variety.as_ref(),
+                station.as_ref(),
+                recursive,
+                include_all,
+                "[1/3]",
                 "[2/3]",
             ).await?;
-            println!("✔ 解析完了\n");
-
-            // 測点一括適用
-            if let Some(ref st) = station {
-                println!("  測点を一括適用: {}", st);
-                apply_station(&mut results, st);
-            }
-
-            // 正規化（3枚セット内で黒板アップの値に統一）
-            {
-                use photo_ai_rust::normalizer::{self, NormalizationOptions};
-                let options = NormalizationOptions::default();
-                let norm_result = normalizer::normalize_results(&results, &options);
-                if !norm_result.corrections.is_empty() {
-                    if cli.verbose {
-                        println!("  計測値統一: {}件", norm_result.stats.measurement_corrections);
-                        for c in &norm_result.corrections {
-                            println!("    {} → {} ({})", c.file_name, c.corrected, c.reason);
-                        }
-                    }
-                    normalizer::apply_corrections(&mut results, &norm_result.corrections);
-                }
-            }
 
             // 3. 結果保存
             println!("[3/3] 結果を保存中...");
@@ -232,72 +300,24 @@ async fn main() -> Result<()> {
         Commands::Run { folder, output, format, batch_size, master, work_type, variety, station, pdf_quality, use_cache, recursive, include_all } => {
             println!("🚀 photo-ai-rust - 一括処理\n");
 
-            // マスタ選択（対話式または引数から）
-            let has_master_arg = master.is_some();
-            let selection = resolve_master_path(master, !has_master_arg && work_type.is_none());
+            // マスタ選択と検証
+            let master_config = prepare_analysis(master, work_type, variety.as_ref())?;
 
-            // work_type: CLI引数優先、なければ選択結果から
-            let effective_work_type = work_type.or_else(|| selection.as_ref().and_then(|s| s.work_type.clone()));
-            let master_path = selection.map(|s| s.path);
-            if variety.is_some() && effective_work_type.is_none() {
-                return Err(error::PhotoAiError::InvalidMaster(
-                    "variety指定にはwork_typeが必要です".to_string(),
-                ));
-            }
-            if effective_work_type.is_some() && master_path.is_none() {
-                return Err(error::PhotoAiError::MasterLoad(
-                    "work_type指定にはマスタが必要です".to_string(),
-                ));
-            }
-
-            // 1. Scan
-            println!("[1/4] 写真をスキャン中...{}", if recursive { " (再帰)" } else { "" });
-            let images = scanner::scan_folder_full(&folder, recursive, !include_all)?;
-            println!("✔ {}枚の写真を検出\n", images.len());
-
-            if images.is_empty() {
-                return Err(error::PhotoAiError::NoImagesFound(
-                    folder.display().to_string()
-                ));
-            }
-
-            // 2. AI解析（1ステップ解析）
-            let mut results = run_analysis(
-                &images,
+            // スキャンから正規化まで
+            let results = scan_and_analyze(
                 &folder,
                 batch_size,
                 cli.verbose,
-                master_path.as_deref(),
+                &master_config,
                 use_cache,
                 cli.ai_provider,
-                effective_work_type.as_deref(),
-                variety.as_deref(),
-                station.as_deref(),
+                variety.as_ref(),
+                station.as_ref(),
+                recursive,
+                include_all,
+                "[1/4]",
                 "[2/4]",
             ).await?;
-            println!("✔ 解析完了\n");
-
-            // 測点一括適用
-            if let Some(ref st) = station {
-                println!("  測点を一括適用: {}", st);
-                apply_station(&mut results, st);
-            }
-
-            // 正規化（3枚セット内で黒板アップの値に統一）
-            {
-                use photo_ai_rust::normalizer::{self, NormalizationOptions};
-                let options = NormalizationOptions::default();
-                let norm_result = normalizer::normalize_results(&results, &options);
-                if !norm_result.corrections.is_empty() {
-                    if cli.verbose {
-                        println!("  計測値統一: {}件", norm_result.stats.measurement_corrections);
-                        for c in &norm_result.corrections {
-                            println!("    {} → {} ({})", c.file_name, c.corrected, c.reason);
-                        }
-                    }
-                    normalizer::apply_corrections(&mut results, &norm_result.corrections);
-                }
-            }
 
             // 3. 結果保存
             // output がファイルパス(.pdf等)の場合、result.json は入力フォルダに保存
@@ -377,8 +397,6 @@ async fn main() -> Result<()> {
         }
 
         Commands::Normalize { input, output, station, dry_run } => {
-            use photo_ai_rust::normalizer::{self, NormalizationOptions};
-
             println!("🔧 photo-ai-rust - 正規化\n");
 
             // JSONを読み込み
@@ -453,7 +471,7 @@ async fn main() -> Result<()> {
             };
 
             let reviewer = CodeReviewer::new(&base_dir)
-                .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?
+                .map_err(|e| error::PhotoAiError::CodeReview(e.to_string()))?
                 .with_backend(backend);
 
             let mut reviewer = if let Some(ref m) = model {
@@ -465,11 +483,11 @@ async fn main() -> Result<()> {
             if watch {
                 println!("👀 ファイル監視中... (Ctrl+C で終了)\n");
                 reviewer.start()
-                    .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+                    .map_err(|e| error::PhotoAiError::CodeReview(e.to_string()))?;
             } else if let Some(ref file) = target_file {
                 // 単発ファイルレビュー
                 let result = reviewer.review_file(file)
-                    .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+                    .map_err(|e| error::PhotoAiError::CodeReview(e.to_string()))?;
 
                 println!("=== {} ===", result.path.display());
                 println!("重要度: {:?}\n", result.severity);
