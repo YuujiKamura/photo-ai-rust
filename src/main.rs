@@ -1,17 +1,7 @@
 use clap::Parser;
 use photo_ai_rust::{cli, config, error};
-use photo_ai_rust::commands::{
-    AnalyzeCommandArgs, handle_analyze_command,
-    RunCommandArgs, handle_run_command,
-    ExportCommandArgs, handle_export_command,
-    ReviewCommandArgs, handle_review_command,
-    NormalizeCommandArgs, handle_normalize_command,
-    ConfigCommandArgs, handle_config_command,
-    CacheCommandArgs, handle_cache_command,
-    StationCommandArgs, handle_station_command,
-    CommonCliArgs,
-};
-use cli::{Cli, Commands};
+use photo_ai_rust::commands::CommonCliArgs;
+use cli::Cli;
 use config::Config;
 use error::Result;
 
@@ -19,102 +9,9 @@ use error::Result;
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = Config::load()?;
-
-    // 共通CLI引数を一度作成
     let common_cli_args = CommonCliArgs {
         verbose: cli.verbose,
         provider: cli.ai_provider,
     };
-
-    match cli.command {
-        Commands::Analyze { folder, output, batch_size, master, work_type, variety, station, use_cache, recursive, include_all } => {
-            handle_analyze_command(AnalyzeCommandArgs {
-                folder,
-                output,
-                batch_size,
-                master,
-                work_type,
-                variety,
-                station,
-                use_cache,
-                recursive,
-                include_all,
-                cli_args: common_cli_args.clone(),
-            }).await?;
-        }
-
-        Commands::Export { input, format, output, photos_per_page, title, pdf_quality, preset, alias } => {
-            handle_export_command(ExportCommandArgs {
-                input,
-                format,
-                output,
-                photos_per_page,
-                title,
-                pdf_quality,
-                preset,
-                alias,
-            })?;
-        }
-
-        Commands::Run { folder, output, format, batch_size, master, work_type, variety, station, pdf_quality, use_cache, recursive, include_all } => {
-            handle_run_command(RunCommandArgs {
-                folder,
-                output,
-                format,
-                batch_size,
-                master,
-                work_type,
-                variety,
-                station,
-                pdf_quality,
-                use_cache,
-                recursive,
-                include_all,
-                cli_args: common_cli_args.clone(),
-            }).await?;
-        }
-
-        Commands::Config { set_api_key, show } => {
-            handle_config_command(ConfigCommandArgs {
-                set_api_key,
-                show,
-                config,
-            })?;
-        }
-
-        Commands::Station { input, output } => {
-            handle_station_command(StationCommandArgs {
-                input,
-                output,
-            })?;
-        }
-
-        Commands::Cache { clear, folder, info } => {
-            handle_cache_command(CacheCommandArgs {
-                clear,
-                folder,
-                info,
-            });
-        }
-
-        Commands::Normalize { input, output, station, dry_run } => {
-            handle_normalize_command(NormalizeCommandArgs {
-                input,
-                output,
-                station,
-                dry_run,
-            })?;
-        }
-
-        Commands::Review { path, watch, model } => {
-            handle_review_command(ReviewCommandArgs {
-                path,
-                watch,
-                model,
-                cli_args: common_cli_args,
-            })?;
-        }
-    }
-
-    Ok(())
+    cli.command.execute(&common_cli_args, config).await
 }
