@@ -9,3 +9,5 @@ pub mod export;
 pub mod station;
 pub mod master_selector;
 pub mod normalizer;
+pub mod analysis;
+pub mod commands;
