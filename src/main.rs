@@ -1,7 +1,7 @@
 use clap::Parser;
 use photo_ai_rust::{ai_provider::AiProvider, cli, config, error, scanner, analyzer, matcher, export, station, master_selector};
 use photo_ai_rust::normalizer::{self, NormalizationOptions};
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, ExportFormat, PdfQuality};
 use config::Config;
 use error::Result;
 use photo_ai_common::HierarchyMaster;
@@ -62,18 +62,75 @@ fn prepare_analysis(
     })
 }
 
-/// スキャンから正規化までを行う共通関数
-async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<analyzer::AnalysisResult>> {
-    // 1. 画像スキャン
-    println!("{} 写真をスキャン中...{}", config.step_prefix_scan, if config.recursive { " (再帰)" } else { "" });
-    let images = scanner::scan_folder_full(config.folder, config.recursive, !config.include_all)?;
+/// 画像スキャンのみを実行
+///
+/// # Arguments
+/// * `folder` - スキャン対象フォルダ
+/// * `recursive` - 再帰スキャンするか
+/// * `include_all` - 全ファイルを含めるか（falseの場合はJPEG/PNGのみ）
+/// * `step_prefix` - ステップ表示用プレフィックス（例: "[1/3]"）
+///
+/// # Returns
+/// スキャンされた画像情報のベクタ
+fn scan_images(
+    folder: &Path,
+    recursive: bool,
+    include_all: bool,
+    step_prefix: &str,
+) -> Result<Vec<scanner::ImageInfo>> {
+    println!("{} 写真をスキャン中...{}", step_prefix, if recursive { " (再帰)" } else { "" });
+    let images = scanner::scan_folder_full(folder, recursive, !include_all)?;
     println!("✔ {}枚の写真を検出\n", images.len());
 
     if images.is_empty() {
         return Err(error::PhotoAiError::NoImagesFound(
-            config.folder.display().to_string()
+            folder.display().to_string()
         ));
     }
+
+    Ok(images)
+}
+
+/// 測点適用と正規化を実行
+///
+/// # Arguments
+/// * `results` - 解析結果（変更される）
+/// * `station` - 適用する測点（Noneの場合はスキップ）
+/// * `verbose` - 詳細出力するか
+fn normalize_results_with_station(
+    results: &mut Vec<analyzer::AnalysisResult>,
+    station: Option<&str>,
+    verbose: bool,
+) {
+    // 測点一括適用
+    if let Some(st) = station {
+        println!("  測点を一括適用: {}", st);
+        apply_station(results, st);
+    }
+
+    // 正規化（3枚セット内で黒板アップの値に統一）
+    let norm_options = NormalizationOptions::default();
+    let norm_result = normalizer::normalize_results(results, &norm_options);
+    if !norm_result.corrections.is_empty() {
+        if verbose {
+            println!("  計測値統一: {}件", norm_result.stats.measurement_corrections);
+            for c in &norm_result.corrections {
+                println!("    {} → {} ({})", c.file_name, c.corrected, c.reason);
+            }
+        }
+        normalizer::apply_corrections(results, &norm_result.corrections);
+    }
+}
+
+/// スキャンから正規化までを行う共通関数
+async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<analyzer::AnalysisResult>> {
+    // 1. 画像スキャン
+    let images = scan_images(
+        config.folder,
+        config.recursive,
+        config.include_all,
+        config.step_prefix_scan,
+    )?;
 
     // 2. AI解析（1ステップ解析）
     let analysis_options = AnalysisOptions {
@@ -90,24 +147,12 @@ async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<analyze
     let mut results = run_analysis(&images, &analysis_options).await?;
     println!("✔ 解析完了\n");
 
-    // 3. 測点一括適用
-    if let Some(st) = config.station {
-        println!("  測点を一括適用: {}", st);
-        apply_station(&mut results, st);
-    }
-
-    // 4. 正規化（3枚セット内で黒板アップの値に統一）
-    let norm_options = NormalizationOptions::default();
-    let norm_result = normalizer::normalize_results(&results, &norm_options);
-    if !norm_result.corrections.is_empty() {
-        if config.verbose {
-            println!("  計測値統一: {}件", norm_result.stats.measurement_corrections);
-            for c in &norm_result.corrections {
-                println!("    {} → {} ({})", c.file_name, c.corrected, c.reason);
-            }
-        }
-        normalizer::apply_corrections(&mut results, &norm_result.corrections);
-    }
+    // 3. 測点適用と正規化
+    normalize_results_with_station(
+        &mut results,
+        config.station.map(|s| s.as_str()),
+        config.verbose,
+    );
 
     Ok(results)
 }
@@ -200,6 +245,152 @@ fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
     }
 }
 
+/// 出力パスの解決結果
+struct OutputPaths {
+    /// result.json を保存するディレクトリ
+    json_dir: PathBuf,
+    /// エクスポート先パス
+    export_path: PathBuf,
+}
+
+/// 出力パスを解決する
+///
+/// output がファイルパス(.pdf等)の場合、result.json は入力フォルダに保存
+/// output がディレクトリの場合、両方とも指定ディレクトリに保存
+/// output が未指定の場合、両方とも入力フォルダに保存
+fn resolve_output_paths(folder: &Path, output: Option<&PathBuf>) -> OutputPaths {
+    if let Some(out) = output {
+        if out.extension().is_some() && !out.is_dir() {
+            // ファイルパス指定: result.json は入力フォルダ、エクスポートは指定パス
+            OutputPaths {
+                json_dir: folder.to_path_buf(),
+                export_path: out.clone(),
+            }
+        } else {
+            // ディレクトリ指定
+            OutputPaths {
+                json_dir: out.clone(),
+                export_path: out.clone(),
+            }
+        }
+    } else {
+        // 未指定: 入力フォルダを使用
+        OutputPaths {
+            json_dir: folder.to_path_buf(),
+            export_path: folder.to_path_buf(),
+        }
+    }
+}
+
+/// Runコマンドの引数
+struct RunCommandArgs {
+    folder: PathBuf,
+    output: Option<PathBuf>,
+    format: ExportFormat,
+    batch_size: usize,
+    master: Option<PathBuf>,
+    work_type: Option<String>,
+    variety: Option<String>,
+    station: Option<String>,
+    pdf_quality: PdfQuality,
+    use_cache: bool,
+    recursive: bool,
+    include_all: bool,
+    verbose: bool,
+    provider: AiProvider,
+}
+
+/// Runコマンドを処理する（スキャン→解析→保存→エクスポート）
+async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
+    println!("🚀 photo-ai-rust - 一括処理\n");
+
+    // マスタ選択と検証
+    let master_config = prepare_analysis(args.master, args.work_type, args.variety.as_ref())?;
+
+    // スキャンから正規化まで
+    let scan_config = ScanAnalysisConfig {
+        folder: &args.folder,
+        batch_size: args.batch_size,
+        verbose: args.verbose,
+        master_config: &master_config,
+        use_cache: args.use_cache,
+        provider: args.provider,
+        variety: args.variety.as_ref(),
+        station: args.station.as_ref(),
+        recursive: args.recursive,
+        include_all: args.include_all,
+        step_prefix_scan: "[1/4]",
+        step_prefix_analyze: "[2/4]",
+    };
+    let results = scan_and_analyze(&scan_config).await?;
+
+    // 3. 結果保存
+    let output_paths = resolve_output_paths(&args.folder, args.output.as_ref());
+    println!("[3/4] 結果を保存中...");
+    let json_path = output_paths.json_dir.join("result.json");
+    let json = serde_json::to_string_pretty(&results)?;
+    std::fs::write(&json_path, &json)?;
+    println!("✔ 結果を保存: {}", json_path.display());
+
+    // 4. Export
+    println!("[4/4] エクスポート中...");
+    export::export_results(&results, &args.format, &output_paths.export_path, 3, "工事写真帳", args.pdf_quality)?;
+
+    println!("\n✅ 完了");
+    Ok(())
+}
+
+/// Analyzeコマンドの引数
+struct AnalyzeCommandArgs {
+    folder: PathBuf,
+    output: Option<PathBuf>,
+    batch_size: usize,
+    master: Option<PathBuf>,
+    work_type: Option<String>,
+    variety: Option<String>,
+    station: Option<String>,
+    use_cache: bool,
+    recursive: bool,
+    include_all: bool,
+    verbose: bool,
+    provider: AiProvider,
+}
+
+/// Analyzeコマンドを処理
+async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
+    println!("📸 photo-ai-rust - 写真解析\n");
+
+    // マスタ選択と検証
+    let master_config = prepare_analysis(args.master, args.work_type, args.variety.as_ref())?;
+
+    // スキャンから正規化まで
+    let scan_config = ScanAnalysisConfig {
+        folder: &args.folder,
+        batch_size: args.batch_size,
+        verbose: args.verbose,
+        master_config: &master_config,
+        use_cache: args.use_cache,
+        provider: args.provider,
+        variety: args.variety.as_ref(),
+        station: args.station.as_ref(),
+        recursive: args.recursive,
+        include_all: args.include_all,
+        step_prefix_scan: "[1/3]",
+        step_prefix_analyze: "[2/3]",
+    };
+    let results = scan_and_analyze(&scan_config).await?;
+
+    // 3. 結果保存
+    println!("[3/3] 結果を保存中...");
+    let output_path = args.output.unwrap_or_else(|| args.folder.join("result.json"));
+    let json = serde_json::to_string_pretty(&results)?;
+    std::fs::write(&output_path, json)?;
+    println!("✔ 結果を保存: {}", output_path.display());
+
+    println!("\n✅ 解析完了");
+    Ok(())
+}
+
 fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<master_selector::MasterSelection> {
     if let Some(path) = master {
         // パスからwork_typeを推定（by_work_type/xxx.csv → xxx）
@@ -231,36 +422,20 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Analyze { folder, output, batch_size, master, work_type, variety, station, use_cache, recursive, include_all } => {
-            println!("📸 photo-ai-rust - 写真解析\n");
-
-            // マスタ選択と検証
-            let master_config = prepare_analysis(master, work_type, variety.as_ref())?;
-
-            // スキャンから正規化まで
-            let scan_config = ScanAnalysisConfig {
-                folder: &folder,
+            handle_analyze_command(AnalyzeCommandArgs {
+                folder,
+                output,
                 batch_size,
-                verbose: cli.verbose,
-                master_config: &master_config,
+                master,
+                work_type,
+                variety,
+                station,
                 use_cache,
-                provider: cli.ai_provider,
-                variety: variety.as_ref(),
-                station: station.as_ref(),
                 recursive,
                 include_all,
-                step_prefix_scan: "[1/3]",
-                step_prefix_analyze: "[2/3]",
-            };
-            let results = scan_and_analyze(&scan_config).await?;
-
-            // 3. 結果保存
-            println!("[3/3] 結果を保存中...");
-            let output_path = output.unwrap_or_else(|| folder.join("result.json"));
-            let json = serde_json::to_string_pretty(&results)?;
-            std::fs::write(&output_path, json)?;
-            println!("✔ 結果を保存: {}", output_path.display());
-
-            println!("\n✅ 解析完了");
+                verbose: cli.verbose,
+                provider: cli.ai_provider,
+            }).await?;
         }
 
         Commands::Export { input, format, output, photos_per_page, title, pdf_quality, preset, alias } => {
@@ -301,53 +476,22 @@ async fn main() -> Result<()> {
         }
 
         Commands::Run { folder, output, format, batch_size, master, work_type, variety, station, pdf_quality, use_cache, recursive, include_all } => {
-            println!("🚀 photo-ai-rust - 一括処理\n");
-
-            // マスタ選択と検証
-            let master_config = prepare_analysis(master, work_type, variety.as_ref())?;
-
-            // スキャンから正規化まで
-            let scan_config = ScanAnalysisConfig {
-                folder: &folder,
+            handle_run_command(RunCommandArgs {
+                folder,
+                output,
+                format,
                 batch_size,
-                verbose: cli.verbose,
-                master_config: &master_config,
+                master,
+                work_type,
+                variety,
+                station,
+                pdf_quality,
                 use_cache,
-                provider: cli.ai_provider,
-                variety: variety.as_ref(),
-                station: station.as_ref(),
                 recursive,
                 include_all,
-                step_prefix_scan: "[1/4]",
-                step_prefix_analyze: "[2/4]",
-            };
-            let results = scan_and_analyze(&scan_config).await?;
-
-            // 3. 結果保存
-            // output がファイルパス(.pdf等)の場合、result.json は入力フォルダに保存
-            let (json_dir, export_path) = if let Some(ref out) = output {
-                if out.extension().is_some() && !out.is_dir() {
-                    // ファイルパス指定: result.json は入力フォルダ、エクスポートは指定パス
-                    (folder.clone(), out.clone())
-                } else {
-                    // ディレクトリ指定
-                    (out.clone(), out.clone())
-                }
-            } else {
-                // 未指定: 入力フォルダを使用
-                (folder.clone(), folder.clone())
-            };
-            println!("[3/4] 結果を保存中...");
-            let json_path = json_dir.join("result.json");
-            let json = serde_json::to_string_pretty(&results)?;
-            std::fs::write(&json_path, &json)?;
-            println!("✔ 結果を保存: {}", json_path.display());
-
-            // 4. Export
-            println!("[4/4] エクスポート中...");
-            export::export_results(&results, &format, &export_path, 3, "工事写真帳", pdf_quality)?;
-
-            println!("\n✅ 完了");
+                verbose: cli.verbose,
+                provider: cli.ai_provider,
+            }).await?;
         }
 
         Commands::Config { set_api_key, show } => {
