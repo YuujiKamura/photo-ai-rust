@@ -190,6 +190,108 @@ fn parse_single_step_response(response: &str) -> Result<Vec<AnalysisResult>> {
 // CLI固有の関数
 // =============================================
 
+/// CLI実行設定
+struct CliConfig {
+    /// コマンド名（Windowsではcmd /c経由で実行）
+    command: String,
+    /// コマンド引数
+    args: Vec<String>,
+    /// stdin経由で送るプロンプト
+    stdin_prompt: Option<String>,
+    /// 出力ファイルパス（Codex用）
+    output_file: Option<PathBuf>,
+    /// プロバイダ名（ログ用）
+    provider_name: String,
+    /// verbose フラグ
+    verbose: bool,
+}
+
+/// CLI実行の共通処理
+fn run_cli_command(config: CliConfig) -> Result<String> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    if config.verbose {
+        let prompt_len = config.stdin_prompt.as_ref().map(|p| p.len()).unwrap_or(0);
+        println!("  [{}] prompt length: {}", config.provider_name, prompt_len);
+    }
+
+    // コマンド構築
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        c.arg("/c").arg(&config.command);
+        c
+    };
+
+    #[cfg(not(windows))]
+    let mut cmd = Command::new(&config.command);
+
+    // 引数追加
+    for arg in &config.args {
+        cmd.arg(arg);
+    }
+
+    // stdinが必要な場合
+    if config.stdin_prompt.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
+
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| PhotoAiError::ApiCall(format!("{} CLI実行エラー: {}", config.provider_name, e)))?;
+
+    // stdin書き込み
+    if let Some(prompt) = &config.stdin_prompt {
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(prompt.as_bytes())
+                .map_err(|e| PhotoAiError::ApiCall(format!("{} CLI stdin書き込みエラー: {}", config.provider_name, e)))?;
+        }
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| PhotoAiError::ApiCall(format!("{} CLI実行エラー: {}", config.provider_name, e)))?;
+
+    // エラーチェック
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout_tail = if stdout.is_empty() {
+            String::new()
+        } else {
+            format!("\nstdout: {}", stdout)
+        };
+        return Err(PhotoAiError::ApiCall(format!(
+            "{} CLI failed (code {:?}): {}{}",
+            config.provider_name,
+            output.status.code(),
+            stderr,
+            stdout_tail
+        )));
+    }
+
+    // 出力取得（output_fileがあればファイルから、なければstdoutから）
+    let response = if let Some(output_path) = &config.output_file {
+        let content = std::fs::read_to_string(output_path)
+            .map_err(|e| PhotoAiError::ApiCall(format!("{}出力読み込みエラー: {}", config.provider_name, e)))?;
+        let _ = std::fs::remove_file(output_path);
+        content
+    } else {
+        String::from_utf8_lossy(&output.stdout).to_string()
+    };
+
+    if config.verbose {
+        let preview: String = response.chars().take(500).collect();
+        println!("  [{}] response: {}", config.provider_name, preview);
+    }
+
+    Ok(response)
+}
+
 fn get_temp_dir() -> Result<PathBuf> {
     let temp_dir = std::env::current_dir()?.join("temp-images");
     std::fs::create_dir_all(&temp_dir)?;
@@ -224,8 +326,6 @@ fn run_ai_cli(
 }
 
 fn run_codex_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -> Result<String> {
-    use std::io::Write;
-    use std::process::Stdio;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let temp_dir = std::env::temp_dir();
@@ -235,69 +335,35 @@ fn run_codex_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -
         .unwrap_or(0);
     let output_path = temp_dir.join(format!("photo-ai-codex-{}.txt", ts));
 
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut c = Command::new("cmd");
-        c.args(["/c", "codex"]);
-        c
-    };
+    // 引数構築
+    let mut args = vec![
+        "exec".to_string(),
+        "--output-last-message".to_string(),
+        output_path.display().to_string(),
+        "-".to_string(),
+    ];
 
-    #[cfg(not(windows))]
-    let mut cmd = Command::new("codex");
-
-    cmd.arg("exec")
-        .arg("--output-last-message")
-        .arg(&output_path)
-        .arg("-");
-
+    // 画像パス追加
     if let Some(paths) = image_paths {
         for path in paths {
-            cmd.arg("-i").arg(path);
+            args.push("-i".to_string());
+            args.push(path.display().to_string());
         }
     }
 
-    if verbose {
-        println!("  [Codex] prompt length: {}", prompt.len());
-    }
+    let config = CliConfig {
+        command: "codex".to_string(),
+        args,
+        stdin_prompt: Some(prompt.to_string()),
+        output_file: Some(output_path),
+        provider_name: "Codex".to_string(),
+        verbose,
+    };
 
-    let mut child = cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| PhotoAiError::ApiCall(format!("Codex CLI実行エラー: {}", e)))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(prompt.as_bytes())
-            .map_err(|e| PhotoAiError::ApiCall(format!("Codex CLI stdin書き込みエラー: {}", e)))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| PhotoAiError::ApiCall(format!("Codex CLI実行エラー: {}", e)))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(PhotoAiError::ApiCall(format!(
-            "Codex CLI failed (code {:?}): {}{}",
-            output.status.code(),
-            stderr,
-            if stdout.is_empty() { String::new() } else { format!("\nstdout: {}", stdout) }
-        )));
-    }
-
-    let response = std::fs::read_to_string(&output_path)
-        .map_err(|e| PhotoAiError::ApiCall(format!("Codex出力読み込みエラー: {}", e)))?;
-    let _ = std::fs::remove_file(&output_path);
-    Ok(response)
+    run_cli_command(config)
 }
 
 fn run_gemini_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -> Result<String> {
-    use std::io::Write;
-    use std::process::Stdio;
-
     // 画像パスを含むプロンプトを構築
     let full_prompt = if let Some(paths) = image_paths {
         let read_commands: Vec<String> = paths
@@ -309,163 +375,30 @@ fn run_gemini_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) 
         prompt.to_string()
     };
 
-    if verbose {
-        println!("  [Gemini] prompt length: {}", full_prompt.len());
-    }
-
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut c = Command::new("cmd");
-        c.args(["/c", "gemini", "--output-format", "text"]);
-        c
+    let config = CliConfig {
+        command: "gemini".to_string(),
+        args: vec!["--output-format".to_string(), "text".to_string()],
+        stdin_prompt: Some(full_prompt),
+        output_file: None,
+        provider_name: "Gemini".to_string(),
+        verbose,
     };
 
-    #[cfg(not(windows))]
-    let mut cmd = Command::new("gemini");
-
-    #[cfg(not(windows))]
-    cmd.args(["--output-format", "text"]);
-
-    let mut child = cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| PhotoAiError::ApiCall(format!("Gemini CLI実行エラー: {}", e)))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(full_prompt.as_bytes())
-            .map_err(|e| PhotoAiError::ApiCall(format!("Gemini CLI stdin書き込みエラー: {}", e)))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| PhotoAiError::ApiCall(format!("Gemini CLI実行エラー: {}", e)))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(PhotoAiError::ApiCall(format!(
-            "Gemini CLI failed (code {:?}): {}{}",
-            output.status.code(),
-            stderr,
-            if stdout.is_empty() { String::new() } else { format!("\nstdout: {}", stdout) }
-        )));
-    }
-
-    let response = String::from_utf8_lossy(&output.stdout).to_string();
-    if verbose {
-        let preview: String = response.chars().take(500).collect();
-        println!("  [Gemini] response: {}", preview);
-    }
-
-    Ok(response)
+    run_cli_command(config)
 }
 
 fn run_claude_cli(prompt: &str, verbose: bool) -> Result<String> {
-    const MAX_CMD_LENGTH: usize = 7000;
-    let escaped = prompt.replace('"', "\\\"").replace('\n', " ");
-    let test_cmd = format!("claude -p \"{}\" --output-format text", escaped);
-
-    if verbose {
-        println!("  [Claude] prompt length: {}, cmd length: {}", prompt.len(), test_cmd.len());
-    }
-
-    let output = if test_cmd.len() > MAX_CMD_LENGTH {
-        // 長いプロンプトはstdin経由で送信（Windowsのcmd制限回避）
-        if verbose {
-            println!("  [Claude] stdin経由で送信");
-        }
-
-        #[cfg(windows)]
-        {
-            use std::io::Write;
-            use std::process::Stdio;
-
-            let mut child = Command::new("cmd")
-                .args(["/c", "claude", "--output-format", "text"])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?;
-
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin
-                    .write_all(prompt.as_bytes())
-                    .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI stdin書き込みエラー: {}", e)))?;
-            }
-
-            child
-                .wait_with_output()
-                .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?
-        }
-
-        #[cfg(not(windows))]
-        {
-            use std::io::Write;
-            use std::process::Stdio;
-
-            let mut child = Command::new("claude")
-                .args(["--output-format", "text"])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?;
-
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin
-                    .write_all(prompt.as_bytes())
-                    .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI stdin書き込みエラー: {}", e)))?;
-            }
-
-            child
-                .wait_with_output()
-                .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?
-        }
-    } else {
-        // Claude CLI呼び出し（Windowsではcmd /c経由）
-        #[cfg(windows)]
-        let output = Command::new("cmd")
-            .args(["/c", "claude", "-p", prompt, "--output-format", "text"])
-            .output()
-            .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?;
-
-        #[cfg(not(windows))]
-        let output = Command::new("claude")
-            .args(["-p", prompt, "--output-format", "text"])
-            .output()
-            .map_err(|e| PhotoAiError::ApiCall(format!("Claude CLI実行エラー: {}", e)))?;
-
-        output
+    // Claude CLIは常にstdin経由で送信（コマンドライン長制限を回避）
+    let config = CliConfig {
+        command: "claude".to_string(),
+        args: vec!["--output-format".to_string(), "text".to_string()],
+        stdin_prompt: Some(prompt.to_string()),
+        output_file: None,
+        provider_name: "Claude".to_string(),
+        verbose,
     };
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stdout_tail = if stdout.is_empty() {
-            String::new()
-        } else {
-            format!("\nstdout: {}", stdout)
-        };
-        return Err(PhotoAiError::ApiCall(format!(
-            "Claude CLI failed (code {:?}): {}{}",
-            output.status.code(),
-            stderr,
-            stdout_tail
-        )));
-    }
-
-    let response = String::from_utf8_lossy(&output.stdout).to_string();
-
-    if verbose {
-        let preview: String = response.chars().take(500).collect();
-        println!("  レスポンス: {}", preview);
-    }
-
-    Ok(response)
+    run_cli_command(config)
 }
 
 /// Step1レスポンスをパース（共通パーサーをラップ）
