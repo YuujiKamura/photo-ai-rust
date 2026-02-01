@@ -5,6 +5,7 @@ use config::Config;
 use error::Result;
 use photo_ai_common::HierarchyMaster;
 use std::path::{Path, PathBuf};
+use ai_code_review::{CodeReviewer, Backend as ReviewBackend};
 
 /// AI解析を実行（1ステップ解析優先）
 #[allow(clippy::too_many_arguments)]
@@ -431,6 +432,54 @@ async fn main() -> Result<()> {
             }
 
             println!("\n✅ 正規化完了");
+        }
+
+        Commands::Review { path, watch, model } => {
+            println!("🔍 photo-ai-rust - コードレビュー\n");
+
+            // AIプロバイダからレビューバックエンドへ変換
+            let backend = match cli.ai_provider {
+                AiProvider::Claude => ReviewBackend::Claude,
+                AiProvider::Codex => ReviewBackend::Codex,
+                AiProvider::Gemini => ReviewBackend::Gemini,
+            };
+
+            // ファイル指定の場合は親ディレクトリでReviewerを初期化
+            let (base_dir, target_file) = if path.is_file() {
+                let parent = path.parent().unwrap_or(Path::new("."));
+                (parent.to_path_buf(), Some(path.clone()))
+            } else {
+                (path.clone(), None)
+            };
+
+            let reviewer = CodeReviewer::new(&base_dir)
+                .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?
+                .with_backend(backend);
+
+            let mut reviewer = if let Some(ref m) = model {
+                reviewer.with_model(m)
+            } else {
+                reviewer
+            };
+
+            if watch {
+                println!("👀 ファイル監視中... (Ctrl+C で終了)\n");
+                reviewer.start()
+                    .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+            } else if let Some(ref file) = target_file {
+                // 単発ファイルレビュー
+                let result = reviewer.review_file(file)
+                    .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+
+                println!("=== {} ===", result.path.display());
+                println!("重要度: {:?}\n", result.severity);
+                println!("{}", result.review);
+            } else {
+                // フォルダ内の全ファイルをレビュー（ここは簡易実装）
+                println!("フォルダレビューは --watch モードをお使いください");
+            }
+
+            println!("\n✅ レビュー完了");
         }
     }
 
