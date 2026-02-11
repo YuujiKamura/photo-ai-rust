@@ -23,7 +23,7 @@ use std::path::Path;
 
 use crate::layout::{
     A4_WIDTH_PT, A4_HEIGHT_PT, MARGIN_PT, GAP_PT,
-    IMAGE_RATIO, INFO_RATIO, LAYOUT_FIELDS,
+    IMAGE_RATIO, INFO_RATIO, FieldKey, LAYOUT_FIELDS,
 };
 use crate::types::AnalysisResult;
 
@@ -124,44 +124,42 @@ pub struct PdfInfoField {
 /// 情報欄フィールドを構築（GAS準拠: 8フィールド）
 /// 日時 → 区分 → 工種 → 種別 → 細別 → 測点 → 備考 → 測定値
 pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
-    let is_machinery = result.remarks == "使用機械" || result.remarks == "重機始業前点検";
+    let is_machinery = result.is_machinery_related();
     LAYOUT_FIELDS
         .iter()
         .map(|field| {
             let value = match field.key {
-                "date" => format_date(&result.date),
-                "photoCategory" => {
+                FieldKey::Date => format_date(&result.date),
+                FieldKey::PhotoCategory => {
                     if result.photo_category.is_empty() { "-".to_string() }
                     else { result.photo_category.clone() }
                 }
-                "workType" => {
+                FieldKey::WorkType => {
                     if result.work_type.is_empty() { "-".to_string() }
                     else { result.work_type.clone() }
                 }
-                "variety" => {
+                FieldKey::Variety => {
                     if result.variety.is_empty() { "-".to_string() }
                     else { result.variety.clone() }
                 }
-                "subphase" => {
-                    // GASでは "detail" というフィールド名だが、Rustでは "subphase"
+                FieldKey::Subphase => {
                     if result.subphase.is_empty() { "-".to_string() }
                     else { result.subphase.clone() }
                 }
-                "station" => {
+                FieldKey::Station => {
                     if result.station.is_empty() { "-".to_string() }
                     else { result.station.clone() }
                 }
-                "remarks" => {
+                FieldKey::Remarks => {
                     if result.remarks.is_empty() { "-".to_string() }
                     else { result.remarks.clone() }
                 }
-                "measurements" => {
+                FieldKey::Measurements => {
                     if result.measurements.is_empty() { "-".to_string() }
                     else { result.measurements.clone() }
                 }
-                _ => "-".to_string(),
             };
-            let label = if is_machinery && field.key == "station" {
+            let label = if is_machinery && field.key == FieldKey::Station {
                 "機種".to_string()
             } else {
                 field.label.to_string()
@@ -205,12 +203,11 @@ fn format_date(date: &str) -> String {
 /// use photo_ai_common::export::pdf::embed_analysis_to_pdf;
 /// embed_analysis_to_pdf(Path::new("output.pdf"), &results)?;
 /// ```
-pub fn embed_analysis_to_pdf(pdf_path: &Path, results: &[AnalysisResult]) -> Result<(), String> {
+pub fn embed_analysis_to_pdf(pdf_path: &Path, results: &[AnalysisResult]) -> crate::error::Result<()> {
     use pdf_analysis_embed::{embed_data, EmbedConfig, EmbeddedData};
 
     // 解析結果をJSONにシリアライズ
-    let json_content = serde_json::to_string(results)
-        .map_err(|e| format!("解析結果のシリアライズに失敗: {}", e))?;
+    let json_content = serde_json::to_string(results)?;
 
     // EmbeddedDataを構築
     let data = EmbeddedData::new(json_content)
@@ -221,7 +218,10 @@ pub fn embed_analysis_to_pdf(pdf_path: &Path, results: &[AnalysisResult]) -> Res
     let config = EmbedConfig::with_prefix("PhotoAiRust");
 
     embed_data(pdf_path, &data, &config)
-        .map_err(|e| format!("PDF埋め込みに失敗: {}", e))?;
+        .map_err(|e| crate::error::Error::ExportFailed {
+            format: "PDF".to_string(),
+            detail: format!("埋め込みに失敗: {}", e),
+        })?;
 
     Ok(())
 }

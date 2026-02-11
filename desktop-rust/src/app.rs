@@ -9,7 +9,7 @@ use image::ImageReader;
 
 use crate::io::{default_sorted_path, load_result_items, save_sorted_items};
 use crate::model::{AppState, ResultItem};
-use photo_ai_common::layout::LAYOUT_FIELDS;
+use photo_ai_common::layout::{FieldKey, LAYOUT_FIELDS};
 use photo_ai_common::prompts::build_step1_prompt;
 use cli_ai_analyzer::{analyze, AnalyzeOptions, Backend};
 
@@ -756,16 +756,15 @@ fn resolve_cli_binary() -> PathBuf {
     PathBuf::from("photo-ai-rust")
 }
 
-fn value_by_key<'a>(item: &'a ResultItem, key: &str) -> &'a str {
+fn value_by_key<'a>(item: &'a ResultItem, key: FieldKey) -> &'a str {
     match key {
-        "date" => item.date.as_str(),
-        "photoCategory" => item.photo_category.as_str(),
-        "workType" => item.work_type.as_str(),
-        "variety" => item.variety.as_str(),
-        "subphase" => item.subphase.as_str(),
-        "station" => item.station.as_str(),
-        "remarks" => item.remarks.as_str(),
-        "measurements" => item.measurements.as_str(),
-        _ => "",
+        FieldKey::Date => item.date.as_str(),
+        FieldKey::PhotoCategory => item.photo_category.as_str(),
+        FieldKey::WorkType => item.work_type.as_str(),
+        FieldKey::Variety => item.variety.as_str(),
+        FieldKey::Subphase => item.subphase.as_str(),
+        FieldKey::Station => item.station.as_str(),
+        FieldKey::Remarks => item.remarks.as_str(),
+        FieldKey::Measurements => item.measurements.as_str(),
     }
 }

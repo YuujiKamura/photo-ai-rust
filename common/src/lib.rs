@@ -13,17 +13,19 @@ pub mod error;
 pub mod hierarchy;
 pub mod parser;
 pub mod analyzer;
+pub mod work_type_defs;
 pub mod prompts;
 pub mod step2;
 #[cfg(feature = "excel")]
 pub mod export;
 
 pub use types::{AnalysisResult, RawImageData, PhotoData};
-pub use layout::{PdfLayout, ExcelLayout};
+pub use layout::{PdfLayout, ExcelLayout, FieldKey};
 pub use alias::{AliasConfig, apply_aliases, longest_match_transform};
 pub use error::{Error, Result};
 pub use hierarchy::{HierarchyMaster, HierarchyRow};
 pub use parser::{extract_json, parse_step1_response, parse_single_step_response};
-pub use analyzer::{detect_work_types, detect_work_types_with, WorkTypeDefinition, DEFAULT_WORK_TYPE_DEFINITIONS};
+pub use analyzer::{detect_work_types, detect_work_types_with, WorkTypeDefinition};
+pub use work_type_defs::DEFAULT_WORK_TYPE_DEFINITIONS;
 pub use prompts::{PHOTO_CATEGORIES, build_step1_prompt, build_prompt_for_category};
 pub use step2::{Step2Result, build_step2_prompt, parse_step2_response, merge_results, ImageMeta};

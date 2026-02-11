@@ -112,10 +112,23 @@ pub const INFO_COL_WIDTH: f32 = 39.6;   // LABEL + VALUE
 // フィールド定義
 // ============================================
 
+/// フィールド識別子（型安全なキー）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldKey {
+    Date,
+    PhotoCategory,
+    WorkType,
+    Variety,
+    Subphase,
+    Station,
+    Remarks,
+    Measurements,
+}
+
 /// 情報パネルに表示するフィールド
 #[derive(Debug, Clone, Copy)]
 pub struct FieldDefinition {
-    pub key: &'static str,
+    pub key: FieldKey,
     pub label: &'static str,
     pub row_span: u8,
 }
@@ -123,14 +136,14 @@ pub struct FieldDefinition {
 /// レイアウトフィールド（GAS準拠: 8フィールド）
 /// 日時→区分→工種→種別→細別→測点→備考→測定値
 pub const LAYOUT_FIELDS: &[FieldDefinition] = &[
-    FieldDefinition { key: "date", label: "日時", row_span: 1 },
-    FieldDefinition { key: "photoCategory", label: "区分", row_span: 1 },
-    FieldDefinition { key: "workType", label: "工種", row_span: 1 },
-    FieldDefinition { key: "variety", label: "種別", row_span: 1 },
-    FieldDefinition { key: "subphase", label: "細別", row_span: 1 },
-    FieldDefinition { key: "station", label: "測点", row_span: 1 },
-    FieldDefinition { key: "remarks", label: "備考", row_span: 1 },
-    FieldDefinition { key: "measurements", label: "測定値", row_span: 1 },
+    FieldDefinition { key: FieldKey::Date, label: "日時", row_span: 1 },
+    FieldDefinition { key: FieldKey::PhotoCategory, label: "区分", row_span: 1 },
+    FieldDefinition { key: FieldKey::WorkType, label: "工種", row_span: 1 },
+    FieldDefinition { key: FieldKey::Variety, label: "種別", row_span: 1 },
+    FieldDefinition { key: FieldKey::Subphase, label: "細別", row_span: 1 },
+    FieldDefinition { key: FieldKey::Station, label: "測点", row_span: 1 },
+    FieldDefinition { key: FieldKey::Remarks, label: "備考", row_span: 1 },
+    FieldDefinition { key: FieldKey::Measurements, label: "測定値", row_span: 1 },
 ];
 
 // ============================================
@@ -413,11 +426,11 @@ mod tests {
         assert_eq!(LAYOUT_FIELDS.len(), 8);
 
         // 最初と最後のフィールド確認
-        assert_eq!(LAYOUT_FIELDS[0].key, "date");
+        assert_eq!(LAYOUT_FIELDS[0].key, FieldKey::Date);
         assert_eq!(LAYOUT_FIELDS[0].label, "日時");
-        assert_eq!(LAYOUT_FIELDS[6].key, "remarks");
+        assert_eq!(LAYOUT_FIELDS[6].key, FieldKey::Remarks);
         assert_eq!(LAYOUT_FIELDS[6].label, "備考");
-        assert_eq!(LAYOUT_FIELDS[7].key, "measurements");
+        assert_eq!(LAYOUT_FIELDS[7].key, FieldKey::Measurements);
         assert_eq!(LAYOUT_FIELDS[7].label, "測定値");
     }
 }

@@ -105,7 +105,7 @@ fn test_json_error_conversion() {
 /// common::Errorからの変換
 #[test]
 fn test_common_error_conversion() {
-    let common_err = photo_ai_common::Error::Parse("パースエラー".to_string());
+    let common_err = photo_ai_common::Error::AiResponseParse("パースエラー".to_string());
     let err: PhotoAiError = common_err.into();
 
     assert!(matches!(err, PhotoAiError::Common(_)));
@@ -114,10 +114,10 @@ fn test_common_error_conversion() {
 /// エラーチェーン（透過的エラー）
 #[test]
 fn test_error_chain_transparent() {
-    let common_err = photo_ai_common::Error::Config("設定エラー".to_string());
+    let common_err = photo_ai_common::Error::MasterNotFound("設定エラー".to_string());
     let err: PhotoAiError = common_err.into();
 
     // 透過的エラーなのでメッセージがそのまま表示される
     let display = format!("{}", err);
-    assert!(display.contains("設定エラー") || display.contains("Config"));
+    assert!(display.contains("設定エラー") || display.contains("Master not found"));
 }

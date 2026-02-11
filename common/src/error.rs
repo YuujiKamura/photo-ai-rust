@@ -12,18 +12,6 @@ pub enum Error {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
-    // --- 後方互換（非推奨） ---
-
-    #[deprecated(note = "Use MissingFile, InvalidFormat, or CsvParse instead")]
-    #[error("Config error: {0}")]
-    Config(String),
-
-    #[deprecated(note = "Use AiResponseParse or JsonParse instead")]
-    #[error("Parse error: {0}")]
-    Parse(String),
-
-    // --- ドメイン固有エラー ---
-
     /// ファイルが見つからない
     #[error("File not found: {0}")]
     MissingFile(PathBuf),
@@ -57,7 +45,6 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
 
@@ -80,13 +67,6 @@ mod tests {
     }
 
     #[test]
-    fn test_error_display_config() {
-        let error = Error::Config("設定ファイルが見つかりません".to_string());
-        let display = format!("{}", error);
-        assert_eq!(display, "Config error: 設定ファイルが見つかりません");
-    }
-
-    #[test]
     fn test_error_from_io() {
         let io_error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
         let error: Error = io_error.into();
@@ -102,10 +82,9 @@ mod tests {
 
     #[test]
     fn test_error_debug() {
-        let error = Error::Config("テスト".to_string());
+        let error = Error::MissingFile(PathBuf::from("/tmp/test"));
         let debug = format!("{:?}", error);
-        assert!(debug.contains("Config"));
-        assert!(debug.contains("テスト"));
+        assert!(debug.contains("MissingFile"));
     }
 
     #[test]
