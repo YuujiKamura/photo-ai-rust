@@ -124,7 +124,7 @@ pub struct PdfInfoField {
 /// 情報欄フィールドを構築（GAS準拠: 8フィールド）
 /// 日時 → 区分 → 工種 → 種別 → 細別 → 測点 → 備考 → 測定値
 pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
-    let is_machinery = result.remarks == "使用機械";
+    let is_machinery = result.remarks == "使用機械" || result.remarks == "重機始業前点検";
     LAYOUT_FIELDS
         .iter()
         .map(|field| {

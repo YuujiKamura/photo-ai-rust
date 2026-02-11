@@ -115,7 +115,8 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
         println!("  {} 枚をスキップ（グループ未登録）", skipped);
     }
 
-    let mut results = convert_groups_to_results(&grouped_images, &group_records, &master);
+    let folder_name = config.folder.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let mut results = convert_groups_to_results(&grouped_images, &group_records, &master, folder_name);
     println!("✔ マスタ照合完了（{}枚）\n", results.len());
 
     // 4. 正規化
@@ -275,6 +276,7 @@ fn convert_groups_to_results(
     images: &[scanner::ImageInfo],
     groups: &GroupRecords,
     master: &HierarchyMaster,
+    folder_name: &str,
 ) -> Vec<analyzer::AnalysisResult> {
     let mut results: Vec<(u32, u8, analyzer::AnalysisResult)> = images.iter().filter_map(|img| {
         let rec = groups.get(&img.file_name)?;
@@ -289,10 +291,10 @@ fn convert_groups_to_results(
         result.detected_text = rec.detected_text.clone();
         result.description = rec.description.clone();
         result.focus_target = rec.role.clone();
-        result.station = format!("{} {}", rec.machine_type, rec.machine_id);
+        result.station = rec.machine_type.clone();
 
-        // マスタから備考="使用機械" の行を探して階層を適用
-        if let Some(row) = master.rows().iter().find(|r| r.remarks == "使用機械") {
+        // フォルダ名でマスタの備考を検索
+        if let Some(row) = master.rows().iter().find(|r| r.remarks == folder_name) {
             result.photo_category = row.photo_type.clone();
             result.work_type = row.work_type.clone();
             result.variety = row.variety.clone();
