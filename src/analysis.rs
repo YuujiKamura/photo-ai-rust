@@ -15,6 +15,7 @@ pub struct ScanAnalysisConfig<'a> {
     pub batch_size: usize,
     pub verbose: bool,
     pub master_config: &'a MasterConfig,
+    pub photo_type: Option<&'a str>,
     pub use_cache: bool,
     pub provider: AiProvider,
     pub variety: Option<&'a String>,
@@ -31,6 +32,7 @@ pub struct AnalysisOptions<'a> {
     pub batch_size: usize,
     pub verbose: bool,
     pub master: Option<&'a Path>,
+    pub photo_type: Option<&'a str>,
     pub use_cache: bool,
     pub provider: AiProvider,
     pub work_type: Option<&'a str>,
@@ -93,6 +95,7 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
         batch_size: config.batch_size,
         verbose: config.verbose,
         master: config.master_config.master_path.as_deref(),
+        photo_type: config.photo_type,
         use_cache: config.use_cache,
         provider: config.provider,
         work_type: config.master_config.effective_work_type.as_deref(),
@@ -172,63 +175,63 @@ pub fn normalize_results_with_station(
     }
 }
 
-/// AI解析を実行（1ステップ解析優先）
+/// AI解析を実行（常に1ステップ解析）
 pub async fn run_analysis(
     images: &[scanner::ImageInfo],
     options: &AnalysisOptions<'_>,
 ) -> Result<Vec<analyzer::AnalysisResult>> {
-    // 工種指定時は1ステップ解析（推奨）
-    if let Some(wt) = options.work_type {
-        // マスタパスを決定
-        let master_path_buf = resolve_master_for_work_type(options.master, wt)?;
+    // マスタパスを決定
+    let master_path_buf = resolve_master_path(options.master, options.work_type)?;
 
+    let hierarchy = HierarchyMaster::from_csv(&master_path_buf)
+        .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+
+    // photo_type指定時はそちらでフィルタ、なければwork_typeでフィルタ
+    let master = if let Some(pt) = options.photo_type {
+        println!("{} 1ステップ解析中 (写真種類: {})...", options.step_prefix, pt);
+        let filtered = hierarchy.filter_by_photo_type(pt);
+        println!("  マスタ読み込み: {}件 (写真種類: {})", filtered.rows().len(), pt);
+        filtered
+    } else if let Some(wt) = options.work_type {
         println!("{} 1ステップ解析中 (工種: {})...", options.step_prefix, wt);
-        let hierarchy = HierarchyMaster::from_csv(&master_path_buf)
-            .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
-
-        // 指定工種でマスタをフィルタ
         let filtered = hierarchy.filter_by_work_types(&[wt.to_string()]);
         println!("  マスタ読み込み: {}件 (工種: {})", filtered.rows().len(), wt);
-
-        return analyzer::analyze_images_single_step(
-            images,
-            &filtered,
-            wt,
-            options.variety,
-            options.batch_size,
-            options.verbose,
-            options.provider,
-        ).await;
-    }
-
-    // 工種未指定の場合はキャッシュまたは基本解析
-    // ※2ステップ解析は廃止（API消費が多いため）
-    if options.use_cache {
-        println!("{} AI解析中... (キャッシュ有効)", options.step_prefix);
-        println!("  ⚠ 工種未指定: --work-type で指定すると精度向上");
-        analyzer::analyze_images_with_cache(images, options.folder, options.batch_size, options.verbose, options.provider).await
+        filtered
     } else {
-        println!("{} AI解析中...", options.step_prefix);
-        println!("  ⚠ 工種未指定: --work-type で指定すると精度向上");
-        analyzer::analyze_images(images, options.batch_size, options.verbose, options.provider).await
-    }
+        println!("{} 1ステップ解析中 (全工種)...", options.step_prefix);
+        println!("  マスタ読み込み: {}件", hierarchy.rows().len());
+        hierarchy
+    };
+
+    analyzer::analyze_images_single_step(
+        images,
+        &master,
+        options.work_type,
+        options.variety,
+        options.photo_type,
+        options.batch_size,
+        options.verbose,
+        options.provider,
+    ).await
 }
 
-/// 工種に対応するマスタファイルのパスを解決する
+/// マスタファイルのパスを解決する
 ///
 /// 優先順位:
 /// 1. 明示的に指定されたマスタパス
-/// 2. 工種別マスタ (master/by_work_type/{work_type}.csv)
+/// 2. 工種指定時: 工種別マスタ (master/by_work_type/{work_type}.csv)
 /// 3. デフォルトマスタ (master/construction_hierarchy.csv)
-pub fn resolve_master_for_work_type(master: Option<&Path>, work_type: &str) -> Result<PathBuf> {
+pub fn resolve_master_path(master: Option<&Path>, work_type: Option<&str>) -> Result<PathBuf> {
     if let Some(mp) = master {
         return Ok(mp.to_path_buf());
     }
 
-    // 工種別マスタを自動選択
-    let by_work_type = PathBuf::from("master/by_work_type").join(format!("{}.csv", work_type));
-    if by_work_type.exists() {
-        return Ok(by_work_type);
+    // 工種指定時は工種別マスタを優先
+    if let Some(wt) = work_type {
+        let by_work_type = PathBuf::from("master/by_work_type").join(format!("{}.csv", wt));
+        if by_work_type.exists() {
+            return Ok(by_work_type);
+        }
     }
 
     // デフォルトマスタ
@@ -238,6 +241,11 @@ pub fn resolve_master_for_work_type(master: Option<&Path>, work_type: &str) -> R
     }
 
     Err(error::PhotoAiError::MasterLoad("マスタファイルが見つかりません".to_string()))
+}
+
+/// 後方互換: 工種指定必須版
+pub fn resolve_master_for_work_type(master: Option<&Path>, work_type: &str) -> Result<PathBuf> {
+    resolve_master_path(master, Some(work_type))
 }
 
 /// 測点を一括適用

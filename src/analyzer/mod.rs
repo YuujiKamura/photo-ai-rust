@@ -133,8 +133,9 @@ pub async fn analyze_images_with_cache(
 pub async fn analyze_images_single_step(
     images: &[ImageInfo],
     master: &photo_ai_common::HierarchyMaster,
-    work_type: &str,
+    work_type: Option<&str>,
     variety: Option<&str>,
+    photo_type: Option<&str>,
     batch_size: usize,
     verbose: bool,
     provider: AiProvider,
@@ -143,14 +144,18 @@ pub async fn analyze_images_single_step(
     let total_batches = images.len().div_ceil(batch_size);
     let pb = create_batch_progress_bar(total_batches);
 
+    let mode_label = photo_type
+        .or(work_type)
+        .unwrap_or("全工種");
+
     for (batch_idx, batch) in images.chunks(batch_size).enumerate() {
         pb.set_message(format!("{}枚 1ステップ解析中", batch.len()));
 
         if verbose {
-            log_batch_verbose(&pb, batch_idx, batch.len(), Some(&format!("1ステップ解析: {}", work_type)));
+            log_batch_verbose(&pb, batch_idx, batch.len(), Some(&format!("1ステップ解析: {}", mode_label)));
         }
 
-        let batch_results = claude_cli::analyze_batch_single_step(batch, master, work_type, variety, verbose, provider).await?;
+        let batch_results = claude_cli::analyze_batch_single_step(batch, master, work_type, variety, photo_type, verbose, provider).await?;
         results.extend(batch_results);
 
         pb.inc(1);
