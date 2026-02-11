@@ -26,16 +26,8 @@ pub async fn analyze_batch_step1(
     verbose: bool,
     provider: AiProvider,
 ) -> Result<Vec<RawImageData>> {
-    // 画像をtemp-imagesにコピー
-    let temp_dir = get_temp_dir()?;
-    let local_paths = copy_to_temp(images, &temp_dir)?;
-
-    // プロンプト構築
-    let image_list = local_paths
-        .iter()
-        .map(|p| p.display().to_string().replace('\\', "/"))
-        .collect::<Vec<_>>()
-        .join(", ");
+    // 元画像パスをそのまま使用（run_gemini_cliが内部でASCIIパスにコピーする）
+    let image_paths: Vec<PathBuf> = images.iter().map(|img| img.path.clone()).collect();
 
     // 共通プロンプト生成を使用
     let image_meta: Vec<(&str, Option<&str>)> = images
@@ -44,19 +36,14 @@ pub async fn analyze_batch_step1(
         .collect();
     let step1_prompt = build_step1_prompt(&image_meta);
 
-    // プロンプト構築（改行をスペースに置換してcmd経由で渡す）
-    let raw_prompt = format!(
-        "Read the following image files and analyze them: {}\n\n{}",
-        image_list, step1_prompt
-    );
-    let full_prompt = raw_prompt.replace('\n', " ").replace('"', "\\\"");
+    let full_prompt = step1_prompt.replace('\n', " ").replace('"', "\\\"");
 
     if verbose {
         println!("  [Step1] プロンプト長: {} chars", full_prompt.len());
     }
 
-    // Claude CLI呼び出し
-    let response = run_ai_cli(&full_prompt, Some(&local_paths), verbose, provider)?;
+    // AI CLI呼び出し（画像パスはrun_gemini_cliが@fileで付加する）
+    let response = run_ai_cli(&full_prompt, Some(&image_paths), verbose, provider)?;
 
     if verbose {
         println!("  [Step1] レスポンス長: {} chars", response.len());
@@ -115,21 +102,14 @@ pub async fn analyze_batch(
 pub async fn analyze_batch_single_step(
     images: &[ImageInfo],
     master: &HierarchyMaster,
-    work_type: &str,
+    work_type: Option<&str>,
     variety: Option<&str>,
+    photo_type: Option<&str>,
     verbose: bool,
     provider: AiProvider,
 ) -> Result<Vec<AnalysisResult>> {
-    // 画像をtemp-imagesにコピー
-    let temp_dir = get_temp_dir()?;
-    let local_paths = copy_to_temp(images, &temp_dir)?;
-
-    // 画像パスリスト
-    let image_list = local_paths
-        .iter()
-        .map(|p| p.display().to_string().replace('\\', "/"))
-        .collect::<Vec<_>>()
-        .join(", ");
+    // 元画像パスをそのまま使用（run_gemini_cliが内部でASCIIパスにコピーする）
+    let image_paths: Vec<PathBuf> = images.iter().map(|img| img.path.clone()).collect();
 
     // 画像メタデータ
     let image_meta: Vec<(&str, Option<&str>)> = images
@@ -138,21 +118,17 @@ pub async fn analyze_batch_single_step(
         .collect();
 
     // 1ステップ解析プロンプト生成
-    let single_step_prompt = build_single_step_prompt(&image_meta, master, work_type, variety);
+    let single_step_prompt = build_single_step_prompt(&image_meta, master, work_type, variety, photo_type);
 
-    // プロンプト構築
-    let raw_prompt = format!(
-        "Read the following image files and analyze them: {}\n\n{}",
-        image_list, single_step_prompt
-    );
-    let full_prompt = raw_prompt.replace('\n', " ").replace('"', "\\\"");
+    // プロンプト構築（画像参照は run_gemini_cli が @file で付加する）
+    let full_prompt = single_step_prompt.replace('\n', " ").replace('"', "\\\"");
 
     if verbose {
         println!("  [1ステップ解析] プロンプト長: {} chars", full_prompt.len());
     }
 
     // AI CLI呼び出し
-    let response = run_ai_cli(&full_prompt, Some(&local_paths), verbose, provider)?;
+    let response = run_ai_cli(&full_prompt, Some(&image_paths), verbose, provider)?;
 
     if verbose {
         println!("  [1ステップ解析] レスポンス長: {} chars", response.len());
@@ -218,42 +194,71 @@ struct CliConfig {
 
 /// CLI実行の共通処理
 fn run_cli_command(config: CliConfig) -> Result<String> {
-    use std::io::Write;
     use std::process::Stdio;
+    #[cfg(not(windows))]
+    use std::io::Write;
 
     if config.verbose {
         let prompt_len = config.stdin_prompt.as_ref().map(|p| p.len()).unwrap_or(0);
         println!("  [{}] prompt length: {}", config.provider_name, prompt_len);
     }
 
+    // Windows + stdin piping: プロンプトをファイル経由で渡す
+    // cmd /c経由だとstdinが正しく子プロセスに転送されない
+    #[cfg(windows)]
+    let stdin_file = if config.stdin_prompt.is_some() {
+        let path = std::env::temp_dir().join(format!("photo-ai-stdin-{}.txt", std::process::id()));
+        if let Some(prompt) = &config.stdin_prompt {
+            std::fs::write(&path, prompt.as_bytes())
+                .map_err(|e| PhotoAiError::ApiCall(format!("stdin一時ファイル作成エラー: {}", e)))?;
+        }
+        Some(path)
+    } else {
+        None
+    };
+
     // コマンド構築
     #[cfg(windows)]
     let mut cmd = {
         let mut c = Command::new("cmd");
-        c.arg("/c").arg(&config.command);
+        c.arg("/c");
+        // "gemini --yolo -o text < C:\Temp\prompt.txt" を1つのコマンド文字列として渡す
+        let mut cmd_str = config.command.clone();
+        for arg in &config.args {
+            cmd_str.push(' ');
+            cmd_str.push_str(arg);
+        }
+        if let Some(ref path) = stdin_file {
+            cmd_str.push_str(&format!(" < {}", path.display()));
+        }
+        c.arg(&cmd_str);
         c
     };
 
     #[cfg(not(windows))]
-    let mut cmd = Command::new(&config.command);
+    let mut cmd = {
+        let mut c = Command::new(&config.command);
+        for arg in &config.args {
+            c.arg(arg);
+        }
+        c
+    };
 
-    // 引数追加
-    for arg in &config.args {
-        cmd.arg(arg);
-    }
-
-    // stdinが必要な場合
+    // stdin piping (non-Windows only)
+    #[cfg(not(windows))]
     if config.stdin_prompt.is_some() {
         cmd.stdin(Stdio::piped());
     }
 
+    #[allow(unused_mut)]
     let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| PhotoAiError::ApiCall(format!("{} CLI実行エラー: {}", config.provider_name, e)))?;
 
-    // stdin書き込み
+    // stdin書き込み (non-Windows)
+    #[cfg(not(windows))]
     if let Some(prompt) = &config.stdin_prompt {
         if let Some(mut stdin) = child.stdin.take() {
             stdin
@@ -265,6 +270,12 @@ fn run_cli_command(config: CliConfig) -> Result<String> {
     let output = child
         .wait_with_output()
         .map_err(|e| PhotoAiError::ApiCall(format!("{} CLI実行エラー: {}", config.provider_name, e)))?;
+
+    // stdin一時ファイル削除
+    #[cfg(windows)]
+    if let Some(ref path) = stdin_file {
+        std::fs::remove_file(path).ok();
+    }
 
     // エラーチェック
     if !output.status.success() {
@@ -302,25 +313,6 @@ fn run_cli_command(config: CliConfig) -> Result<String> {
     Ok(response)
 }
 
-fn get_temp_dir() -> Result<PathBuf> {
-    let temp_dir = std::env::current_dir()?.join("temp-images");
-    std::fs::create_dir_all(&temp_dir)?;
-    Ok(temp_dir)
-}
-
-fn copy_to_temp(images: &[ImageInfo], temp_dir: &std::path::Path) -> Result<Vec<PathBuf>> {
-    let mut local_paths = Vec::new();
-
-    for img in images {
-        let dest = temp_dir.join(&img.file_name);
-        std::fs::copy(&img.path, &dest)?;
-        // 絶対パスに変換
-        let abs_path = std::fs::canonicalize(&dest)?;
-        local_paths.push(abs_path);
-    }
-
-    Ok(local_paths)
-}
 
 fn run_ai_cli(
     prompt: &str,
@@ -374,27 +366,50 @@ fn run_codex_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -
 }
 
 fn run_gemini_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -> Result<String> {
-    // 画像パスを含むプロンプトを構築
+    // Gemini CLI @file構文はパスにスペースや日本語を含むと動作しない
+    // 一時ディレクトリにコピーしてASCIIパスで参照する
+    let temp_dir = if image_paths.is_some() {
+        let dir = std::env::temp_dir().join(format!("photo-ai-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).ok();
+        Some(dir)
+    } else {
+        None
+    };
     let full_prompt = if let Some(paths) = image_paths {
-        let read_commands: Vec<String> = paths
+        let dir = temp_dir.as_ref().unwrap();
+        let file_refs: Vec<String> = paths
             .iter()
-            .map(|p| format!("Read the file {}", p.display().to_string().replace('\\', "/")))
+            .enumerate()
+            .map(|(i, p)| {
+                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
+                let temp_name = format!("img_{:02}.{}", i, ext);
+                let temp_path = dir.join(&temp_name);
+                if let Err(e) = std::fs::copy(p, &temp_path) {
+                    eprintln!("  Warning: failed to copy {}: {}", p.display(), e);
+                }
+                format!("@{}", temp_path.display().to_string().replace('\\', "/"))
+            })
             .collect();
-        format!("{}\n\n{}", read_commands.join("\n"), prompt)
+        format!("{} {}", file_refs.join(" "), prompt)
     } else {
         prompt.to_string()
     };
 
     let config = CliConfig {
         command: "gemini".to_string(),
-        args: vec!["--output-format".to_string(), "text".to_string()],
+        args: vec!["--yolo".to_string(), "-o".to_string(), "text".to_string()],
         stdin_prompt: Some(full_prompt),
         output_file: None,
         provider_name: "Gemini".to_string(),
         verbose,
     };
 
-    run_cli_command(config)
+    let result = run_cli_command(config);
+    // 一時ファイル削除
+    if let Some(dir) = temp_dir {
+        std::fs::remove_dir_all(&dir).ok();
+    }
+    result
 }
 
 fn run_claude_cli(prompt: &str, verbose: bool) -> Result<String> {

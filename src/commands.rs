@@ -29,6 +29,7 @@ pub struct AnalyzeCommandArgs {
     pub batch_size: usize,
     pub master: Option<PathBuf>,
     pub work_type: Option<String>,
+    pub photo_type: Option<String>,
     pub variety: Option<String>,
     pub station: Option<String>,
     pub use_cache: bool,
@@ -45,6 +46,7 @@ pub struct RunCommandArgs {
     pub batch_size: usize,
     pub master: Option<PathBuf>,
     pub work_type: Option<String>,
+    pub photo_type: Option<String>,
     pub variety: Option<String>,
     pub station: Option<String>,
     pub pdf_quality: PdfQuality,
@@ -145,6 +147,7 @@ struct CommonAnalysisParams {
     batch_size: usize,
     master: Option<PathBuf>,
     work_type: Option<String>,
+    photo_type: Option<String>,
     variety: Option<String>,
     station: Option<String>,
     use_cache: bool,
@@ -201,6 +204,7 @@ async fn run_common_analysis(
         batch_size: params.batch_size,
         verbose: params.verbose,
         master_config: &master_config,
+        photo_type: params.photo_type.as_deref(),
         use_cache: params.use_cache,
         provider: params.provider,
         variety: params.variety.as_ref(),
@@ -261,6 +265,7 @@ pub async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
         batch_size: args.batch_size,
         master: args.master,
         work_type: args.work_type,
+        photo_type: args.photo_type,
         variety: args.variety,
         station: args.station,
         use_cache: args.use_cache,
@@ -295,6 +300,7 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
         batch_size: args.batch_size,
         master: args.master,
         work_type: args.work_type,
+        photo_type: args.photo_type,
         variety: args.variety,
         station: args.station,
         use_cache: args.use_cache,
@@ -496,13 +502,14 @@ impl Commands {
     /// コマンドを実行する
     pub async fn execute(self, cli_args: &CommonCliArgs, config: Config) -> Result<()> {
         match self {
-            Commands::Analyze { folder, output, batch_size, master, work_type, variety, station, use_cache, recursive, include_all } => {
+            Commands::Analyze { folder, output, batch_size, master, work_type, photo_type, variety, station, use_cache, recursive, include_all } => {
                 handle_analyze_command(AnalyzeCommandArgs {
                     folder,
                     output,
                     batch_size,
                     master,
                     work_type,
+                    photo_type,
                     variety,
                     station,
                     use_cache,
@@ -525,7 +532,7 @@ impl Commands {
                 })?;
             }
 
-            Commands::Run { folder, output, format, batch_size, master, work_type, variety, station, pdf_quality, use_cache, recursive, include_all } => {
+            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all } => {
                 handle_run_command(RunCommandArgs {
                     folder,
                     output,
@@ -533,6 +540,7 @@ impl Commands {
                     batch_size,
                     master,
                     work_type,
+                    photo_type,
                     variety,
                     station,
                     pdf_quality,

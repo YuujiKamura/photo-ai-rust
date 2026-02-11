@@ -42,6 +42,10 @@ pub enum Commands {
         #[arg(short = 'w', long)]
         work_type: Option<String>,
 
+        /// 写真種類を指定（使用機械、安全管理写真など）
+        #[arg(short = 't', long)]
+        photo_type: Option<String>,
+
         /// 種別を指定
         #[arg(long)]
         variety: Option<String>,
@@ -123,6 +127,10 @@ pub enum Commands {
         /// 工種を指定（1ステップ解析モード）
         #[arg(short = 'w', long)]
         work_type: Option<String>,
+
+        /// 写真種類を指定（使用機械、安全管理写真など）
+        #[arg(short = 't', long)]
+        photo_type: Option<String>,
 
         /// 種別を指定
         #[arg(long)]

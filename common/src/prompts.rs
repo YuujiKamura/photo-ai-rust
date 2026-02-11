@@ -82,23 +82,25 @@ pub fn build_step1_prompt(images: &[(&str, Option<&str>)]) -> String {
     )
 }
 
-/// 1ステップ解析プロンプト生成（工種指定版）
+/// 1ステップ解析プロンプト生成
 ///
-/// 工種が既知の場合、画像認識と分類を1回のAI呼び出しで実行
+/// 画像認識と分類を1回のAI呼び出しで実行
 ///
 /// # Arguments
 /// * `images` - 画像メタデータ
-/// * `master` - フィルタ済み階層マスタ（指定工種のみ）
-/// * `work_type` - 指定された工種
+/// * `master` - 階層マスタ（工種指定時はフィルタ済み、未指定時は全体）
+/// * `work_type` - 指定された工種（Noneの場合は工種制約なし）
 /// * `variety` - 指定された種別（オプション）
+/// * `photo_type` - 指定された写真種類（使用機械、安全管理写真など）
 ///
 /// # Returns
 /// 1ステップ解析用のプロンプト文字列
 pub fn build_single_step_prompt(
     images: &[(&str, Option<&str>)],
     master: &HierarchyMaster,
-    work_type: &str,
+    work_type: Option<&str>,
     variety: Option<&str>,
+    photo_type: Option<&str>,
 ) -> String {
     let photo_list = images
         .iter()
@@ -115,12 +117,26 @@ pub fn build_single_step_prompt(
     let categories = PHOTO_CATEGORIES.join(", ");
     let hierarchy_text = master.to_compact_text();
 
-    let variety_hint = variety
-        .map(|v| format!("\n- 種別は「{}」が基本（確実でない場合は他を選択可）", v))
-        .unwrap_or_default();
+    // photo_type / work_type の有無でプロンプト冒頭と制約を切り替え
+    let intro = match (photo_type, work_type) {
+        (Some(pt), _) => format!("あなたは工事写真帳を作成する現場監督です。「{}」の写真を解析してください。", pt),
+        (_, Some(wt)) => format!("あなたは工事写真帳を作成する現場監督です。工種「{}」の写真を解析してください。", wt),
+        _ => "あなたは工事写真帳を作成する現場監督です。写真を解析してください。".to_string(),
+    };
+
+    let work_type_constraint = match (photo_type, work_type) {
+        (Some(pt), _) => format!("- 写真種類は「{}」。マスタの候補から撮影内容（備考）を選択", pt),
+        (_, Some(wt)) => {
+            let variety_hint = variety
+                .map(|v| format!("\n- 種別は「{}」が基本（確実でない場合は他を選択可）", v))
+                .unwrap_or_default();
+            format!("- 工種は基本「{}」{}", wt, variety_hint)
+        }
+        _ => "- 工種はマスタの候補から選択（該当なしなら空文字）".to_string(),
+    };
 
     format!(
-        r#"あなたは工事写真帳を作成する現場監督です。工種「{work_type}」の写真を解析してください。
+        r#"{intro}
 
 ## 写真区分（写真種別）
 以下から最も適切なものを選択：
@@ -132,7 +148,7 @@ pub fn build_single_step_prompt(
 {hierarchy_text}
 
 ## 制約
-- 工種は基本「{work_type}」{variety_hint}
+{work_type_constraint}
 - ただし、使用機械写真や安全管理写真では工種が空になることがある（異常ではない）
 - 撮影内容（備考）だけをマスタから選択（判断不可なら空文字）
 - 上位階層はシステム側で自動決定するため、workType/variety/subphase は空文字でよい
@@ -310,7 +326,7 @@ mod tests {
 "#;
         let master = HierarchyMaster::from_csv_str(csv).unwrap();
         let images = vec![("test.jpg", Some("2025-01-18"))];
-        let prompt = build_single_step_prompt(&images, &master, "舗装工", None);
+        let prompt = build_single_step_prompt(&images, &master, Some("舗装工"), None, None);
 
         // コンパクトテキスト形式で出力されている（JSON形式ではない）
         assert!(prompt.contains("舗設状況, 初期転圧状況"));

@@ -312,6 +312,60 @@ impl HierarchyMaster {
         }
     }
 
+    /// 写真種類で絞ったマスタを返す
+    ///
+    /// まず写真種別（photo_type）でマッチし、ヒットしなければ備考（remarks）でマッチする。
+    /// 例: "安全管理写真" → 写真種別="安全管理写真" でフィルタ
+    /// 例: "使用機械" → 備考="使用機械" でフィルタ
+    pub fn filter_by_photo_type(&self, photo_type: &str) -> Self {
+        // まず写真種別で検索
+        let by_type: Vec<HierarchyRow> = self.rows
+            .iter()
+            .filter(|row| row.photo_type == photo_type)
+            .cloned()
+            .collect();
+
+        let filtered_rows = if !by_type.is_empty() {
+            by_type
+        } else {
+            // 写真種別にヒットしなければ備考で検索
+            self.rows
+                .iter()
+                .filter(|row| row.remarks == photo_type)
+                .cloned()
+                .collect()
+        };
+
+        Self::from_rows(filtered_rows)
+    }
+
+    /// 行リストからインデックスを再構築
+    fn from_rows(rows: Vec<HierarchyRow>) -> Self {
+        let mut work_types = HashSet::new();
+        let mut work_type_to_varieties: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut variety_to_subphases: HashMap<(String, String), HashSet<String>> = HashMap::new();
+
+        for row in &rows {
+            if !row.work_type.is_empty() {
+                work_types.insert(row.work_type.clone());
+                if !row.variety.is_empty() {
+                    work_type_to_varieties
+                        .entry(row.work_type.clone())
+                        .or_default()
+                        .insert(row.variety.clone());
+                    if !row.subphase.is_empty() {
+                        variety_to_subphases
+                            .entry((row.work_type.clone(), row.variety.clone()))
+                            .or_default()
+                            .insert(row.subphase.clone());
+                    }
+                }
+            }
+        }
+
+        Self { rows, work_types, work_type_to_varieties, variety_to_subphases }
+    }
+
     /// 指定した工種・種別のみに絞ったマスタを返す
     pub fn filter_by_work_type_and_variety(&self, work_type: &str, variety: Option<&str>) -> Self {
         let filtered_rows: Vec<HierarchyRow> = self.rows
