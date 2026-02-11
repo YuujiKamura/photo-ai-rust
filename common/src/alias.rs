@@ -2,7 +2,7 @@
 //!
 //! 写真区分や工種の表記ゆれを正規化する。
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::types::AnalysisResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -12,6 +12,14 @@ use std::collections::HashMap;
 /// 完全一致を優先し、なければ最長の部分一致パターンで置換する。
 /// どちらにも一致しなければ元の値をそのまま返す。
 pub fn longest_match_transform(value: &str, map: &HashMap<String, String>) -> String {
+    transform_field(value, map)
+}
+
+/// フィールド値をエイリアスマップで変換する。
+///
+/// 完全一致を優先し、なければ最長の部分一致パターンで置換する。
+/// どちらにも一致しなければ元の値をそのまま返す。
+fn transform_field(value: &str, map: &HashMap<String, String>) -> String {
     if value.is_empty() {
         return value.to_string();
     }
@@ -53,14 +61,57 @@ pub struct AliasConfig {
 
 impl AliasConfig {
     /// 組み込みプリセットを取得（JSONから読み込み）
-    pub fn from_preset(name: &str) -> Option<Self> {
+    ///
+    /// 不明なプリセット名の場合は `Error::InvalidFormat` を返す。
+    pub fn from_preset(name: &str) -> Result<Self> {
         let json = match name.to_lowercase().as_str() {
             "pavement" | "舗装" => include_str!("../../master/alias_presets/pavement.json"),
             "marking" | "区画線" => include_str!("../../master/alias_presets/marking.json"),
             "general" | "汎用" => include_str!("../../master/alias_presets/general.json"),
-            _ => return None,
+            _ => {
+                return Err(Error::InvalidFormat {
+                    key: "preset".to_string(),
+                    detail: format!(
+                        "不明なプリセット '{}' (pavement/marking/general)",
+                        name
+                    ),
+                });
+            }
         };
-        serde_json::from_str(json).ok()
+        let config: Self = serde_json::from_str(json)?;
+        Ok(config)
+    }
+
+    /// プリセットとカスタムJSONからエイリアス設定を構築する。
+    ///
+    /// プリセットが不明な場合は警告を返し、エラーにはしない。
+    /// カスタムJSONのパースに失敗した場合はエラーを返す。
+    /// 返り値の第2要素は警告メッセージのリスト。
+    pub fn build(preset: Option<&str>, alias_json: Option<&str>) -> Result<(Self, Vec<String>)> {
+        let mut config = Self::default();
+        let mut warnings = Vec::new();
+
+        // プリセットを適用
+        if let Some(preset_name) = preset {
+            match Self::from_preset(preset_name) {
+                Ok(preset_config) => config.merge(&preset_config),
+                Err(Error::InvalidFormat { .. }) => {
+                    warnings.push(format!(
+                        "不明なプリセット '{}' (pavement/marking/general)",
+                        preset_name
+                    ));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        // カスタムエイリアスJSONを適用（プリセットを上書き）
+        if let Some(json) = alias_json {
+            let custom_config = Self::from_json(json)?;
+            config.merge(&custom_config);
+        }
+
+        Ok((config, warnings))
     }
 
     /// JSONファイルから読み込み（非WASM環境のみ）
@@ -101,11 +152,10 @@ impl AliasConfig {
     pub fn apply(&self, result: &AnalysisResult) -> AnalysisResult {
         let mut updated = result.clone();
 
-        updated.photo_category =
-            longest_match_transform(&result.photo_category, &self.photo_category);
-        updated.work_type = longest_match_transform(&result.work_type, &self.work_type);
-        updated.variety = longest_match_transform(&result.variety, &self.variety);
-        updated.subphase = longest_match_transform(&result.subphase, &self.subphase);
+        updated.photo_category = transform_field(&result.photo_category, &self.photo_category);
+        updated.work_type = transform_field(&result.work_type, &self.work_type);
+        updated.variety = transform_field(&result.variety, &self.variety);
+        updated.subphase = transform_field(&result.subphase, &self.subphase);
 
         updated
     }
@@ -127,26 +177,7 @@ pub fn apply_aliases(
     preset: Option<&str>,
     alias_json: Option<&str>,
 ) -> Result<(Vec<AnalysisResult>, Vec<String>)> {
-    let mut config = AliasConfig::default();
-    let mut warnings = Vec::new();
-
-    // プリセットを適用
-    if let Some(preset_name) = preset {
-        if let Some(preset_config) = AliasConfig::from_preset(preset_name) {
-            config.merge(&preset_config);
-        } else {
-            warnings.push(format!(
-                "不明なプリセット '{}' (pavement/marking/general)",
-                preset_name
-            ));
-        }
-    }
-
-    // カスタムエイリアスJSONを適用（プリセットを上書き）
-    if let Some(json) = alias_json {
-        let custom_config = AliasConfig::from_json(json)?;
-        config.merge(&custom_config);
-    }
+    let (config, warnings) = AliasConfig::build(preset, alias_json)?;
 
     // 変換を適用
     let transformed: Vec<AnalysisResult> = results.iter().map(|r| config.apply(r)).collect();
@@ -169,6 +200,15 @@ mod tests {
             config.work_type().get("舗装"),
             Some(&"舗装工".to_string())
         );
+    }
+
+    #[test]
+    fn test_unknown_preset_returns_error() {
+        let result = AliasConfig::from_preset("unknown");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, Error::InvalidFormat { .. }));
+        assert!(format!("{}", err).contains("unknown"));
     }
 
     #[test]
@@ -285,5 +325,52 @@ mod tests {
         assert!(base.work_type().contains_key("舗装"));
         // General entries are preserved
         assert!(base.photo_category().contains_key("着工"));
+    }
+
+    #[test]
+    fn test_build_with_preset() {
+        let (config, warnings) = AliasConfig::build(Some("pavement"), None).unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(
+            config.photo_category().get("品質"),
+            Some(&"品質管理写真".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_with_unknown_preset_warns() {
+        let (config, warnings) = AliasConfig::build(Some("unknown"), None).unwrap();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("unknown"));
+        // Config is empty (no preset applied)
+        assert!(config.photo_category().is_empty());
+    }
+
+    #[test]
+    fn test_build_with_custom_json() {
+        let json = r#"{"photo_category": {"テスト": "テスト写真"}}"#;
+        let (config, warnings) = AliasConfig::build(None, Some(json)).unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(
+            config.photo_category().get("テスト"),
+            Some(&"テスト写真".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_preset_and_custom_merge() {
+        let json = r#"{"photo_category": {"カスタム": "カスタム写真"}}"#;
+        let (config, warnings) = AliasConfig::build(Some("pavement"), Some(json)).unwrap();
+        assert!(warnings.is_empty());
+        // Preset entries present
+        assert_eq!(
+            config.photo_category().get("品質"),
+            Some(&"品質管理写真".to_string())
+        );
+        // Custom entries merged
+        assert_eq!(
+            config.photo_category().get("カスタム"),
+            Some(&"カスタム写真".to_string())
+        );
     }
 }

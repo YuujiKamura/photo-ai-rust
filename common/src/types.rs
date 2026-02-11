@@ -73,6 +73,14 @@ pub struct AnalysisResult {
     pub focus_target: String,     // 撮影対象（全景/黒板アップ/温度計アップ等）
 }
 
+impl AnalysisResult {
+    /// 機械関連の写真かどうかを判定
+    /// 備考が「使用機械」または「重機始業前点検」の場合にtrue
+    pub fn is_machinery_related(&self) -> bool {
+        self.remarks == "使用機械" || self.remarks == "重機始業前点検"
+    }
+}
+
 /// 写真データのトレイト（異なるAnalysisResult型に対応）
 pub trait PhotoData {
     fn file_path(&self) -> &str;
