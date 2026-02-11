@@ -15,6 +15,7 @@ pub const PHOTO_CATEGORIES: &[&str] = &[
     "安全管理写真",
     "施工状況写真",
     "着手前及び完成写真",
+    "その他",
 ];
 
 /// Step1プロンプト生成（画像認識用）
@@ -112,8 +113,7 @@ pub fn build_single_step_prompt(
         .join("\n");
 
     let categories = PHOTO_CATEGORIES.join(", ");
-    let hierarchy_json = master.to_chain_records_json();
-    let hierarchy_str = serde_json::to_string(&hierarchy_json).unwrap_or_default();
+    let hierarchy_text = master.to_compact_text();
 
     let variety_hint = variety
         .map(|v| format!("\n- 種別は「{}」が基本（確実でない場合は他を選択可）", v))
@@ -126,22 +126,24 @@ pub fn build_single_step_prompt(
 以下から最も適切なものを選択：
 {categories}
 
-## 工種マスタ（チェーンレコード）
-{hierarchy_str}
-
-## 階層の意味（重要）
-- photoDivision: 写真区分（直接工事費など）
-- photoType: 写真種別（施工状況写真、品質管理写真など）
-- workType: 工種
-- variety: 種別
-- subphase: 作業段階
-- remarks: 撮影内容（最下層。ここだけを選ぶ）
-- patterns: 備考に紐づく検索パターン
+## 工種マスタ（候補一覧）
+各行は「写真種別 > 工種 > 種別 > 細別: 備考1, 備考2, ...」の形式です。
+備考（撮影内容）からマスタの候補を1つ選んでください。
+{hierarchy_text}
 
 ## 制約
-- 工種は「{work_type}」固定{variety_hint}
+- 工種は基本「{work_type}」{variety_hint}
+- ただし、使用機械写真や安全管理写真では工種が空になることがある（異常ではない）
 - 撮影内容（備考）だけをマスタから選択（判断不可なら空文字）
 - 上位階層はシステム側で自動決定するため、workType/variety/subphase は空文字でよい
+
+## 使用機械写真の判定
+- 黒板に「使用機械」と書かれている場合、photoCategory は「その他」、remarks は「使用機械」とする
+- 使用機械写真では工種欄が空白でもよい
+
+## 安全管理写真の判定
+- 黒板や写真内容から安全管理（朝礼、KY活動、新規入場者教育、重機始業前点検、安全パトロール等）と判断された場合、photoCategory は「安全管理写真」
+- 安全管理写真では工種は空
 
 ## 出力形式（厳密にこのJSON配列形式で出力）
 [
@@ -226,6 +228,11 @@ mod tests {
         assert!(PHOTO_CATEGORIES.contains(&"安全管理写真"));
     }
 
+    #[test]
+    fn test_photo_categories_contains_other() {
+        assert!(PHOTO_CATEGORIES.contains(&"その他"));
+    }
+
     // =============================================
     // build_step1_prompt テスト
     // =============================================
@@ -287,6 +294,34 @@ mod tests {
         // 空でもプロンプトは生成される
         assert!(prompt.contains("対象写真:"));
         assert!(prompt.contains("施工状況写真"));
+    }
+
+    // =============================================
+    // build_single_step_prompt テスト
+    // =============================================
+
+    #[test]
+    fn test_build_single_step_prompt_contains_compact_text() {
+        let csv = r#"写真区分,写真種別,工種,種別,細別,撮影内容,検索パターン
+"直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","舗設状況",""
+"直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","初期転圧状況",""
+"直接工事費","その他","舗装工","","","使用機械",""
+"現場管理費","安全管理写真","","","","朝礼",""
+"#;
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+        let images = vec![("test.jpg", Some("2025-01-18"))];
+        let prompt = build_single_step_prompt(&images, &master, "舗装工", None);
+
+        // コンパクトテキスト形式で出力されている（JSON形式ではない）
+        assert!(prompt.contains("舗設状況, 初期転圧状況"));
+        assert!(!prompt.contains("\"photoType\""));
+        // 使用機械の判定ルール
+        assert!(prompt.contains("使用機械"));
+        assert!(prompt.contains("その他"));
+        // 安全管理写真の判定ルール
+        assert!(prompt.contains("安全管理写真"));
+        // 工種空を許容する記述
+        assert!(prompt.contains("工種が空になることがある"));
     }
 
 }
