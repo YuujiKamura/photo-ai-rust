@@ -5,6 +5,7 @@
 use crate::{ai_provider::AiProvider, analyzer, error, scanner};
 use crate::normalizer::{self, NormalizationOptions};
 use photo_ai_common::HierarchyMaster;
+use photo_tagger::GroupRecords;
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
@@ -89,23 +90,35 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
         config.step_prefix_scan,
     )?;
 
-    // 2. AI解析（1ステップ解析）
-    let analysis_options = AnalysisOptions {
-        folder: config.folder,
-        batch_size: config.batch_size,
-        verbose: config.verbose,
-        master: config.master_config.master_path.as_deref(),
-        photo_type: config.photo_type,
-        use_cache: config.use_cache,
-        provider: config.provider,
-        work_type: config.master_config.effective_work_type.as_deref(),
-        variety: config.variety.map(|s| s.as_str()),
-        step_prefix: config.step_prefix_analyze,
-    };
-    let mut results = run_analysis(&images, &analysis_options).await?;
-    println!("✔ 解析完了\n");
+    // 2. photo-tagger（無条件実行）
+    println!("{} photo-tagger実行中...", config.step_prefix_analyze);
+    let group_records = photo_tagger::run_grouping(config.folder, config.batch_size)
+        .map_err(|e| error::PhotoAiError::ApiCall(format!("photo-tagger: {}", e)))?;
 
-    // 3. 測点適用と正規化
+    if group_records.is_empty() {
+        return Err(error::PhotoAiError::NoImagesFound(
+            format!("photo-taggerの結果が空: {}", config.folder.display())
+        ));
+    }
+
+    // 3. マスタ照合
+    let master_path_buf = resolve_master_path(None, None)?;
+    let master = HierarchyMaster::from_csv(&master_path_buf)
+        .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+
+    let grouped_images: Vec<_> = images.iter()
+        .filter(|img| group_records.contains_key(&img.file_name))
+        .cloned()
+        .collect();
+    let skipped = images.len() - grouped_images.len();
+    if skipped > 0 {
+        println!("  {} 枚をスキップ（グループ未登録）", skipped);
+    }
+
+    let mut results = convert_groups_to_results(&grouped_images, &group_records, &master);
+    println!("✔ マスタ照合完了（{}枚）\n", results.len());
+
+    // 4. 正規化
     normalize_results_with_station(
         &mut results,
         config.station.map(|s| s.as_str()),
@@ -246,6 +259,54 @@ pub fn resolve_master_path(master: Option<&Path>, work_type: Option<&str>) -> Re
 /// 後方互換: 工種指定必須版
 pub fn resolve_master_for_work_type(master: Option<&Path>, work_type: &str) -> Result<PathBuf> {
     resolve_master_path(master, Some(work_type))
+}
+
+/// 全景を先頭にするためのロール優先度
+fn role_priority(role: &str) -> u8 {
+    if role.contains("全景") { 0 }
+    else if role.contains("証票") { 1 }
+    else if role.contains("ナンバー") { 2 }
+    else { 3 }
+}
+
+/// photo-groups.json のレコードを AnalysisResult に変換し、マスタ照合する
+/// グループ番号→全景優先でソート
+fn convert_groups_to_results(
+    images: &[scanner::ImageInfo],
+    groups: &GroupRecords,
+    master: &HierarchyMaster,
+) -> Vec<analyzer::AnalysisResult> {
+    let mut results: Vec<(u32, u8, analyzer::AnalysisResult)> = images.iter().filter_map(|img| {
+        let rec = groups.get(&img.file_name)?;
+        let mut result = analyzer::AnalysisResult {
+            file_name: img.file_name.clone(),
+            file_path: img.path.display().to_string(),
+            date: img.date.as_deref().unwrap_or("").to_string(),
+            ..Default::default()
+        };
+
+        result.has_board = rec.has_board;
+        result.detected_text = rec.detected_text.clone();
+        result.description = rec.description.clone();
+        result.focus_target = rec.role.clone();
+        result.station = format!("{} {}", rec.machine_type, rec.machine_id);
+
+        // マスタから備考="使用機械" の行を探して階層を適用
+        if let Some(row) = master.rows().iter().find(|r| r.remarks == "使用機械") {
+            result.photo_category = row.photo_type.clone();
+            result.work_type = row.work_type.clone();
+            result.variety = row.variety.clone();
+            result.subphase = row.subphase.clone();
+            result.remarks = row.remarks.clone();
+        }
+
+        result.reasoning = format!("photo-groups.json: {} / {}", rec.machine_type, rec.machine_id);
+
+        Some((rec.group, role_priority(&rec.role), result))
+    }).collect();
+
+    results.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    results.into_iter().map(|(_, _, r)| r).collect()
 }
 
 /// 測点を一括適用

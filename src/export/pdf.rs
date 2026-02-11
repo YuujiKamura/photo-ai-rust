@@ -188,8 +188,8 @@ pub fn generate_pdf(
 
         let mut ops = Vec::new();
 
-        // ヘッダー描画
-        add_header_ops(&mut ops, title, page_idx + 1, total_pages, &fonts, &layout_core);
+        // ページ番号のみ描画（ヘッダータイトルは写真エリアと干渉するため省略）
+        add_page_number_ops(&mut ops, page_idx + 1, &fonts, &layout_core);
 
         // 各写真スロット
         for (slot, idx) in (start_idx..end_idx).enumerate() {
@@ -365,62 +365,20 @@ fn add_text_ops(ops: &mut Vec<Op>, text: &str, x_pt: f32, y_pt: f32, size: f32, 
     ops.push(Op::EndTextSection);
 }
 
-/// テキスト描画オペレーション追加（Bold）
-fn add_text_ops_bold(ops: &mut Vec<Op>, text: &str, x_pt: f32, y_pt: f32, size: f32, fonts: &FontSet) {
-    ops.push(Op::StartTextSection);
-    ops.push(Op::SetTextCursor { pos: Point { x: Pt(x_pt), y: Pt(y_pt) } });
-
-    match fonts {
-        FontSet::Japanese(font_id) => {
-            // 日本語フォントはBold版がないので通常フォントを使用
-            ops.push(Op::SetFontSize { size: Pt(size), font: font_id.clone() });
-            ops.push(Op::WriteText {
-                items: vec![TextItem::Text(text.to_string())],
-                font: font_id.clone(),
-            });
-        }
-        FontSet::Builtin => {
-            ops.push(Op::SetFontSizeBuiltinFont { size: Pt(size), font: BuiltinFont::HelveticaBold });
-            ops.push(Op::WriteTextBuiltinFont {
-                items: vec![TextItem::Text(text.to_string())],
-                font: BuiltinFont::HelveticaBold,
-            });
-        }
-    }
-
-    ops.push(Op::EndTextSection);
-}
-
-/// ヘッダー描画オペレーション追加
-#[allow(clippy::too_many_arguments)]
-fn add_header_ops(
+/// ページ番号のみ描画
+fn add_page_number_ops(
     ops: &mut Vec<Op>,
-    title: &str,
     page_num: usize,
-    _total_pages: usize,
     fonts: &FontSet,
     layout: &pdf_core::PdfLayoutCore,
 ) {
-    let title_text = process_text(title, fonts.is_japanese());
-
-    // タイトル
     ops.push(Op::SetFillColor { col: Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None }) });
-    add_text_ops_bold(
-        ops,
-        &title_text,
-        layout.margin_pt,
-        layout.page_height_pt - layout.margin_pt - 20.0,
-        UNIFIED_FONT_SIZE,
-        fonts,
-    );
-
-    // ページ番号（参照PDF準拠: "Page X" 形式）
     add_text_ops(
         ops,
         &format!("Page {}", page_num),
         layout.page_width_pt - layout.margin_pt - 50.0,
-        layout.page_height_pt - layout.margin_pt - 20.0,
-        UNIFIED_FONT_SIZE,
+        layout.page_height_pt - layout.margin_pt + 2.0,
+        9.0,
         fonts,
     );
 }
@@ -490,7 +448,8 @@ fn add_rect_ops(ops: &mut Vec<Op>, x_pt: f32, y_pt: f32, width_pt: f32, height_p
 
 /// テキスト自動調整設定
 struct TextFitConfig {
-    max_width_chars: usize,
+    /// 半角換算での最大幅（全角=2, 半角=1）
+    max_half_width: usize,
     base_font_size: f32,
     min_font_size: f32,
     max_lines: usize,
@@ -499,15 +458,45 @@ struct TextFitConfig {
 impl Default for TextFitConfig {
     fn default() -> Self {
         Self {
-            max_width_chars: 15,
+            max_half_width: 22,
             base_font_size: UNIFIED_FONT_SIZE,
-            min_font_size: 8.0, // 自動縮小の下限
+            min_font_size: 10.0,
             max_lines: 2,
         }
     }
 }
 
-/// テキスト描画オペレーション追加（自動調整）
+/// 半角換算の文字幅を計算（全角=2, 半角=1）
+fn half_width_count(text: &str) -> usize {
+    text.chars().map(|c| if c.is_ascii() { 1 } else { 2 }).sum()
+}
+
+/// 半角換算幅で文字列を分割（スペース区切り優先）
+fn split_at_half_width(text: &str, max_hw: usize) -> (&str, &str) {
+    let mut hw = 0;
+    // 最後の「単語の開始位置」を記録（スペース/区切りの直前）
+    let mut last_word_start = None;
+    let mut prev_was_sep = false;
+    for (i, c) in text.char_indices() {
+        let is_sep = c == ' ' || c == '/' || c == '\u{3000}';
+        if !prev_was_sep && is_sep {
+            // 非区切り→区切り: ここが折り返し候補
+            last_word_start = Some(i);
+        }
+        prev_was_sep = is_sep;
+        hw += if c.is_ascii() { 1 } else { 2 };
+        if hw > max_hw {
+            if let Some(sp) = last_word_start {
+                let line2 = text[sp..].trim_start_matches(|c: char| c == ' ' || c == '/' || c == '\u{3000}');
+                return (text[..sp].trim_end(), line2);
+            }
+            return (&text[..i], &text[i..]);
+        }
+    }
+    (text, "")
+}
+
+/// テキスト描画オペレーション追加（収まらなければ縮小して1行、それでも無理なら改行）
 fn add_fitted_text_ops(
     ops: &mut Vec<Op>,
     text: &str,
@@ -520,32 +509,24 @@ fn add_fitted_text_ops(
         return;
     }
 
-    let char_count = text.chars().count();
+    let hw = half_width_count(text);
 
-    let font_size = if char_count <= config.max_width_chars {
-        config.base_font_size
-    } else if char_count <= config.max_width_chars * 2 {
-        let ratio = config.max_width_chars as f32 / char_count as f32;
-        (config.base_font_size * ratio).max(config.min_font_size)
+    if hw <= config.max_half_width {
+        // 12ptで1行に収まる
+        add_text_ops(ops, text, x_pt, y_pt, config.base_font_size, fonts);
     } else {
-        config.min_font_size
-    };
-
-    let chars_per_line = ((config.max_width_chars as f32 * config.base_font_size / font_size) as usize).max(10);
-    let total_max_chars = chars_per_line * config.max_lines;
-
-    if char_count <= chars_per_line {
-        add_text_ops(ops, text, x_pt, y_pt, font_size, fonts);
-    } else if char_count <= total_max_chars {
-        let (line1, line2) = text.split_at(text.char_indices().nth(chars_per_line).map(|(i, _)| i).unwrap_or(text.len()));
-        add_text_ops(ops, line1, x_pt, y_pt, font_size, fonts);
-        add_text_ops(ops, line2, x_pt, y_pt - 10.0, font_size, fonts);
-    } else {
-        let max_chars = total_max_chars - 1;
-        let truncated: String = text.chars().take(max_chars).chain(std::iter::once('…')).collect();
-        let (line1, line2) = truncated.split_at(truncated.char_indices().nth(chars_per_line).map(|(i, _)| i).unwrap_or(truncated.len()));
-        add_text_ops(ops, line1, x_pt, y_pt, font_size, fonts);
-        add_text_ops(ops, line2, x_pt, y_pt - 10.0, font_size, fonts);
+        // 10ptなら1行に収まるか？
+        let hw_at_smaller = (config.max_half_width as f32 * config.base_font_size / config.min_font_size) as usize;
+        if hw <= hw_at_smaller {
+            add_text_ops(ops, text, x_pt, y_pt, config.min_font_size, fonts);
+        } else {
+            // 10ptでも収まらない→10ptで改行
+            let (line1, line2) = split_at_half_width(text, hw_at_smaller);
+            add_text_ops(ops, line1, x_pt, y_pt, config.min_font_size, fonts);
+            if !line2.is_empty() {
+                add_text_ops(ops, line2, x_pt, y_pt - config.min_font_size - 1.0, config.min_font_size, fonts);
+            }
+        }
     }
 }
 
@@ -584,29 +565,43 @@ fn add_info_field_ops(
 
     ops.push(Op::SetFillColor { col: Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None }) });
 
-    let text_config = TextFitConfig {
-        max_width_chars: 18,
-        ..TextFitConfig::default()
-    };
+    let text_config = TextFitConfig::default();
 
     for (i, field) in fields.iter().enumerate() {
         let field_top = row_y_pt + photo_height_pt - (i as f32 * row_height);
-        let text_y = field_top - row_height * 0.7; // 行の上部から70%の位置
+        let field_bottom = field_top - row_height;
 
-        if text_y > row_y_pt + 5.0 {
-            let label_text = process_text(field.label, fonts.is_japanese());
+        if field_bottom > row_y_pt {
+            let label_text = process_text(&field.label, fonts.is_japanese());
             let value_text = process_text(&field.value, fonts.is_japanese());
 
-            // ラベル（左寄せ）
-            add_text_ops(ops, &label_text, info_x_pt + 5.0, text_y, UNIFIED_FONT_SIZE, fonts);
+            // 値が2行になるか判定
+            let hw = half_width_count(&value_text);
+            let needs_two_lines = hw > text_config.max_half_width;
+
+            // フィールド中央
+            let field_center = field_bottom + row_height / 2.0;
+
+            // ラベルは常にフィールド中央
+            let label_y = field_center - UNIFIED_FONT_SIZE * 0.3;
+
+            // 値は行数に応じて位置調整
+            let text_y = if needs_two_lines {
+                // 2行ブロック高 = font*2 + gap
+                let block_h = text_config.min_font_size * 2.0 + 2.0;
+                field_center + block_h / 2.0 - text_config.min_font_size * 0.8
+            } else {
+                field_center - UNIFIED_FONT_SIZE * 0.3
+            };
+
+            add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
 
             // 値（ラベル右側）
             add_fitted_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, fonts, &text_config);
 
             // 行の下に水平線（最後の行以外）
             if i < field_count - 1 {
-                let line_y = field_top - row_height;
-                add_horizontal_line_ops(ops, info_x_pt, info_x_pt + 180.0, line_y);
+                add_horizontal_line_ops(ops, info_x_pt, info_x_pt + 180.0, field_bottom);
             }
         }
     }
