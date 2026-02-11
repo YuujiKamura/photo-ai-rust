@@ -171,6 +171,70 @@ impl HierarchyMaster {
         serde_json::to_value(records).unwrap_or(serde_json::Value::Null)
     }
 
+    /// コンパクトなテキスト形式でマスタを出力
+    ///
+    /// 同じ写真種別>工種>種別>細別のグループを1行にまとめ、
+    /// 備考（remarks）をカンマ区切りで列挙する。
+    ///
+    /// 例:
+    /// ```text
+    /// 施工状況写真 > 舗装工 > 舗装打換え工 > 表層工: 舗設状況, 初期転圧状況, 施工完了
+    /// 安全管理写真: 朝礼, KY活動, 新規入場者教育
+    /// その他 > 舗装工: 使用機械
+    /// ```
+    pub fn to_compact_text(&self) -> String {
+        use std::collections::BTreeMap;
+
+        // (photoType, workType, variety, subphase) -> Vec<remarks>
+        // BTreeMap for stable ordering
+        let mut groups: BTreeMap<(String, String, String, String), Vec<String>> = BTreeMap::new();
+
+        for row in &self.rows {
+            let key = (
+                row.photo_type.clone(),
+                row.work_type.clone(),
+                row.variety.clone(),
+                row.subphase.clone(),
+            );
+            let remarks = row.remarks.trim().to_string();
+            if !remarks.is_empty() {
+                groups.entry(key).or_default().push(remarks);
+            } else {
+                // Ensure the group exists even if remarks is empty
+                groups.entry(key).or_default();
+            }
+        }
+
+        let mut lines = Vec::new();
+        for ((photo_type, work_type, variety, subphase), remarks) in &groups {
+            let mut parts = Vec::new();
+            if !photo_type.is_empty() {
+                parts.push(photo_type.as_str());
+            }
+            if !work_type.is_empty() {
+                parts.push(work_type.as_str());
+            }
+            if !variety.is_empty() {
+                parts.push(variety.as_str());
+            }
+            if !subphase.is_empty() {
+                parts.push(subphase.as_str());
+            }
+
+            let hierarchy = parts.join(" > ");
+
+            if remarks.is_empty() {
+                // No remarks - just show the hierarchy path
+                lines.push(hierarchy);
+            } else {
+                let remarks_str = remarks.join(", ");
+                lines.push(format!("{}: {}", hierarchy, remarks_str));
+            }
+        }
+
+        lines.join("\n")
+    }
+
     /// 写真種別の一覧を取得
     pub fn get_photo_types(&self) -> Vec<String> {
         let mut types: HashSet<String> = HashSet::new();
@@ -395,5 +459,38 @@ mod tests {
         let json = master.to_hierarchy_json();
         assert!(json.is_object());
         assert!(json.get("舗装工").is_some());
+    }
+
+    #[test]
+    fn test_to_compact_text_basic() {
+        let master = HierarchyMaster::from_csv_str(TEST_CSV).unwrap();
+        let text = master.to_compact_text();
+        // 施工状況写真の舗装工行にremarksが含まれる
+        assert!(text.contains("舗設状況"));
+        assert!(text.contains("区画線設置状況"));
+        // 品質管理写真の行
+        assert!(text.contains("品質管理写真"));
+        assert!(text.contains("アスファルト混合物温度測定"));
+    }
+
+    #[test]
+    fn test_to_compact_text_grouping() {
+        let csv = r#"写真区分,写真種別,工種,種別,細別,撮影内容,検索パターン
+"直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","舗設状況",""
+"直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","初期転圧状況",""
+"直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","施工完了",""
+"現場管理費","安全管理写真","","","","朝礼",""
+"現場管理費","安全管理写真","","","","KY活動",""
+"直接工事費","その他","舗装工","","","使用機械",""
+"#;
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+        let text = master.to_compact_text();
+
+        // 同じグループの備考がカンマ区切りで1行にまとまる
+        assert!(text.contains("舗設状況, 初期転圧状況, 施工完了"));
+        // 安全管理写真は工種なし
+        assert!(text.contains("安全管理写真: 朝礼, KY活動"));
+        // 使用機械
+        assert!(text.contains("その他 > 舗装工: 使用機械"));
     }
 }
