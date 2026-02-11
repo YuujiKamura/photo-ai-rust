@@ -238,6 +238,13 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
         }
     }
 
+    // タイトルがデフォルトの場合、結果データまたは入力パスから自動導出
+    let title = if args.title == "工事写真帳" {
+        derive_export_title(&results, args.input.parent().unwrap_or(Path::new(".")))
+    } else {
+        args.title.clone()
+    };
+
     // エイリアス変換を適用
     if args.preset.is_some() || args.alias.is_some() {
         println!("- エイリアス変換中...");
@@ -249,9 +256,11 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
         println!("✔ エイリアス変換完了");
     }
 
-    let output_dir = args.output.unwrap_or_else(|| PathBuf::from("."));
+    let output_dir = args.output.unwrap_or_else(|| {
+        args.input.parent().unwrap_or(Path::new(".")).to_path_buf()
+    });
 
-    export::export_results(&results, &args.format, &output_dir, args.photos_per_page, &args.title, args.pdf_quality)?;
+    export::export_results(&results, &args.format, &output_dir, args.photos_per_page, &title, args.pdf_quality)?;
 
     println!("\n✅ エクスポート完了");
     Ok(())
@@ -326,7 +335,8 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
 
     // 4. Export
     println!("[4/4] エクスポート中...");
-    export::export_results(&results, &args.format, &output_paths.export_path, 3, "工事写真帳", args.pdf_quality)?;
+    let title = derive_export_title(&results, &args.folder);
+    export::export_results(&results, &args.format, &output_paths.export_path, 3, &title, args.pdf_quality)?;
 
     println!("\n✅ 完了");
     Ok(())
@@ -496,6 +506,27 @@ pub fn handle_cache_command(args: CacheCommandArgs) {
             Err(e) => println!("キャッシュ削除エラー: {}", e),
         }
     }
+}
+
+/// 結果とフォルダ名からエクスポートタイトルを生成
+fn derive_export_title(results: &[analyzer::AnalysisResult], folder: &Path) -> String {
+    // 全結果で同一のremarksがあればそれを使う
+    if let Some(first_remarks) = results.first().map(|r| &r.remarks) {
+        if !first_remarks.is_empty() && results.iter().all(|r| r.remarks == *first_remarks) {
+            return format!("写真帳_{}", first_remarks);
+        }
+    }
+    // 全結果で同一のwork_typeがあればそれを使う
+    if let Some(first_wt) = results.first().map(|r| &r.work_type) {
+        if !first_wt.is_empty() && results.iter().all(|r| r.work_type == *first_wt) {
+            return format!("写真帳_{}", first_wt);
+        }
+    }
+    // フォルダ名を使う
+    folder.file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| format!("写真帳_{}", n))
+        .unwrap_or_else(|| "工事写真帳".to_string())
 }
 
 impl Commands {

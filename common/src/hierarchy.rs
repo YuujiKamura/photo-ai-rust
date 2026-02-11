@@ -315,26 +315,15 @@ impl HierarchyMaster {
     /// 写真種類で絞ったマスタを返す
     ///
     /// まず写真種別（photo_type）でマッチし、ヒットしなければ備考（remarks）でマッチする。
-    /// 例: "安全管理写真" → 写真種別="安全管理写真" でフィルタ
-    /// 例: "使用機械" → 備考="使用機械" でフィルタ
+    /// 写真種別カラムのみでフィルタ（備考へのフォールバックはしない）
+    /// 例: "その他" → 使用機械等の行がヒット
+    /// 例: "安全管理写真" → 朝礼・KY活動等の行がヒット
     pub fn filter_by_photo_type(&self, photo_type: &str) -> Self {
-        // まず写真種別で検索
-        let by_type: Vec<HierarchyRow> = self.rows
+        let filtered_rows: Vec<HierarchyRow> = self.rows
             .iter()
             .filter(|row| row.photo_type == photo_type)
             .cloned()
             .collect();
-
-        let filtered_rows = if !by_type.is_empty() {
-            by_type
-        } else {
-            // 写真種別にヒットしなければ備考で検索
-            self.rows
-                .iter()
-                .filter(|row| row.remarks == photo_type)
-                .cloned()
-                .collect()
-        };
 
         Self::from_rows(filtered_rows)
     }

@@ -116,7 +116,7 @@ impl PdfLayoutCore {
 /// PDFの情報欄に表示する1行
 #[derive(Debug, Clone)]
 pub struct PdfInfoField {
-    pub label: &'static str,
+    pub label: String,
     pub value: String,
     pub row_span: u8,
 }
@@ -124,6 +124,7 @@ pub struct PdfInfoField {
 /// 情報欄フィールドを構築（GAS準拠: 8フィールド）
 /// 日時 → 区分 → 工種 → 種別 → 細別 → 測点 → 備考 → 測定値
 pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
+    let is_machinery = result.remarks == "使用機械";
     LAYOUT_FIELDS
         .iter()
         .map(|field| {
@@ -160,8 +161,13 @@ pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
                 }
                 _ => "-".to_string(),
             };
+            let label = if is_machinery && field.key == "station" {
+                "機種".to_string()
+            } else {
+                field.label.to_string()
+            };
             PdfInfoField {
-                label: field.label,
+                label,
                 value,
                 row_span: field.row_span,
             }

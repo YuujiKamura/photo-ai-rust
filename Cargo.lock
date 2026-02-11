@@ -5029,6 +5029,7 @@ dependencies = [
  "lazy_static",
  "pdf-analysis-embed",
  "photo-ai-common",
+ "photo-tagger",
  "predicates",
  "printpdf",
  "rayon",
@@ -5062,6 +5063,17 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
+]
+
+[[package]]
+name = "photo-tagger"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cli-ai-analyzer",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

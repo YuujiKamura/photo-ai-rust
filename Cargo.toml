@@ -18,6 +18,9 @@ ai-code-review = { path = "../ai-code-review" }
 
 # 共通ライブラリ
 photo-ai-common = { path = "common" }
+
+# フォトタガー（使用機械グループ分け）
+photo-tagger = { path = "../photo-tagger" }
 # CLI
 clap = { version = "4", features = ["derive"] }
 dialoguer = "0.11"

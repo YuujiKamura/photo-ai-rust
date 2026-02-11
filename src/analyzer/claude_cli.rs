@@ -15,7 +15,7 @@ use std::process::Command;
 // 共通モジュールから型と関数をインポート
 use photo_ai_common::{
     AnalysisResult, RawImageData, HierarchyMaster,
-    build_step1_prompt, build_single_step_prompt,
+    build_step1_prompt, build_prompt_for_category,
     parse_step1_response as common_parse_step1,
     parse_single_step_response as common_parse_single_step,
 };
@@ -118,7 +118,7 @@ pub async fn analyze_batch_single_step(
         .collect();
 
     // 1ステップ解析プロンプト生成
-    let single_step_prompt = build_single_step_prompt(&image_meta, master, work_type, variety, photo_type);
+    let single_step_prompt = build_prompt_for_category(&image_meta, master, work_type, variety, photo_type);
 
     // プロンプト構築（画像参照は run_gemini_cli が @file で付加する）
     let full_prompt = single_step_prompt.replace('\n', " ").replace('"', "\\\"");
@@ -530,9 +530,9 @@ fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMas
                 result.remarks.clear();
             }
         } else {
+            // 工種が空のケース（安全管理写真、使用機械等）は remarks を保持
             result.variety.clear();
             result.subphase.clear();
-            result.remarks.clear();
         }
 
         // 4) subphase の整合
@@ -548,9 +548,20 @@ fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMas
                 result.subphase.clear();
                 result.remarks.clear();
             }
-        } else {
+        } else if !result.work_type.is_empty() {
+            // 工種ありで種別なし → subphaseクリア、remarksはマスタに存在すれば保持
             result.subphase.clear();
-            result.remarks.clear();
+            let has_remarks_in_master = !result.remarks.is_empty() && master.rows().iter().any(|row| {
+                row.work_type == result.work_type
+                    && row.variety.is_empty()
+                    && row.remarks == result.remarks
+            });
+            if !has_remarks_in_master {
+                result.remarks.clear();
+            }
+        } else {
+            // 工種なし（安全管理写真等） → subphaseのみクリア、remarksは保持
+            result.subphase.clear();
         }
 
         // 5) remarks の整合（同一の photoCategory/work/var/subphase の行に存在する備考のみ許可）
