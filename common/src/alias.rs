@@ -2,37 +2,65 @@
 //!
 //! 写真区分や工種の表記ゆれを正規化する。
 
-use crate::types::AnalysisResult;
 use crate::error::Result;
+use crate::types::AnalysisResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// 部分一致で最長マッチ変換を行う。
+///
+/// 完全一致を優先し、なければ最長の部分一致パターンで置換する。
+/// どちらにも一致しなければ元の値をそのまま返す。
+pub fn longest_match_transform(value: &str, map: &HashMap<String, String>) -> String {
+    if value.is_empty() {
+        return value.to_string();
+    }
+
+    // 完全一致を優先
+    if let Some(replacement) = map.get(value) {
+        return replacement.clone();
+    }
+
+    // 部分一致（最長マッチ）
+    let mut best_match: Option<(&str, &str)> = None;
+    for (pattern, replacement) in map {
+        if value.contains(pattern.as_str())
+            && (best_match.is_none() || pattern.len() > best_match.unwrap().0.len())
+        {
+            best_match = Some((pattern.as_str(), replacement.as_str()));
+        }
+    }
+
+    if let Some((_, replacement)) = best_match {
+        replacement.to_string()
+    } else {
+        value.to_string()
+    }
+}
 
 /// エイリアス定義
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AliasConfig {
-    /// 写真区分のエイリアス
     #[serde(default)]
-    pub photo_category: HashMap<String, String>,
-    /// 工種のエイリアス
+    photo_category: HashMap<String, String>,
     #[serde(default)]
-    pub work_type: HashMap<String, String>,
-    /// 種別のエイリアス
+    work_type: HashMap<String, String>,
     #[serde(default)]
-    pub variety: HashMap<String, String>,
-    /// 作業段階のエイリアス
+    variety: HashMap<String, String>,
     #[serde(default)]
-    pub subphase: HashMap<String, String>,
+    subphase: HashMap<String, String>,
 }
 
 impl AliasConfig {
-    /// 組み込みプリセットを取得
+    /// 組み込みプリセットを取得（JSONから読み込み）
     pub fn from_preset(name: &str) -> Option<Self> {
-        match name.to_lowercase().as_str() {
-            "pavement" | "舗装" => Some(Self::pavement_preset()),
-            "marking" | "区画線" => Some(Self::marking_preset()),
-            "general" | "汎用" => Some(Self::general_preset()),
-            _ => None,
-        }
+        let json = match name.to_lowercase().as_str() {
+            "pavement" | "舗装" => include_str!("../../master/alias_presets/pavement.json"),
+            "marking" | "区画線" => include_str!("../../master/alias_presets/marking.json"),
+            "general" | "汎用" => include_str!("../../master/alias_presets/general.json"),
+            _ => return None,
+        };
+        serde_json::from_str(json).ok()
     }
 
     /// JSONファイルから読み込み（非WASM環境のみ）
@@ -49,114 +77,35 @@ impl AliasConfig {
         Ok(config)
     }
 
-    /// 舗装工事用プリセット
-    fn pavement_preset() -> Self {
-        let mut config = Self::default();
-
-        // 写真区分
-        config.photo_category.insert("品質".into(), "品質管理写真".into());
-        config.photo_category.insert("品質管理".into(), "品質管理写真".into());
-        config.photo_category.insert("出来形".into(), "出来形管理写真".into());
-        config.photo_category.insert("出来形管理".into(), "出来形管理写真".into());
-        config.photo_category.insert("施工状況".into(), "施工状況写真".into());
-        config.photo_category.insert("施工中".into(), "施工状況写真".into());
-        config.photo_category.insert("安全".into(), "安全管理写真".into());
-        config.photo_category.insert("安全管理".into(), "安全管理写真".into());
-        config.photo_category.insert("材料".into(), "使用材料写真".into());
-        config.photo_category.insert("使用材料".into(), "使用材料写真".into());
-
-        // 工種
-        config.work_type.insert("舗装".into(), "舗装工".into());
-        config.work_type.insert("As".into(), "舗装工".into());
-        config.work_type.insert("アスファルト".into(), "舗装工".into());
-
-        // 種別
-        config.variety.insert("打換え".into(), "舗装打換え工".into());
-        config.variety.insert("打換".into(), "舗装打換え工".into());
-        config.variety.insert("オーバーレイ".into(), "舗装オーバーレイ工".into());
-
-        // 作業段階
-        config.subphase.insert("表層".into(), "表層工".into());
-        config.subphase.insert("基層".into(), "基層工".into());
-        config.subphase.insert("上層路盤".into(), "上層路盤工".into());
-        config.subphase.insert("下層路盤".into(), "下層路盤工".into());
-
-        config
+    /// 写真区分のエイリアスマップ
+    pub fn photo_category(&self) -> &HashMap<String, String> {
+        &self.photo_category
     }
 
-    /// 区画線工事用プリセット
-    fn marking_preset() -> Self {
-        let mut config = Self::default();
-
-        // 写真区分
-        config.photo_category.insert("品質".into(), "品質管理写真".into());
-        config.photo_category.insert("出来形".into(), "出来形管理写真".into());
-        config.photo_category.insert("施工状況".into(), "施工状況写真".into());
-
-        // 工種
-        config.work_type.insert("区画線".into(), "区画線工".into());
-        config.work_type.insert("ライン".into(), "区画線工".into());
-        config.work_type.insert("白線".into(), "区画線工".into());
-
-        // 種別
-        config.variety.insert("溶融式".into(), "溶融式区画線".into());
-        config.variety.insert("ペイント".into(), "ペイント式区画線".into());
-
-        config
+    /// 工種のエイリアスマップ
+    pub fn work_type(&self) -> &HashMap<String, String> {
+        &self.work_type
     }
 
-    /// 汎用プリセット
-    fn general_preset() -> Self {
-        let mut config = Self::default();
-
-        // 写真区分のみ
-        config.photo_category.insert("品質".into(), "品質管理写真".into());
-        config.photo_category.insert("出来形".into(), "出来形管理写真".into());
-        config.photo_category.insert("施工".into(), "施工状況写真".into());
-        config.photo_category.insert("安全".into(), "安全管理写真".into());
-        config.photo_category.insert("材料".into(), "使用材料写真".into());
-        config.photo_category.insert("着工".into(), "着工前写真".into());
-        config.photo_category.insert("完成".into(), "完成写真".into());
-
-        config
+    /// 種別のエイリアスマップ
+    pub fn variety(&self) -> &HashMap<String, String> {
+        &self.variety
     }
 
-    /// フィールドを変換（部分一致で最長マッチ）
-    fn transform_field(&self, value: &str, aliases: &HashMap<String, String>) -> String {
-        if value.is_empty() {
-            return value.to_string();
-        }
-
-        // 完全一致を優先
-        if let Some(replacement) = aliases.get(value) {
-            return replacement.clone();
-        }
-
-        // 部分一致（最長マッチ）
-        let mut best_match: Option<(&str, &str)> = None;
-        for (pattern, replacement) in aliases {
-            if value.contains(pattern.as_str())
-                && (best_match.is_none() || pattern.len() > best_match.unwrap().0.len())
-            {
-                best_match = Some((pattern.as_str(), replacement.as_str()));
-            }
-        }
-
-        if let Some((_, replacement)) = best_match {
-            replacement.to_string()
-        } else {
-            value.to_string()
-        }
+    /// 作業段階のエイリアスマップ
+    pub fn subphase(&self) -> &HashMap<String, String> {
+        &self.subphase
     }
 
     /// 解析結果にエイリアス変換を適用
     pub fn apply(&self, result: &AnalysisResult) -> AnalysisResult {
         let mut updated = result.clone();
 
-        updated.photo_category = self.transform_field(&result.photo_category, &self.photo_category);
-        updated.work_type = self.transform_field(&result.work_type, &self.work_type);
-        updated.variety = self.transform_field(&result.variety, &self.variety);
-        updated.subphase = self.transform_field(&result.subphase, &self.subphase);
+        updated.photo_category =
+            longest_match_transform(&result.photo_category, &self.photo_category);
+        updated.work_type = longest_match_transform(&result.work_type, &self.work_type);
+        updated.variety = longest_match_transform(&result.variety, &self.variety);
+        updated.subphase = longest_match_transform(&result.subphase, &self.subphase);
 
         updated
     }
@@ -171,20 +120,25 @@ impl AliasConfig {
 }
 
 /// 解析結果にエイリアスを適用
+///
+/// 返り値の第2要素は警告メッセージのリスト。
 pub fn apply_aliases(
     results: &[AnalysisResult],
     preset: Option<&str>,
     alias_json: Option<&str>,
-) -> Result<Vec<AnalysisResult>> {
-    // エイリアス設定を構築
+) -> Result<(Vec<AnalysisResult>, Vec<String>)> {
     let mut config = AliasConfig::default();
+    let mut warnings = Vec::new();
 
     // プリセットを適用
     if let Some(preset_name) = preset {
         if let Some(preset_config) = AliasConfig::from_preset(preset_name) {
             config.merge(&preset_config);
         } else {
-            eprintln!("警告: 不明なプリセット '{}' (pavement/marking/general)", preset_name);
+            warnings.push(format!(
+                "不明なプリセット '{}' (pavement/marking/general)",
+                preset_name
+            ));
         }
     }
 
@@ -195,12 +149,9 @@ pub fn apply_aliases(
     }
 
     // 変換を適用
-    let transformed: Vec<AnalysisResult> = results
-        .iter()
-        .map(|r| config.apply(r))
-        .collect();
+    let transformed: Vec<AnalysisResult> = results.iter().map(|r| config.apply(r)).collect();
 
-    Ok(transformed)
+    Ok((transformed, warnings))
 }
 
 #[cfg(test)]
@@ -210,13 +161,19 @@ mod tests {
     #[test]
     fn test_pavement_preset() {
         let config = AliasConfig::from_preset("pavement").unwrap();
-        assert_eq!(config.photo_category.get("品質"), Some(&"品質管理写真".to_string()));
-        assert_eq!(config.work_type.get("舗装"), Some(&"舗装工".to_string()));
+        assert_eq!(
+            config.photo_category().get("品質"),
+            Some(&"品質管理写真".to_string())
+        );
+        assert_eq!(
+            config.work_type().get("舗装"),
+            Some(&"舗装工".to_string())
+        );
     }
 
     #[test]
     fn test_transform_exact_match() {
-        let config = AliasConfig::pavement_preset();
+        let config = AliasConfig::from_preset("pavement").unwrap();
 
         let result = AnalysisResult {
             file_name: "test.jpg".to_string(),
@@ -232,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_transform_partial_match() {
-        let config = AliasConfig::pavement_preset();
+        let config = AliasConfig::from_preset("pavement").unwrap();
 
         let result = AnalysisResult {
             file_name: "test.jpg".to_string(),
@@ -259,9 +216,74 @@ mod tests {
             },
         ];
 
-        let transformed = apply_aliases(&results, Some("pavement"), None).unwrap();
+        let (transformed, warnings) =
+            apply_aliases(&results, Some("pavement"), None).unwrap();
 
         assert_eq!(transformed[0].photo_category, "品質管理写真");
         assert_eq!(transformed[1].photo_category, "出来形管理写真");
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_apply_aliases_unknown_preset_warning() {
+        let results = vec![AnalysisResult {
+            file_name: "test.jpg".to_string(),
+            photo_category: "品質".to_string(),
+            ..Default::default()
+        }];
+
+        let (transformed, warnings) =
+            apply_aliases(&results, Some("unknown"), None).unwrap();
+
+        // No transformation happened (unknown preset)
+        assert_eq!(transformed[0].photo_category, "品質");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("unknown"));
+    }
+
+    #[test]
+    fn test_longest_match_transform_standalone() {
+        let mut map = HashMap::new();
+        map.insert("品質".to_string(), "品質管理写真".to_string());
+        map.insert("品質管理".to_string(), "品質管理写真".to_string());
+
+        // Exact match preferred
+        assert_eq!(longest_match_transform("品質", &map), "品質管理写真");
+        // Longest partial match
+        assert_eq!(longest_match_transform("品質管理", &map), "品質管理写真");
+        // No match returns original
+        assert_eq!(longest_match_transform("その他", &map), "その他");
+        // Empty returns empty
+        assert_eq!(longest_match_transform("", &map), "");
+    }
+
+    #[test]
+    fn test_preset_from_json_file() {
+        let json = r#"{"photo_category": {"テスト": "テスト写真"}, "work_type": {}, "variety": {}, "subphase": {}}"#;
+        let config = AliasConfig::from_json(json).unwrap();
+        assert_eq!(
+            config.photo_category().get("テスト"),
+            Some(&"テスト写真".to_string())
+        );
+    }
+
+    #[test]
+    fn test_accessor_methods() {
+        let config = AliasConfig::from_preset("marking").unwrap();
+        assert!(config.photo_category().contains_key("品質"));
+        assert!(config.work_type().contains_key("区画線"));
+        assert!(config.variety().contains_key("溶融式"));
+        assert!(config.subphase().is_empty());
+    }
+
+    #[test]
+    fn test_merge() {
+        let mut base = AliasConfig::from_preset("general").unwrap();
+        let pavement = AliasConfig::from_preset("pavement").unwrap();
+        base.merge(&pavement);
+        // Pavement-specific entries are now in the merged config
+        assert!(base.work_type().contains_key("舗装"));
+        // General entries are preserved
+        assert!(base.photo_category().contains_key("着工"));
     }
 }

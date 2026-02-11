@@ -15,13 +15,13 @@ photo-ai-rust/
 CLI (src/)
   -> photo-ai-common
       -> prompts / parser / analyzer / hierarchy
-      -> export::pdf_core / export::excel_core
+      -> export::pdf / export::excel
   -> printpdf / rust_xlsxwriter / image
 
 Web (web-wasm/)
   -> photo-ai-common (wasm)
       -> prompts / parser / analyzer / hierarchy
-      -> export::pdf_core / export::excel_core (レイアウト/フィールド統一)
+      -> export::pdf / export::excel (レイアウト/フィールド統一)
   -> JS Bridge (pdf-lib / ExcelJS)
 ```
 
@@ -59,6 +59,6 @@ User/CLI            Analyzer                 Claude CLI                 Common
 
 ```
 common/src/export/
-  pdf_core.rs     レイアウト・フィールド定義の共通化
-  excel_core.rs   セル配置・フォーマットの共通化
+  pdf.rs          レイアウト・フィールド定義の共通化
+  excel.rs        セル配置・フォーマットの共通化
 ```

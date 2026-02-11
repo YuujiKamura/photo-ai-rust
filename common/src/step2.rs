@@ -34,7 +34,7 @@ pub struct Step2Result {
 pub fn parse_step2_response(response: &str) -> Result<Vec<Step2Result>> {
     let json_str = extract_json(response)?;
     let results: Vec<Step2Result> = serde_json::from_str(json_str.trim())
-        .map_err(|e| Error::Parse(format!("Step2 JSONパースエラー: {}", e)))?;
+        .map_err(|e| Error::AiResponseParse(format!("Step2 JSONパースエラー: {}", e)))?;
     Ok(results)
 }
 

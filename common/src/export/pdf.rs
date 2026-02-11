@@ -202,7 +202,7 @@ fn format_date(date: &str) -> String {
 ///
 /// # Example
 /// ```ignore
-/// use photo_ai_common::export::pdf_core::embed_analysis_to_pdf;
+/// use photo_ai_common::export::pdf::embed_analysis_to_pdf;
 /// embed_analysis_to_pdf(Path::new("output.pdf"), &results)?;
 /// ```
 pub fn embed_analysis_to_pdf(pdf_path: &Path, results: &[AnalysisResult]) -> Result<(), String> {

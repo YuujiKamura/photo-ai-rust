@@ -1,6 +1,6 @@
 //! Export core modules shared across CLI and WASM wrappers.
 
-pub mod pdf_core;
+pub mod pdf;
 
 #[cfg(feature = "excel")]
-pub mod excel_core;
+pub mod excel;
