@@ -10,36 +10,12 @@ use crate::layout::{
 };
 use rust_xlsxwriter::*;
 
+pub use crate::types::PhotoData;
+
 /// 画像データ（バイト配列）
 pub struct ImageData {
     pub data: Vec<u8>,
     pub extension: String,  // "png", "jpeg", "gif"
-}
-
-/// 写真データのトレイト（異なるAnalysisResult型に対応）
-pub trait PhotoData {
-    fn file_path(&self) -> &str;
-    fn date(&self) -> &str;
-    fn photo_category(&self) -> &str;
-    fn work_type(&self) -> &str;
-    fn variety(&self) -> &str;
-    fn subphase(&self) -> &str;
-    fn station(&self) -> &str;
-    fn remarks(&self) -> &str;
-    fn measurements(&self) -> &str;
-}
-
-/// common::AnalysisResultにPhotoDataを実装
-impl PhotoData for crate::types::AnalysisResult {
-    fn file_path(&self) -> &str { &self.file_path }
-    fn date(&self) -> &str { &self.date }
-    fn photo_category(&self) -> &str { &self.photo_category }
-    fn work_type(&self) -> &str { &self.work_type }
-    fn variety(&self) -> &str { &self.variety }
-    fn subphase(&self) -> &str { &self.subphase }
-    fn station(&self) -> &str { &self.station }
-    fn remarks(&self) -> &str { &self.remarks }
-    fn measurements(&self) -> &str { &self.measurements }
 }
 
 /// フィールド値を取得

@@ -5,9 +5,66 @@
 use crate::types::RawImageData;
 use std::collections::HashSet;
 
-/// Step1結果から工種を自動判定
-/// キーワードマッチングで工種を検出
+/// 工種キーワード定義
+#[derive(Debug, Clone)]
+pub struct WorkTypeDefinition {
+    /// 工種名（例: "舗装工"）
+    pub name: &'static str,
+    /// photo_category にマッチするキーワード
+    pub category_keywords: &'static [&'static str],
+    /// detected_text にマッチするキーワード
+    pub text_keywords: &'static [&'static str],
+    /// scene_description にマッチするキーワード
+    pub scene_keywords: &'static [&'static str],
+}
+
+/// デフォルトの工種キーワード定義
+pub const DEFAULT_WORK_TYPE_DEFINITIONS: &[WorkTypeDefinition] = &[
+    WorkTypeDefinition {
+        name: "舗装工",
+        category_keywords: &["温度", "転圧", "舗設", "敷均し", "乳剤", "路盤"],
+        text_keywords: &["アスファルト"],
+        scene_keywords: &["アスファルト", "フィニッシャー", "ローラー"],
+    },
+    WorkTypeDefinition {
+        name: "区画線工",
+        category_keywords: &["区画線"],
+        text_keywords: &["区画線", "ライン"],
+        scene_keywords: &["白線", "区画線"],
+    },
+    WorkTypeDefinition {
+        name: "構造物撤去工",
+        category_keywords: &["取壊し"],
+        text_keywords: &["撤去", "取壊"],
+        scene_keywords: &["解体", "撤去"],
+    },
+    WorkTypeDefinition {
+        name: "道路土工",
+        category_keywords: &["掘削", "路床"],
+        text_keywords: &["掘削"],
+        scene_keywords: &["掘削", "バックホウ"],
+    },
+    WorkTypeDefinition {
+        name: "排水構造物工",
+        category_keywords: &[],
+        text_keywords: &["側溝", "集水", "人孔"],
+        scene_keywords: &["側溝", "マンホール"],
+    },
+    WorkTypeDefinition {
+        name: "人孔改良工",
+        category_keywords: &[],
+        text_keywords: &["人孔改良", "マンホール蓋"],
+        scene_keywords: &[],
+    },
+];
+
+/// Step1結果から工種を自動判定（デフォルト定義使用）
 pub fn detect_work_types(raw_data: &[RawImageData]) -> Vec<String> {
+    detect_work_types_with(raw_data, DEFAULT_WORK_TYPE_DEFINITIONS)
+}
+
+/// Step1結果から工種を自動判定（カスタム定義使用）
+pub fn detect_work_types_with(raw_data: &[RawImageData], definitions: &[WorkTypeDefinition]) -> Vec<String> {
     let mut types = HashSet::new();
 
     for r in raw_data {
@@ -15,47 +72,13 @@ pub fn detect_work_types(raw_data: &[RawImageData]) -> Vec<String> {
         let text = r.detected_text.as_str();
         let scene = r.scene_description.as_str();
 
-        // 舗装工の判定
-        if cat.contains("温度") || cat.contains("転圧") || cat.contains("舗設")
-            || cat.contains("敷均し") || cat.contains("乳剤") || cat.contains("路盤")
-            || text.contains("アスファルト") || scene.contains("アスファルト")
-            || scene.contains("フィニッシャー") || scene.contains("ローラー")
-        {
-            types.insert("舗装工".to_string());
-        }
-
-        // 区画線工の判定
-        if cat.contains("区画線") || text.contains("区画線") || text.contains("ライン")
-            || scene.contains("白線") || scene.contains("区画線")
-        {
-            types.insert("区画線工".to_string());
-        }
-
-        // 構造物撤去工の判定
-        if cat.contains("取壊し") || text.contains("撤去") || text.contains("取壊")
-            || scene.contains("解体") || scene.contains("撤去")
-        {
-            types.insert("構造物撤去工".to_string());
-        }
-
-        // 道路土工の判定
-        if cat.contains("掘削") || cat.contains("路床") || text.contains("掘削")
-            || scene.contains("掘削") || scene.contains("バックホウ")
-        {
-            types.insert("道路土工".to_string());
-        }
-
-        // 排水構造物工の判定
-        if text.contains("側溝") || text.contains("集水") || text.contains("人孔")
-            || scene.contains("側溝") || scene.contains("マンホール")
-        {
-            types.insert("排水構造物工".to_string());
-        }
-
-        // 人孔改良工の判定
-        if text.contains("人孔改良") || text.contains("マンホール蓋")
-        {
-            types.insert("人孔改良工".to_string());
+        for def in definitions {
+            let matched = def.category_keywords.iter().any(|kw| cat.contains(kw))
+                || def.text_keywords.iter().any(|kw| text.contains(kw))
+                || def.scene_keywords.iter().any(|kw| scene.contains(kw));
+            if matched {
+                types.insert(def.name.to_string());
+            }
         }
     }
 

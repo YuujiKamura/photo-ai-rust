@@ -50,8 +50,8 @@ photo-ai-rust/          # CLI本体（メインクレート）
 - `types.rs` - AnalysisResult, RawImageData
 - `hierarchy.rs` - HierarchyMaster（CSVマスタ読み込み）
 - `layout.rs` - PDF/Excelレイアウト定数（mm基準）
-- `export/pdf_core.rs` - PDF生成コア
-- `export/excel_core.rs` - Excel生成コア
+- `export/pdf.rs` - PDF生成コア
+- `export/excel.rs` - Excel生成コア
 
 ### 外部依存
 - `photo-tagger` (`C:/Users/yuuji/photo-tagger`) - Gemini AIで写真グループ分け

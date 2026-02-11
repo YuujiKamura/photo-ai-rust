@@ -7,7 +7,7 @@
 use crate::analyzer::AnalysisResult;
 use crate::cli::PdfQuality;
 use crate::error::{PhotoAiError, Result};
-use photo_ai_common::export::pdf_core;
+use photo_ai_common::export::pdf as pdf_common;
 use photo_ai_common::PdfLayout;
 use printpdf::*;
 use std::path::{Path, PathBuf};
@@ -149,7 +149,7 @@ pub fn generate_pdf(
 ) -> Result<()> {
     let photos_per_page = photos_per_page.clamp(2, 3);
     let layout = PdfLayout::for_photos_per_page(photos_per_page);
-    let layout_core = pdf_core::PdfLayoutCore::from_layout(&layout);
+    let layout_core = pdf_common::PdfLayoutCore::from_layout(&layout);
 
     // printpdf 0.8: ドキュメント作成
     let mut doc = PdfDocument::new(title);
@@ -370,7 +370,7 @@ fn add_page_number_ops(
     ops: &mut Vec<Op>,
     page_num: usize,
     fonts: &FontSet,
-    layout: &pdf_core::PdfLayoutCore,
+    layout: &pdf_common::PdfLayoutCore,
 ) {
     ops.push(Op::SetFillColor { col: Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None }) });
     add_text_ops(
@@ -558,7 +558,7 @@ fn add_info_field_ops(
     photo_height_pt: f32,
     fonts: &FontSet,
 ) {
-    let fields = pdf_core::build_pdf_info_fields(result);
+    let fields = pdf_common::build_pdf_info_fields(result);
     let field_count = fields.len();
     let row_height = photo_height_pt / (field_count as f32 + 0.5); // フィールド数で等分
     let label_width = 35.0; // ラベル列の幅

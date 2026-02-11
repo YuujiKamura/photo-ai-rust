@@ -48,7 +48,7 @@ pub fn extract_json(response: &str) -> Result<&str> {
         }
     }
 
-    Err(Error::Parse("JSONが見つかりません".into()))
+    Err(Error::AiResponseParse("JSONが見つかりません".into()))
 }
 
 /// Step1レスポンスをパース
@@ -64,7 +64,7 @@ pub fn extract_json(response: &str) -> Result<&str> {
 pub fn parse_step1_response(response: &str) -> Result<Vec<RawImageData>> {
     let json_str = extract_json(response)?;
     let raw: Vec<RawImageData> = serde_json::from_str(json_str.trim())
-        .map_err(|e| Error::Parse(format!("Step1 JSONパースエラー: {}", e)))?;
+        .map_err(|e| Error::AiResponseParse(format!("Step1 JSONパースエラー: {}", e)))?;
     Ok(raw)
 }
 
@@ -82,7 +82,7 @@ pub fn parse_step1_response(response: &str) -> Result<Vec<RawImageData>> {
 pub fn parse_single_step_response(response: &str) -> Result<Vec<AnalysisResult>> {
     let json_str = extract_json(response)?;
     let results: Vec<AnalysisResult> = serde_json::from_str(json_str.trim())
-        .map_err(|e| Error::Parse(format!("1ステップ解析 JSONパースエラー: {}", e)))?;
+        .map_err(|e| Error::AiResponseParse(format!("1ステップ解析 JSONパースエラー: {}", e)))?;
     Ok(results)
 }
 
@@ -131,10 +131,10 @@ Some additional text."#;
 
         let result = extract_json(response);
         assert!(result.is_err());
-        if let Err(Error::Parse(msg)) = result {
+        if let Err(Error::AiResponseParse(msg)) = result {
             assert!(msg.contains("JSONが見つかりません"));
         } else {
-            panic!("Expected Parse error");
+            panic!("Expected AiResponseParse error");
         }
     }
 
