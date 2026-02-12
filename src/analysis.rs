@@ -45,6 +45,8 @@ pub struct AnalysisOptions<'a> {
 pub struct MasterConfig {
     pub master_path: Option<PathBuf>,
     pub effective_work_type: Option<String>,
+    /// 全工種時のマージ用パス一覧（by_work_type/*.csv + メインCSV）
+    pub all_paths: Option<Vec<PathBuf>>,
 }
 
 /// マスタ選択と検証を行う共通関数
@@ -60,6 +62,7 @@ pub fn prepare_analysis(
 
     // work_type: CLI引数優先、なければ選択結果から
     let effective_work_type = work_type.or_else(|| selection.as_ref().and_then(|s| s.work_type.clone()));
+    let all_paths = selection.as_ref().and_then(|s| s.all_paths.clone());
     let master_path = selection.map(|s| s.path);
 
     // 検証
@@ -77,7 +80,30 @@ pub fn prepare_analysis(
     Ok(MasterConfig {
         master_path,
         effective_work_type,
+        all_paths,
     })
+}
+
+/// MasterConfigからHierarchyMasterを読み込む
+///
+/// all_pathsがある場合はマージ読み込み、なければ単一ファイル読み込み
+fn load_master_from_config(config: &MasterConfig) -> Result<HierarchyMaster> {
+    if let Some(ref all_paths) = config.all_paths {
+        HierarchyMaster::from_csv_files(all_paths)
+            .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))
+    } else if let Some(ref path) = config.master_path {
+        HierarchyMaster::from_csv(path)
+            .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))
+    } else {
+        // マスタパスなし: デフォルトマスタをフォールバック
+        let default = PathBuf::from("master/construction_hierarchy.csv");
+        if default.exists() {
+            HierarchyMaster::from_csv(&default)
+                .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))
+        } else {
+            Err(error::PhotoAiError::MasterLoad("マスタファイルが見つかりません".to_string()))
+        }
+    }
 }
 
 /// スキャンから正規化までを行う共通関数
@@ -102,9 +128,7 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
     }
 
     // 3. マスタ照合
-    let master_path_buf = resolve_master_path(None, None)?;
-    let master = HierarchyMaster::from_csv(&master_path_buf)
-        .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+    let master = load_master_from_config(config.master_config)?;
 
     let grouped_images: Vec<_> = images.iter()
         .filter(|img| group_records.contains_key(&img.file_name))
@@ -197,8 +221,19 @@ pub async fn run_analysis(
     // マスタパスを決定
     let master_path_buf = resolve_master_path(options.master, options.work_type)?;
 
-    let hierarchy = HierarchyMaster::from_csv(&master_path_buf)
-        .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?;
+    // 工種指定なし + by_work_typeディレクトリあり → マージ読み込み
+    let hierarchy = if options.work_type.is_none() {
+        if let Some(all_paths) = crate::master_selector::collect_all_master_paths() {
+            HierarchyMaster::from_csv_files(&all_paths)
+                .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?
+        } else {
+            HierarchyMaster::from_csv(&master_path_buf)
+                .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?
+        }
+    } else {
+        HierarchyMaster::from_csv(&master_path_buf)
+            .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?
+    };
 
     // photo_type指定時はそちらでフィルタ、なければwork_typeでフィルタ
     let master = if let Some(pt) = options.photo_type {
@@ -270,6 +305,200 @@ fn role_priority(role: &str) -> u8 {
     else { 3 }
 }
 
+/// 既知の黒板キー一覧
+const KNOWN_KEYS: &[&str] = &["工事名", "場所", "工種", "測点", "車番", "車両番号"];
+
+/// 2つの文字列のトークン重複スコアを計算
+///
+/// 日本語2文字トークン（bigram）で分割し、一致数を返す。
+/// 例: "乳剤端部塗布状況" と "端部乳剤塗布状況" → "乳剤","端部","塗布","状況" が共通 → 4
+fn token_overlap_score(a: &str, b: &str) -> usize {
+    if a.is_empty() || b.is_empty() {
+        return 0;
+    }
+    // 完全一致は最高スコア
+    if a == b {
+        return 100;
+    }
+    // 部分文字列一致
+    if b.contains(a) || a.contains(b) {
+        return 50;
+    }
+    // 2文字bigramで重複カウント
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    if a_chars.len() < 2 || b_chars.len() < 2 {
+        return 0;
+    }
+    let a_bigrams: std::collections::HashSet<(char, char)> = a_chars.windows(2)
+        .map(|w| (w[0], w[1]))
+        .collect();
+    let b_bigrams: std::collections::HashSet<(char, char)> = b_chars.windows(2)
+        .map(|w| (w[0], w[1]))
+        .collect();
+    a_bigrams.intersection(&b_bigrams).count()
+}
+
+/// detected_textからキー:値ペアを抽出
+///
+/// photo-taggerのdetected_textは改行区切り・全角コロンまたはスペース区切り:
+/// ```text
+/// 工事名：市道 南千反畑第1号線舗装補修工事\n場所：No.4 L\n路面切削工\n切削・積込状況
+/// 工事名 市道 南千反畑第1号線舗装補修工事\n場所 No. 4 L\n表層工\n乳剤散布状況
+/// ```
+///
+/// キーなし行（"路面切削工"、"切削・積込状況"）は ("", value) として返す
+fn extract_kv_from_text(text: &str) -> Vec<(String, String)> {
+    let mut result = Vec::new();
+    for line in text.split('\n') {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // 全角コロン `：` または半角コロン `:` で分割を試みる
+        if let Some((k, v)) = line.split_once('：').or_else(|| line.split_once(':')) {
+            let k = k.trim();
+            let v = v.trim();
+            if !k.is_empty() {
+                result.push((k.to_string(), v.to_string()));
+                continue;
+            }
+        }
+        // 既知キーでスペース分割を試みる（"場所 No. 4 L" 等）
+        let mut matched = false;
+        for &key in KNOWN_KEYS {
+            if line.starts_with(key) && line.len() > key.len() {
+                let rest = line[key.len()..].trim_start();
+                result.push((key.to_string(), rest.to_string()));
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            // キーなし行はキーワードとして ("", value) で返す
+            result.push((String::new(), line.to_string()));
+        }
+    }
+    result
+}
+
+/// フォルダ内の全detected_textから工種階層を推定し、マスタ照合する
+fn match_master_from_detected_texts(
+    master: &HierarchyMaster,
+    detected_texts: &[&str],
+    folder_name: &str,
+) -> Option<photo_ai_common::hierarchy::HierarchyRow> {
+    // 全detected_textからキー:値を集約
+    let mut work_type: Option<String> = None;
+    let mut variety_hint: Option<String> = None;
+    let mut keywords: Vec<String> = Vec::new();
+
+    for text in detected_texts {
+        for (key, value) in extract_kv_from_text(text) {
+            match key.as_str() {
+                "工種" => { work_type = Some(value); }
+                "工事名" | "車番" | "車両番号" => {} // 照合に不要
+                "場所" | "測点" => {} // 測点は別管理
+                "" => {
+                    // キーなし行: 値全体をキーワードに（"路面切削工"、"切削・積込状況" 等）
+                    if !value.is_empty() {
+                        keywords.push(value);
+                    }
+                }
+                _ => {
+                    // キー自体もキーワードに（"処分状況" など）
+                    keywords.push(key);
+                    if !value.is_empty() {
+                        keywords.push(value);
+                    }
+                }
+            }
+        }
+    }
+
+    // キーワードの中にマスタのvarietyと完全一致するものがあればvariety_hintとして使う
+    // （黒板に「路面切削工」「表層工」等が直接書かれているケース）
+    if variety_hint.is_none() {
+        for kw in &keywords {
+            if master.rows().iter().any(|r| r.variety == *kw || r.subphase == *kw) {
+                variety_hint = Some(kw.clone());
+                break;
+            }
+        }
+    }
+
+    // variety_hintとして使ったキーワードはremarks照合のノイズになるため除外
+    if let Some(ref vh) = variety_hint {
+        keywords.retain(|kw| kw != vh);
+    }
+
+    // フォルダ名のトークンもキーワードに追加（ただし汎用的すぎる語は除外）
+    const GENERIC_FOLDER_NAMES: &[&str] = &[
+        "施工状況", "品質管理", "出来形管理", "安全管理", "使用材料", "完成写真", "着手前",
+    ];
+    for token in folder_name.split(&['_', '　', ' ', '・'][..]) {
+        let t = token.trim();
+        if !t.is_empty() && !GENERIC_FOLDER_NAMES.contains(&t) {
+            keywords.push(t.to_string());
+        }
+    }
+
+    // 工種・種別でマスタをフィルタ
+    let candidates: Vec<_> = master.rows().iter()
+        .filter(|r| {
+            // work_type フィルタ
+            if let Some(wt) = &work_type {
+                if r.work_type != *wt && !r.work_type.is_empty() {
+                    return false;
+                }
+            }
+            // variety_hint フィルタ: varietyまたはsubphaseに一致する行を優先
+            if let Some(vh) = &variety_hint {
+                // varietyかsubphaseにhintが含まれる行のみ通す
+                r.variety == *vh || r.subphase == *vh || r.variety.contains(vh.as_str()) || vh.contains(&r.variety)
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    // 1. 検索パターン列でマッチ
+    let mut best: Option<&photo_ai_common::hierarchy::HierarchyRow> = None;
+    let mut best_score: usize = 0;
+
+    for row in &candidates {
+        // 検索パターンがあればそれで照合
+        if !row.search_patterns.is_empty() {
+            let patterns: Vec<&str> = row.search_patterns.split('|').collect();
+            let score = keywords.iter()
+                .filter(|kw| patterns.iter().any(|p| kw.contains(p) || p.contains(kw.as_str())))
+                .count();
+            if score > best_score {
+                best_score = score;
+                best = Some(row);
+            }
+        }
+    }
+
+    if best.is_some() {
+        return best.cloned();
+    }
+
+    // 2. remarks列にキーワード部分一致（トークンベース：語順違いに対応）
+    for row in &candidates {
+        if row.remarks.is_empty() { continue; }
+        let score = keywords.iter()
+            .map(|kw| token_overlap_score(kw, &row.remarks))
+            .sum::<usize>();
+        if score > best_score {
+            best_score = score;
+            best = Some(row);
+        }
+    }
+
+    best.cloned()
+}
+
 /// photo-groups.json のレコードを AnalysisResult に変換し、マスタ照合する
 /// グループ番号→全景優先でソート
 fn convert_groups_to_results(
@@ -278,6 +507,12 @@ fn convert_groups_to_results(
     master: &HierarchyMaster,
     folder_name: &str,
 ) -> Vec<analyzer::AnalysisResult> {
+    // フォルダ名でのフォールバック照合（detected_textが空の写真用）
+    let folder_fallback_row = {
+        let empty: Vec<&str> = Vec::new();
+        match_master_from_detected_texts(master, &empty, folder_name)
+    };
+
     let mut results: Vec<(u32, u8, analyzer::AnalysisResult)> = images.iter().filter_map(|img| {
         let rec = groups.get(&img.file_name)?;
         let mut result = analyzer::AnalysisResult {
@@ -291,15 +526,41 @@ fn convert_groups_to_results(
         result.detected_text = rec.detected_text.clone();
         result.description = rec.description.clone();
         result.focus_target = rec.role.clone();
-        result.station = rec.machine_type.clone();
 
-        // フォルダ名でマスタの備考を検索
-        if let Some(row) = master.rows().iter().find(|r| r.remarks == folder_name) {
+        // 写真ごとのdetected_textからキー:値を抽出
+        let kvs = extract_kv_from_text(&rec.detected_text);
+
+        // 測点: この写真の黒板OCRから「場所」を取得
+        let photo_station = kvs.iter()
+            .find(|(k, _)| k == "場所" || k == "測点")
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default();
+        result.station = normalize_station(&photo_station);
+
+        // 写真ごとにマスタ照合（混在フォルダ対応）
+        let photo_matched_row = if !rec.detected_text.is_empty() {
+            let texts = vec![rec.detected_text.as_str()];
+            match_master_from_detected_texts(master, &texts, folder_name)
+        } else {
+            folder_fallback_row.clone()
+        };
+
+        // マスタ照合結果を適用
+        if let Some(row) = &photo_matched_row {
             result.photo_category = row.photo_type.clone();
             result.work_type = row.work_type.clone();
             result.variety = row.variety.clone();
             result.subphase = row.subphase.clone();
             result.remarks = row.remarks.clone();
+        } else {
+            // マスタ照合失敗: 工種キーワードだけ埋める
+            let extracted_wt = kvs.iter()
+                .find(|(k, _)| k == "工種")
+                .map(|(_, v)| v.clone());
+            if let Some(wt) = extracted_wt {
+                result.work_type = wt;
+            }
+            result.remarks = folder_name.replace('_', " ");
         }
 
         result.reasoning = format!("photo-groups.json: {} / {}", rec.machine_type, rec.machine_id);
@@ -308,12 +569,88 @@ fn convert_groups_to_results(
     }).collect();
 
     results.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-    results.into_iter().map(|(_, _, r)| r).collect()
+    let mut final_results: Vec<analyzer::AnalysisResult> = results.into_iter().map(|(_, _, r)| r).collect();
+
+    // ポスト処理: フォルダ内の文脈で種別を補正
+    // 路面切削工が存在する場合、舗装打換え工/表層工 → 切削オーバーレイ工/表層工
+    let has_road_cutting = final_results.iter().any(|r| r.variety == "路面切削工");
+    if has_road_cutting {
+        for r in &mut final_results {
+            if r.variety == "舗装打換え工" && r.subphase == "表層工" {
+                r.variety = "切削オーバーレイ工".to_string();
+            }
+        }
+    }
+
+    final_results
+}
+
+/// 測点表記を正規化する（L→左車線、R→右車線）
+fn normalize_station(station: &str) -> String {
+    if station.is_empty() {
+        return String::new();
+    }
+    // "No. 4" → "No.4" (normalize extra space after dot)
+    let mut s = station.to_string();
+    while s.contains(". ") {
+        s = s.replace(". ", ".");
+    }
+    // Trailing " L" → " 左車線", " R" → " 右車線"
+    if s.ends_with(" L") {
+        s.truncate(s.len() - 2);
+        s.push_str(" 左車線");
+    } else if s.ends_with(" R") {
+        s.truncate(s.len() - 2);
+        s.push_str(" 右車線");
+    }
+    s
 }
 
 /// 測点を一括適用
 pub fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
     for result in results {
         result.station = station.to_string();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_station() {
+        assert_eq!(normalize_station("No.4 L"), "No.4 左車線");
+        assert_eq!(normalize_station("No.0 R"), "No.0 右車線");
+        assert_eq!(normalize_station("No. 4 L"), "No.4 左車線");
+        assert_eq!(normalize_station("ダイヤマーク"), "ダイヤマーク");
+        assert_eq!(normalize_station(""), "");
+    }
+
+    #[test]
+    fn test_extract_kv_from_text_newline_fullwidth_colon() {
+        let text = "工事名：市道 南千反畑第1号線舗装補修工事\n場所：No.4 L\n路面切削工\n切削・積込状況";
+        let kvs = extract_kv_from_text(text);
+        assert_eq!(kvs.len(), 4);
+        assert_eq!(kvs[0], ("工事名".to_string(), "市道 南千反畑第1号線舗装補修工事".to_string()));
+        assert_eq!(kvs[1], ("場所".to_string(), "No.4 L".to_string()));
+        assert_eq!(kvs[2], ("".to_string(), "路面切削工".to_string()));
+        assert_eq!(kvs[3], ("".to_string(), "切削・積込状況".to_string()));
+    }
+
+    #[test]
+    fn test_extract_kv_from_text_space_separator() {
+        let text = "工事名 市道 南千反畑第1号線舗装補修工事\n場所 No. 4 L\n表層工\n乳剤散布状況";
+        let kvs = extract_kv_from_text(text);
+        assert_eq!(kvs.len(), 4);
+        assert_eq!(kvs[0], ("工事名".to_string(), "市道 南千反畑第1号線舗装補修工事".to_string()));
+        assert_eq!(kvs[1], ("場所".to_string(), "No. 4 L".to_string()));
+        assert_eq!(kvs[2], ("".to_string(), "表層工".to_string()));
+        assert_eq!(kvs[3], ("".to_string(), "乳剤散布状況".to_string()));
+    }
+
+    #[test]
+    fn test_extract_kv_from_text_empty() {
+        let kvs = extract_kv_from_text("");
+        assert!(kvs.is_empty());
     }
 }
