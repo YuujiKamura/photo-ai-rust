@@ -8,6 +8,17 @@ mod csv_parser;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use thiserror::Error;
+
+/// 階層マスタ関連エラー（CSV読み込み・マスタ照合）
+#[derive(Error, Debug)]
+pub enum HierarchyError {
+    #[error("CSV parse error at line {line}: {detail}")]
+    CsvParse { line: usize, detail: String },
+
+    #[error("Master not found: {0}")]
+    MasterNotFound(String),
+}
 
 /// CSVの1行を表す構造体
 #[derive(Debug, Clone, Serialize, Deserialize)]

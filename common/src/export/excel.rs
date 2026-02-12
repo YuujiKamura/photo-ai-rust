@@ -2,7 +2,8 @@
 //!
 //! layout.rs の定義を使用して写真台帳形式のExcelを生成
 
-use crate::error::{Error, ExportError};
+use crate::error::Error;
+use super::ExportError;
 use crate::layout::{
     excel_width_to_px, fit_image_centered, PT_TO_PX,
     ExcelLayout, LAYOUT_FIELDS,

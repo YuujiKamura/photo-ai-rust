@@ -5,7 +5,7 @@
 //! - parse_step2_response: Step2レスポンスのパース
 //! - merge_results: Step1+Step2結果の統合
 
-use crate::error::{Error, Result};
+use crate::error::{AnalyzerError, Result};
 use crate::hierarchy::HierarchyMaster;
 use crate::parser::extract_json;
 use crate::prompt_format::hierarchy_to_json;
@@ -35,7 +35,7 @@ pub struct Step2Result {
 pub fn parse_step2_response(response: &str) -> Result<Vec<Step2Result>> {
     let json_str = extract_json(response)?;
     let results: Vec<Step2Result> = serde_json::from_str(json_str.trim())
-        .map_err(|e| Error::AiResponseParse(format!("Step2 JSONパースエラー: {}", e)))?;
+        .map_err(|e| AnalyzerError::ResponseParse(format!("Step2 JSONパースエラー: {}", e)))?;
     Ok(results)
 }
 
