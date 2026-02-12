@@ -5,6 +5,19 @@
 use crate::types::{RawImageData, WorkTypeDefinition};
 use crate::work_type_defs::DEFAULT_WORK_TYPE_DEFINITIONS;
 use std::collections::HashSet;
+use thiserror::Error;
+
+/// AI解析関連エラー（パース失敗・tagger空結果）
+#[derive(Error, Debug)]
+pub enum AnalyzerError {
+    /// AIレスポンスのパース失敗（再試行可能かの判断に使う）
+    #[error("AI response parse error: {0}")]
+    ResponseParse(String),
+
+    /// photo-tagger結果が空
+    #[error("Photo tagger returned no results")]
+    TaggerEmpty,
+}
 
 /// Step1結果から工種を自動判定（デフォルト定義使用）
 pub fn detect_work_types(raw_data: &[RawImageData]) -> Vec<String> {

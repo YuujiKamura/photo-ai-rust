@@ -105,7 +105,7 @@ fn test_json_error_conversion() {
 /// common::Errorからの変換
 #[test]
 fn test_common_error_conversion() {
-    let common_err = photo_ai_common::Error::AiResponseParse("パースエラー".to_string());
+    let common_err: photo_ai_common::Error = photo_ai_common::AnalyzerError::ResponseParse("パースエラー".to_string()).into();
     let err: PhotoAiError = common_err.into();
 
     assert!(matches!(err, PhotoAiError::Common(_)));

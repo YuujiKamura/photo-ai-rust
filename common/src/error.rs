@@ -1,27 +1,17 @@
 //! エラー型定義
 //!
-//! モジュール別サブエラー（ExportError, HierarchyError）を
-//! 共通 Error で合成する構造。
+//! 各モジュールで定義されたサブエラーをここで合成する。
+//! - ExportError:    export/mod.rs で定義
+//! - HierarchyError: hierarchy/mod.rs で定義
+//! - AnalyzerError:  analyzer.rs で定義
 
 use std::path::PathBuf;
 use thiserror::Error;
 
-/// エクスポート関連エラー（PDF/Excel）
-#[derive(Error, Debug)]
-pub enum ExportError {
-    #[error("Export failed ({format}): {detail}")]
-    Failed { format: String, detail: String },
-}
-
-/// 階層マスタ関連エラー（CSV読み込み・マスタ照合）
-#[derive(Error, Debug)]
-pub enum HierarchyError {
-    #[error("CSV parse error at line {line}: {detail}")]
-    CsvParse { line: usize, detail: String },
-
-    #[error("Master not found: {0}")]
-    MasterNotFound(String),
-}
+// サブエラーの re-export
+pub use crate::export::ExportError;
+pub use crate::hierarchy::HierarchyError;
+pub use crate::analyzer::AnalyzerError;
 
 /// 共通エラー型
 #[derive(Error, Debug)]
@@ -40,13 +30,9 @@ pub enum Error {
     #[error("Invalid format for '{key}': {detail}")]
     InvalidFormat { key: String, detail: String },
 
-    /// AIレスポンスのパース失敗（再試行可能かの判断に使う）
-    #[error("AI response parse error: {0}")]
-    AiResponseParse(String),
-
-    /// photo-tagger結果が空
-    #[error("Photo tagger returned no results")]
-    TaggerEmpty,
+    /// AI解析エラー
+    #[error(transparent)]
+    Analyzer(#[from] AnalyzerError),
 
     /// エクスポートエラー
     #[error(transparent)]
@@ -124,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_error_ai_response_parse() {
-        let error = Error::AiResponseParse("JSONが見つかりません".to_string());
+        let error: Error = AnalyzerError::ResponseParse("JSONが見つかりません".to_string()).into();
         let display = format!("{}", error);
         assert!(display.contains("AI response parse error"));
         assert!(display.contains("JSONが見つかりません"));
@@ -151,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_error_tagger_empty() {
-        let error = Error::TaggerEmpty;
+        let error: Error = AnalyzerError::TaggerEmpty.into();
         let display = format!("{}", error);
         assert!(display.contains("Photo tagger returned no results"));
     }
@@ -182,5 +168,12 @@ mod tests {
         let hier_err = HierarchyError::MasterNotFound("test".to_string());
         let error: Error = hier_err.into();
         assert!(matches!(error, Error::Hierarchy(_)));
+    }
+
+    #[test]
+    fn test_analyzer_error_from_conversion() {
+        let analyzer_err = AnalyzerError::ResponseParse("test".to_string());
+        let error: Error = analyzer_err.into();
+        assert!(matches!(error, Error::Analyzer(_)));
     }
 }

@@ -3,7 +3,8 @@
 //! 工種階層マスタCSVの行パースとフィールド抽出を担当する。
 
 use super::HierarchyRow;
-use crate::error::{Error, HierarchyError};
+use crate::error::Error;
+use super::HierarchyError;
 use serde::Deserialize;
 
 /// CSV列名に対応する内部デシリアライズ用構造体

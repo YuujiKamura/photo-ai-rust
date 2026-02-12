@@ -35,7 +35,7 @@ pub fn embed_analysis_to_pdf(pdf_path: &Path, results: &[AnalysisResult]) -> cra
     let config = EmbedConfig::with_prefix("PhotoAiRust");
 
     embed_data(pdf_path, &data, &config)
-        .map_err(|e| crate::error::ExportError::Failed {
+        .map_err(|e| super::ExportError::Failed {
             format: "PDF".to_string(),
             detail: format!("埋め込みに失敗: {}", e),
         })?;
