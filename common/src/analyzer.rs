@@ -2,22 +2,9 @@
 //!
 //! Step1結果からの工種自動判定
 
-use crate::types::RawImageData;
+use crate::types::{RawImageData, WorkTypeDefinition};
 use crate::work_type_defs::DEFAULT_WORK_TYPE_DEFINITIONS;
 use std::collections::HashSet;
-
-/// 工種キーワード定義
-#[derive(Debug, Clone)]
-pub struct WorkTypeDefinition {
-    /// 工種名（例: "舗装工"）
-    pub name: &'static str,
-    /// photo_category にマッチするキーワード
-    pub category_keywords: &'static [&'static str],
-    /// detected_text にマッチするキーワード
-    pub text_keywords: &'static [&'static str],
-    /// scene_description にマッチするキーワード
-    pub scene_keywords: &'static [&'static str],
-}
 
 /// Step1結果から工種を自動判定（デフォルト定義使用）
 pub fn detect_work_types(raw_data: &[RawImageData]) -> Vec<String> {
@@ -29,14 +16,14 @@ pub fn detect_work_types_with(raw_data: &[RawImageData], definitions: &[WorkType
     let mut types = HashSet::new();
 
     for r in raw_data {
-        let cat = r.photo_category.as_str();
-        let text = r.detected_text.as_str();
-        let scene = r.scene_description.as_str();
+        let cat = r.photo_category.to_lowercase();
+        let text = r.detected_text.to_lowercase();
+        let scene = r.scene_description.to_lowercase();
 
         for def in definitions {
-            let matched = def.category_keywords.iter().any(|kw| cat.contains(kw))
-                || def.text_keywords.iter().any(|kw| text.contains(kw))
-                || def.scene_keywords.iter().any(|kw| scene.contains(kw));
+            let matched = def.category_keywords.iter().any(|kw| cat.contains(&kw.to_lowercase()))
+                || def.text_keywords.iter().any(|kw| text.contains(&kw.to_lowercase()))
+                || def.scene_keywords.iter().any(|kw| scene.contains(&kw.to_lowercase()));
             if matched {
                 types.insert(def.name.to_string());
             }

@@ -8,6 +8,7 @@
 use crate::error::{Error, Result};
 use crate::hierarchy::HierarchyMaster;
 use crate::parser::extract_json;
+use crate::prompt_format::hierarchy_to_json;
 use crate::prompts::PHOTO_CATEGORIES;
 use crate::types::{AnalysisResult, RawImageData};
 use serde::{Deserialize, Serialize};
@@ -40,7 +41,7 @@ pub fn parse_step2_response(response: &str) -> Result<Vec<Step2Result>> {
 
 /// Step2プロンプト生成（マスタ照合用）
 pub fn build_step2_prompt(raw_data: &[RawImageData], master: &HierarchyMaster) -> String {
-    let hierarchy_json = master.to_hierarchy_json();
+    let hierarchy_json = hierarchy_to_json(master).unwrap_or_default();
     let hierarchy_str = serde_json::to_string(&hierarchy_json).unwrap_or_default();
 
     let raw_data_str = raw_data

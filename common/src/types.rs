@@ -6,6 +6,19 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 工種キーワード定義
+#[derive(Debug, Clone)]
+pub struct WorkTypeDefinition {
+    /// 工種名（例: "舗装工"）
+    pub name: &'static str,
+    /// photo_category にマッチするキーワード
+    pub category_keywords: &'static [&'static str],
+    /// detected_text にマッチするキーワード
+    pub text_keywords: &'static [&'static str],
+    /// scene_description にマッチするキーワード
+    pub scene_keywords: &'static [&'static str],
+}
+
 /// Step1の出力: 画像から抽出した生データ
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -79,6 +92,22 @@ impl AnalysisResult {
     pub fn is_machinery_related(&self) -> bool {
         self.remarks == "使用機械" || self.remarks == "重機始業前点検"
     }
+
+    /// フィールドキーに対応するラベルを返す
+    /// 機械関連の写真の場合、Station フィールドは「機種」を返す
+    pub fn get_label_for_field(&self, key: crate::layout::FieldKey) -> &str {
+        use crate::layout::FieldKey;
+        if self.is_machinery_related() && key == FieldKey::Station {
+            "機種"
+        } else {
+            // LAYOUT_FIELDS からデフォルトラベルを取得
+            crate::layout::LAYOUT_FIELDS
+                .iter()
+                .find(|f| f.key == key)
+                .map(|f| f.label)
+                .unwrap_or("-")
+        }
+    }
 }
 
 /// 写真データのトレイト（異なるAnalysisResult型に対応）
@@ -92,6 +121,22 @@ pub trait PhotoData {
     fn station(&self) -> &str;
     fn remarks(&self) -> &str;
     fn measurements(&self) -> &str;
+
+    /// フィールドキーから値を取得（Excel/PDF共通）
+    fn get_field_value(&self, key: crate::layout::FieldKey) -> &str {
+        use crate::layout::FieldKey;
+        let v = match key {
+            FieldKey::Date => self.date(),
+            FieldKey::PhotoCategory => self.photo_category(),
+            FieldKey::WorkType => self.work_type(),
+            FieldKey::Variety => self.variety(),
+            FieldKey::Subphase => self.subphase(),
+            FieldKey::Station => self.station(),
+            FieldKey::Remarks => self.remarks(),
+            FieldKey::Measurements => self.measurements(),
+        };
+        if v.is_empty() { "-" } else { v }
+    }
 }
 
 impl PhotoData for AnalysisResult {

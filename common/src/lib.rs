@@ -14,18 +14,20 @@ pub mod hierarchy;
 pub mod parser;
 pub mod analyzer;
 pub mod work_type_defs;
+pub mod prompt_format;
 pub mod prompts;
 pub mod step2;
-#[cfg(feature = "excel")]
+#[cfg(any(feature = "excel", feature = "pdf"))]
 pub mod export;
 
-pub use types::{AnalysisResult, RawImageData, PhotoData};
+pub use types::{AnalysisResult, RawImageData, PhotoData, WorkTypeDefinition};
 pub use layout::{PdfLayout, ExcelLayout, FieldKey};
 pub use alias::{AliasConfig, apply_aliases, longest_match_transform};
-pub use error::{Error, Result};
+pub use error::{Error, Result, ExportError, HierarchyError};
 pub use hierarchy::{HierarchyMaster, HierarchyRow};
 pub use parser::{extract_json, parse_step1_response, parse_single_step_response};
-pub use analyzer::{detect_work_types, detect_work_types_with, WorkTypeDefinition};
+pub use analyzer::{detect_work_types, detect_work_types_with};
 pub use work_type_defs::DEFAULT_WORK_TYPE_DEFINITIONS;
+pub use prompt_format::{hierarchy_to_json, hierarchy_to_compact_text, hierarchy_to_chain_records};
 pub use prompts::{PHOTO_CATEGORIES, build_step1_prompt, build_prompt_for_category};
 pub use step2::{Step2Result, build_step2_prompt, parse_step2_response, merge_results, ImageMeta};

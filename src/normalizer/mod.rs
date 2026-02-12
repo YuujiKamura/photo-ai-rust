@@ -6,7 +6,10 @@
 //! - 温度管理: 3枚単位（全景+ボードアップ+温度計アップ）で統一
 //! - 出来形管理: 同一測点のセット全体で統一
 
+pub mod alias;
 pub mod measurements;
+
+pub use alias::apply_aliases;
 
 use crate::analyzer::AnalysisResult;
 

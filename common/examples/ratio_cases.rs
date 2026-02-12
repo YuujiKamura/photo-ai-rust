@@ -1,5 +1,5 @@
 use photo_ai_common::layout::{
-    excel_width_to_px, ExcelLayout, PHOTO_COL_WIDTH, PHOTO_ROWS, PT_TO_PX,
+    fit_image_centered, ExcelLayout, PHOTO_ROWS, PT_TO_PX,
 };
 use rust_xlsxwriter::{Format, FormatBorder, Image, Workbook, XlsxError};
 use std::env;
@@ -30,10 +30,9 @@ fn main() -> Result<(), XlsxError> {
     };
 
     let layout = ExcelLayout::three_up();
+    let (target_width_px, target_height_px) = layout.photo_area_px();
     let photo_rows = PHOTO_ROWS as u32;
     let row_height_px = (layout.row_height_pt * PT_TO_PX).round() as u32;
-    let target_width_px = excel_width_to_px(PHOTO_COL_WIDTH) as u32;
-    let target_height_px = row_height_px * photo_rows;
 
     let mut workbook = Workbook::new();
     let border = Format::new().set_border(FormatBorder::Thin);
@@ -78,18 +77,20 @@ fn main() -> Result<(), XlsxError> {
                 worksheet.insert_image(0, 0, &scaled)?;
             }
             Case::SingleScaleCentered => {
+                let (_, _, off_x, off_y) = fit_image_centered(
+                    image.width(),
+                    image.height(),
+                    target_width_px as f64,
+                    target_height_px as f64,
+                );
                 let k = (target_width_px as f64 / image.width())
                     .min(target_height_px as f64 / image.height());
-                let scaled_width = image.width() * k;
-                let scaled_height = image.height() * k;
-                let x_offset = ((target_width_px as f64 - scaled_width) / 2.0)
-                    .round()
-                    .max(0.0) as u32;
-                let y_offset = ((target_height_px as f64 - scaled_height) / 2.0)
-                    .round()
-                    .max(0.0) as u32;
                 let scaled = image.clone().set_scale_width(k).set_scale_height(k);
-                worksheet.insert_image_with_offset(0, 0, &scaled, x_offset, y_offset)?;
+                worksheet.insert_image_with_offset(
+                    0, 0, &scaled,
+                    off_x.round() as u32,
+                    off_y.round() as u32,
+                )?;
             }
             Case::SingleScaleNoOffset => {
                 let k = (target_width_px as f64 / image.width())
