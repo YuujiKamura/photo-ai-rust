@@ -226,7 +226,7 @@ fn format_left(values: &DekigataValues) -> String {
     );
 
     format!(
-        "左車線\u{3000}切削基準高V1\u{FF5E}V3 幅員W1\n設計: {}\n実施: {}\n{}",
+        "左車線\u{3000}切削基準高 幅員W1\n設計: {}\n実施: {}\n{}",
         v_design, v_actual, width
     )
 }
@@ -241,7 +241,7 @@ fn format_right(values: &DekigataValues) -> String {
     );
 
     format!(
-        "右車線\u{3000}切削基準高V4\u{FF5E}V5 幅員W2\n設計: {}\n実施: {}\n{}",
+        "右車線\u{3000}切削基準高 幅員W2\n設計: {}\n実施: {}\n{}",
         v_design, v_actual, width
     )
 }
@@ -339,7 +339,7 @@ mod tests {
         let values = parse_dekigata_ocr(OCR_0209_NO1).unwrap();
         let m = format_measurements(&values, Lane::Left);
         assert!(m.starts_with("左車線"));
-        assert!(m.contains("V1\u{FF5E}V3"));
+        assert!(m.starts_with("左車線\u{3000}切削基準高 幅員W1"));
         assert!(m.contains("設計: V1=9.819 V2=9.842 V3=9.861"));
         assert!(m.contains("実施: V1=9.815 V2=9.842 V3=9.860"));
         assert!(m.contains("幅員W1 設計: 4.20 実測: 4.20"));
@@ -350,7 +350,7 @@ mod tests {
         let values = parse_dekigata_ocr(OCR_0211_NO5).unwrap();
         let m = format_measurements(&values, Lane::Right);
         assert!(m.starts_with("右車線"));
-        assert!(m.contains("V4\u{FF5E}V5"));
+        assert!(m.starts_with("右車線\u{3000}切削基準高 幅員W2"));
         assert!(m.contains("設計: V4=10.001 V5=9.974"));
         assert!(m.contains("実施: V4=10.000 V5=9.970"));
         assert!(m.contains("幅員W2 設計: 3.18 実測: 3.18"));
@@ -369,7 +369,7 @@ mod tests {
     fn test_format_exact_output_left() {
         let values = parse_dekigata_ocr(OCR_0209_NO1).unwrap();
         let m = format_measurements(&values, Lane::Left);
-        let expected = "左車線\u{3000}切削基準高V1\u{FF5E}V3 幅員W1\n\
+        let expected = "左車線\u{3000}切削基準高 幅員W1\n\
                         設計: V1=9.819 V2=9.842 V3=9.861\n\
                         実施: V1=9.815 V2=9.842 V3=9.860\n\
                         幅員W1 設計: 4.20 実測: 4.20";
@@ -380,7 +380,7 @@ mod tests {
     fn test_format_exact_output_right() {
         let values = parse_dekigata_ocr(OCR_0211_NO5).unwrap();
         let m = format_measurements(&values, Lane::Right);
-        let expected = "右車線\u{3000}切削基準高V4\u{FF5E}V5 幅員W2\n\
+        let expected = "右車線\u{3000}切削基準高 幅員W2\n\
                         設計: V4=10.001 V5=9.974\n\
                         実施: V4=10.000 V5=9.970\n\
                         幅員W2 設計: 3.18 実測: 3.18";
