@@ -81,6 +81,8 @@ pub struct NormalizeCommandArgs {
     pub input: PathBuf,
     pub output: Option<PathBuf>,
     pub station: Option<String>,
+    pub lane: Option<normalizer::Lane>,
+    pub dekigata_remarks: Option<String>,
     pub dry_run: bool,
 }
 
@@ -164,7 +166,7 @@ fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<mas
             .and_then(|s| s.to_str())
             .filter(|s| *s != "construction_hierarchy")
             .map(|s| s.to_string());
-        return Some(master_selector::MasterSelection { path, work_type });
+        return Some(master_selector::MasterSelection { path, work_type, all_paths: None });
     }
 
     // 対話式選択
@@ -172,10 +174,11 @@ fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<mas
         return master_selector::select_master_interactive();
     }
 
-    // デフォルトマスタ
+    // デフォルトマスタ（全工種 → マージ読み込み）
     let default_path = PathBuf::from("master").join("construction_hierarchy.csv");
     if default_path.exists() {
-        Some(master_selector::MasterSelection { path: default_path, work_type: None })
+        let all_paths = master_selector::collect_all_master_paths();
+        Some(master_selector::MasterSelection { path: default_path, work_type: None, all_paths })
     } else {
         None
     }
@@ -428,7 +431,11 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
     }
 
     // 正規化オプション
-    let options = NormalizationOptions::default();
+    let options = NormalizationOptions {
+        dekigata_lane: args.lane,
+        dekigata_remarks: args.dekigata_remarks,
+        ..Default::default()
+    };
 
     // 正規化実行
     let result = normalizer::normalize_results(&results, &options);
@@ -592,11 +599,13 @@ impl Commands {
                 });
             }
 
-            Commands::Normalize { input, output, station, dry_run } => {
+            Commands::Normalize { input, output, station, lane, dekigata_remarks, dry_run } => {
                 handle_normalize_command(NormalizeCommandArgs {
                     input,
                     output,
                     station,
+                    lane: lane.map(|l| l.to_lane()),
+                    dekigata_remarks,
                     dry_run,
                 })?;
             }

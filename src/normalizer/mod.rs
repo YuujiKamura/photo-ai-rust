@@ -7,9 +7,11 @@
 //! - 出来形管理: 同一測点のセット全体で統一
 
 pub mod alias;
+pub mod dekigata;
 pub mod measurements;
 
 pub use alias::apply_aliases;
+pub use dekigata::Lane;
 
 use crate::analyzer::AnalysisResult;
 
@@ -41,12 +43,14 @@ pub struct NormalizationCorrection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CorrectionField {
     Measurements,
+    Remarks,
 }
 
 impl std::fmt::Display for CorrectionField {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CorrectionField::Measurements => write!(f, "計測値"),
+            CorrectionField::Remarks => write!(f, "備考"),
         }
     }
 }
@@ -67,12 +71,21 @@ pub struct NormalizationStats {
 pub struct NormalizationOptions {
     /// 計測値グループ統一を有効にする
     pub unify_measurements: bool,
+    /// 出来形管理写真の測定値統一を有効にする
+    pub unify_dekigata: bool,
+    /// 出来形の車線指定（Noneなら自動判定）
+    pub dekigata_lane: Option<Lane>,
+    /// 出来形の備考統一テキスト（例: "路面切削工出来形測定"）
+    pub dekigata_remarks: Option<String>,
 }
 
 impl Default for NormalizationOptions {
     fn default() -> Self {
         Self {
             unify_measurements: true,
+            unify_dekigata: true,
+            dekigata_lane: None,
+            dekigata_remarks: None,
         }
     }
 }
@@ -129,6 +142,24 @@ pub fn normalize_results(
         for correction in group_corrections {
             if !corrections.iter().any(|c| c.file_name == correction.file_name) {
                 stats.measurement_corrections += 1;
+                stats.corrected_records += 1;
+                corrections.push(correction);
+            }
+        }
+    }
+
+    if options.unify_dekigata {
+        let dekigata_corrections = unify_dekigata_measurements(
+            results,
+            options.dekigata_lane,
+            options.dekigata_remarks.as_deref(),
+        );
+        for correction in dekigata_corrections {
+            if !corrections.iter().any(|c| c.file_name == correction.file_name && c.field == correction.field) {
+                match correction.field {
+                    CorrectionField::Measurements => stats.measurement_corrections += 1,
+                    _ => {}
+                }
                 stats.corrected_records += 1;
                 corrections.push(correction);
             }
@@ -230,9 +261,83 @@ pub fn apply_corrections(
         if let Some(result) = results.iter_mut().find(|r| r.file_name == correction.file_name) {
             match correction.field {
                 CorrectionField::Measurements => result.measurements = correction.corrected.clone(),
+                CorrectionField::Remarks => result.remarks = correction.corrected.clone(),
             }
         }
     }
+}
+
+/// 出来形管理写真のmeasurementsを統一する
+///
+/// 同一stationの出来形管理写真をグループ化し、
+/// 管理用紙アップ写真のdetected_textから値をパースして
+/// 全写真に統一フォーマットのmeasurementsを設定する。
+fn unify_dekigata_measurements(
+    results: &[AnalysisResult],
+    lane_override: Option<Lane>,
+    remarks_override: Option<&str>,
+) -> Vec<NormalizationCorrection> {
+    let mut corrections = Vec::new();
+
+    // 出来形管理写真のインデックスを収集
+    let dekigata_indices: Vec<usize> = results
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| dekigata::is_dekigata_photo(r))
+        .map(|(i, _)| i)
+        .collect();
+
+    if dekigata_indices.is_empty() {
+        return corrections;
+    }
+
+    // station でグループ化
+    let mut station_groups: std::collections::BTreeMap<String, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for &idx in &dekigata_indices {
+        let station = results[idx].station.clone();
+        if !station.is_empty() {
+            station_groups.entry(station).or_default().push(idx);
+        }
+    }
+
+    // 各測点グループで統一
+    for (_station, group) in &station_groups {
+        if let Some(measurements) =
+            dekigata::unify_dekigata_set(results, group, lane_override)
+        {
+            for &idx in group {
+                let r = &results[idx];
+                if r.measurements != measurements {
+                    corrections.push(NormalizationCorrection {
+                        file_name: r.file_name.clone(),
+                        field: CorrectionField::Measurements,
+                        original: r.measurements.clone(),
+                        corrected: measurements.clone(),
+                        reason: "出来形管理用紙OCRから統一".to_string(),
+                    });
+                }
+            }
+        }
+
+        // 備考統一
+        if let Some(remarks) = remarks_override {
+            for &idx in group {
+                let r = &results[idx];
+                if r.remarks != remarks {
+                    corrections.push(NormalizationCorrection {
+                        file_name: r.file_name.clone(),
+                        field: CorrectionField::Remarks,
+                        original: r.remarks.clone(),
+                        corrected: remarks.to_string(),
+                        reason: "出来形管理写真の備考統一".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    corrections
 }
 
 #[cfg(test)]
