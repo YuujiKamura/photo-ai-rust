@@ -208,6 +208,14 @@ pub enum Commands {
         #[arg(short = 'S', long)]
         station: Option<String>,
 
+        /// 出来形管理写真の車線指定 (left/right)
+        #[arg(long)]
+        lane: Option<LaneArg>,
+
+        /// 出来形管理写真の備考テキスト
+        #[arg(long)]
+        dekigata_remarks: Option<String>,
+
         /// ドライラン（変更を適用せずプレビュー）
         #[arg(long)]
         dry_run: bool,
@@ -303,6 +311,34 @@ impl std::fmt::Display for PdfQuality {
             PdfQuality::High => write!(f, "high"),
             PdfQuality::Medium => write!(f, "medium"),
             PdfQuality::Low => write!(f, "low"),
+        }
+    }
+}
+
+/// 出来形管理写真の車線指定（CLIパース用）
+#[derive(Clone, Copy, Debug)]
+pub enum LaneArg {
+    Left,
+    Right,
+}
+
+impl LaneArg {
+    pub fn to_lane(self) -> crate::normalizer::Lane {
+        match self {
+            LaneArg::Left => crate::normalizer::Lane::Left,
+            LaneArg::Right => crate::normalizer::Lane::Right,
+        }
+    }
+}
+
+impl std::str::FromStr for LaneArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "left" | "l" | "左" => Ok(LaneArg::Left),
+            "right" | "r" | "右" => Ok(LaneArg::Right),
+            _ => Err(format!("Unknown lane: {}. Use left/right", s)),
         }
     }
 }

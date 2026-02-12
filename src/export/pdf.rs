@@ -496,12 +496,65 @@ fn split_at_half_width(text: &str, max_hw: usize) -> (&str, &str) {
     (text, "")
 }
 
-/// テキスト描画オペレーション追加（収まらなければ縮小して1行、それでも無理なら改行）
+/// テキストの描画情報（行分割結果・フォントサイズ・行間）
+struct TextLayout<'a> {
+    lines: Vec<&'a str>,
+    font_size: f32,
+    line_spacing: f32,
+}
+
+impl TextFitConfig {
+    /// テキストを行分割し、適切なフォントサイズを決定する
+    fn layout_for_height<'a>(&self, text: &'a str, _field_height: f32) -> TextLayout<'a> {
+        // 明示的改行（フォントサイズは幅で決定、高さでは縮小しない）
+        if text.contains('\n') {
+            let lines: Vec<&str> = text.split('\n').map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+            let max_hw = lines.iter().map(|l| half_width_count(l)).max().unwrap_or(0);
+            let font_size = if max_hw <= self.max_half_width {
+                self.base_font_size
+            } else {
+                self.min_font_size
+            };
+            return TextLayout { lines, font_size, line_spacing: font_size + 1.0 };
+        }
+
+        let hw = half_width_count(text);
+        if hw <= self.max_half_width {
+            return TextLayout { lines: vec![text], font_size: self.base_font_size, line_spacing: self.base_font_size + 1.0 };
+        }
+
+        let hw_at_smaller = (self.max_half_width as f32 * self.base_font_size / self.min_font_size) as usize;
+        if hw <= hw_at_smaller {
+            return TextLayout { lines: vec![text], font_size: self.min_font_size, line_spacing: self.min_font_size + 1.0 };
+        }
+
+        // 10ptで自動改行
+        let (line1, line2) = split_at_half_width(text, hw_at_smaller);
+        let mut lines = vec![line1];
+        if !line2.is_empty() {
+            lines.push(line2);
+        }
+        TextLayout { lines, font_size: self.min_font_size, line_spacing: self.min_font_size + 1.0 }
+    }
+
+    /// フィールド中央Y座標から、テキストブロックの1行目ベースラインY座標を計算
+    fn centered_first_line_y(&self, text: &str, field_center_y: f32, field_height: f32) -> f32 {
+        let layout = self.layout_for_height(text, field_height);
+        let n = layout.lines.len() as f32;
+        let baselines_span = layout.line_spacing * (n - 1.0);
+        // ブロック中央のベースライン = field_center - font*0.3（ラベルと同一）
+        // 1行目 = 中央 + baselines_span/2
+        field_center_y + baselines_span / 2.0 - layout.font_size * 0.3
+    }
+}
+
+/// テキスト描画オペレーション追加（センタリング済みのy_ptから描画）
 fn add_fitted_text_ops(
     ops: &mut Vec<Op>,
     text: &str,
     x_pt: f32,
     y_pt: f32,
+    field_height: f32,
     fonts: &FontSet,
     config: &TextFitConfig,
 ) {
@@ -509,25 +562,58 @@ fn add_fitted_text_ops(
         return;
     }
 
-    let hw = half_width_count(text);
+    let layout = config.layout_for_height(text, field_height);
+    for (i, line) in layout.lines.iter().enumerate() {
+        add_text_ops(ops, line, x_pt, y_pt - layout.line_spacing * i as f32, layout.font_size, fonts);
+    }
+}
 
-    if hw <= config.max_half_width {
-        // 12ptで1行に収まる
-        add_text_ops(ops, text, x_pt, y_pt, config.base_font_size, fonts);
-    } else {
-        // 10ptなら1行に収まるか？
-        let hw_at_smaller = (config.max_half_width as f32 * config.base_font_size / config.min_font_size) as usize;
-        if hw <= hw_at_smaller {
-            add_text_ops(ops, text, x_pt, y_pt, config.min_font_size, fonts);
-        } else {
-            // 10ptでも収まらない→10ptで改行
-            let (line1, line2) = split_at_half_width(text, hw_at_smaller);
-            add_text_ops(ops, line1, x_pt, y_pt, config.min_font_size, fonts);
-            if !line2.is_empty() {
-                add_text_ops(ops, line2, x_pt, y_pt - config.min_font_size - 1.0, config.min_font_size, fonts);
+/// 測定値フィールド描画（実測値行を赤色で描画）
+fn add_measurements_text_ops(
+    ops: &mut Vec<Op>,
+    text: &str,
+    x_pt: f32,
+    y_pt: f32,
+    field_height: f32,
+    fonts: &FontSet,
+    config: &TextFitConfig,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    let layout = config.layout_for_height(text, field_height);
+    let black = Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None });
+    let red = Color::Rgb(Rgb { r: 0.8, g: 0.0, b: 0.0, icc_profile: None });
+
+    for (i, line) in layout.lines.iter().enumerate() {
+        let line_y = y_pt - layout.line_spacing * i as f32;
+        let has_actual = line.contains("実施") || line.contains("実測");
+        let has_design = line.contains("設計");
+
+        if has_actual && has_design {
+            // 設計と実測が同居する行（例: "幅員W1 設計: 4.20 実測: 4.20"）
+            // 実測部分だけ赤にする
+            let keyword = if line.contains("実測") { "実測" } else { "実施" };
+            if let Some(pos) = line.find(keyword) {
+                let before = &line[..pos];
+                let after = &line[pos..];
+                ops.push(Op::SetFillColor { col: black.clone() });
+                add_text_ops(ops, before, x_pt, line_y, layout.font_size, fonts);
+                let before_width = half_width_count(before) as f32 * layout.font_size / 2.0;
+                ops.push(Op::SetFillColor { col: red.clone() });
+                add_text_ops(ops, after, x_pt + before_width, line_y, layout.font_size, fonts);
             }
+        } else if has_actual {
+            ops.push(Op::SetFillColor { col: red.clone() });
+            add_text_ops(ops, line, x_pt, line_y, layout.font_size, fonts);
+        } else {
+            ops.push(Op::SetFillColor { col: black.clone() });
+            add_text_ops(ops, line, x_pt, line_y, layout.font_size, fonts);
         }
     }
+    // 色を黒に戻す
+    ops.push(Op::SetFillColor { col: black });
 }
 
 /// 水平線描画オペレーション追加
@@ -559,51 +645,56 @@ fn add_info_field_ops(
     fonts: &FontSet,
 ) {
     let fields = pdf_common::build_pdf_info_fields(result);
-    let field_count = fields.len();
-    let row_height = photo_height_pt / (field_count as f32 + 0.5); // フィールド数で等分
-    let label_width = 35.0; // ラベル列の幅
+    let label_width = 35.0;
+
+    // row_spanの合計で1単位あたりの高さを計算
+    let total_spans: f32 = fields.iter().map(|f| f.row_span as f32).sum();
+    let unit_height = photo_height_pt / (total_spans + 0.5);
 
     ops.push(Op::SetFillColor { col: Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None }) });
 
     let text_config = TextFitConfig::default();
 
-    for (i, field) in fields.iter().enumerate() {
-        let field_top = row_y_pt + photo_height_pt - (i as f32 * row_height);
-        let field_bottom = field_top - row_height;
+    // 各フィールドのtop位置を累積計算
+    let mut current_top = row_y_pt + photo_height_pt;
 
-        if field_bottom > row_y_pt {
+    // 測定値フィールド用: ラベル省略してフル幅使用、フォント大きめ
+    let wide_text_config = TextFitConfig {
+        max_half_width: 38,
+        base_font_size: 11.0,
+        min_font_size: 9.0,
+        ..TextFitConfig::default()
+    };
+
+    for (i, field) in fields.iter().enumerate() {
+        let field_height = unit_height * field.row_span as f32;
+        let field_bottom = current_top - field_height;
+
+        if field_bottom >= row_y_pt {
             let label_text = process_text(&field.label, fonts.is_japanese());
             let value_text = process_text(&field.value, fonts.is_japanese());
 
-            // 値が2行になるか判定
-            let hw = half_width_count(&value_text);
-            let needs_two_lines = hw > text_config.max_half_width;
+            let field_center = field_bottom + field_height / 2.0;
 
-            // フィールド中央
-            let field_center = field_bottom + row_height / 2.0;
-
-            // ラベルは常にフィールド中央
-            let label_y = field_center - UNIFIED_FONT_SIZE * 0.3;
-
-            // 値は行数に応じて位置調整
-            let text_y = if needs_two_lines {
-                // 2行ブロック高 = font*2 + gap
-                let block_h = text_config.min_font_size * 2.0 + 2.0;
-                field_center + block_h / 2.0 - text_config.min_font_size * 0.8
+            // 測定値フィールド: ラベル省略、フル幅で描画、実測値は赤
+            let is_measurements = field.label == "測定値";
+            if is_measurements && value_text != "-" {
+                let text_y = wide_text_config.centered_first_line_y(&value_text, field_center, field_height);
+                add_measurements_text_ops(ops, &value_text, info_x_pt + 5.0, text_y, field_height, fonts, &wide_text_config);
             } else {
-                field_center - UNIFIED_FONT_SIZE * 0.3
-            };
-
-            add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
-
-            // 値（ラベル右側）
-            add_fitted_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, fonts, &text_config);
+                let label_y = field_center - UNIFIED_FONT_SIZE * 0.3;
+                let text_y = text_config.centered_first_line_y(&value_text, field_center, field_height);
+                add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
+                add_fitted_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, field_height, fonts, &text_config);
+            }
 
             // 行の下に水平線（最後の行以外）
-            if i < field_count - 1 {
+            if i < fields.len() - 1 {
                 add_horizontal_line_ops(ops, info_x_pt, info_x_pt + 180.0, field_bottom);
             }
         }
+
+        current_top = field_bottom;
     }
 }
 
