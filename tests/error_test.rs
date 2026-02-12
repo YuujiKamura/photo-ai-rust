@@ -114,7 +114,7 @@ fn test_common_error_conversion() {
 /// エラーチェーン（透過的エラー）
 #[test]
 fn test_error_chain_transparent() {
-    let common_err = photo_ai_common::Error::MasterNotFound("設定エラー".to_string());
+    let common_err: photo_ai_common::Error = photo_ai_common::HierarchyError::MasterNotFound("設定エラー".to_string()).into();
     let err: PhotoAiError = common_err.into();
 
     // 透過的エラーなのでメッセージがそのまま表示される

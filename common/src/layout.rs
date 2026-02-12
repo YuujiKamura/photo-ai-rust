@@ -294,11 +294,31 @@ impl ExcelLayout {
             _ => Self::three_up(),
         }
     }
+
+    /// 写真エリアのサイズ（px）を返す
+    pub fn photo_area_px(&self) -> (u32, u32) {
+        let row_height_px = (self.row_height_pt * PT_TO_PX).round() as u32;
+        let width = excel_width_to_px(self.col_a_width) as u32;
+        let height = row_height_px * self.photo_rows as u32;
+        (width, height)
+    }
 }
 
 // ============================================
 // ヘルパー関数
 // ============================================
+
+/// アスペクト比を維持して画像をターゲット領域にフィットさせ、中央に配置する
+///
+/// Returns (scaled_w, scaled_h, offset_x, offset_y)
+pub fn fit_image_centered(image_w: f64, image_h: f64, target_w: f64, target_h: f64) -> (f64, f64, f64, f64) {
+    let scale = (target_w / image_w).min(target_h / image_h);
+    let scaled_w = image_w * scale;
+    let scaled_h = image_h * scale;
+    let offset_x = ((target_w - scaled_w) / 2.0).max(0.0);
+    let offset_y = ((target_h - scaled_h) / 2.0).max(0.0);
+    (scaled_w, scaled_h, offset_x, offset_y)
+}
 
 /// mm → pt 変換
 #[inline]
@@ -432,5 +452,35 @@ mod tests {
         assert_eq!(LAYOUT_FIELDS[6].label, "備考");
         assert_eq!(LAYOUT_FIELDS[7].key, FieldKey::Measurements);
         assert_eq!(LAYOUT_FIELDS[7].label, "測定値");
+    }
+
+    #[test]
+    fn test_fit_image_centered_landscape() {
+        // 横長画像 → 幅にフィット、上下に余白
+        let (sw, sh, ox, oy) = fit_image_centered(800.0, 400.0, 400.0, 400.0);
+        assert!((sw - 400.0).abs() < 0.01);
+        assert!((sh - 200.0).abs() < 0.01);
+        assert!((ox - 0.0).abs() < 0.01);
+        assert!((oy - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_fit_image_centered_portrait() {
+        // 縦長画像 → 高さにフィット、左右に余白
+        let (sw, sh, ox, oy) = fit_image_centered(400.0, 800.0, 400.0, 400.0);
+        assert!((sw - 200.0).abs() < 0.01);
+        assert!((sh - 400.0).abs() < 0.01);
+        assert!((ox - 100.0).abs() < 0.01);
+        assert!((oy - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_photo_area_px() {
+        let layout = ExcelLayout::three_up();
+        let (w, h) = layout.photo_area_px();
+        // width = excel_width_to_px(56.1) = round(56.1 * 7.1 + 5.0) = round(403.31) = 403
+        assert_eq!(w, 403);
+        // height = round(27.0 * 96/72) * 10 = round(36.0) * 10 = 360
+        assert_eq!(h, 360);
     }
 }

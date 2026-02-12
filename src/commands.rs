@@ -8,7 +8,7 @@ use crate::cli::{Commands, ExportFormat, PdfQuality};
 use crate::config::Config;
 use crate::error::{self, Result};
 use crate::normalizer::{self, NormalizationOptions};
-use crate::{analyzer, export, master_selector, matcher};
+use crate::{analyzer, export, master_selector};
 use ai_code_review::{CodeReviewer, Backend as ReviewBackend};
 use std::path::{Path, PathBuf};
 
@@ -248,7 +248,7 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
     // エイリアス変換を適用
     if args.preset.is_some() || args.alias.is_some() {
         println!("- エイリアス変換中...");
-        results = matcher::apply_aliases(
+        results = normalizer::apply_aliases(
             &results,
             args.preset.as_deref(),
             args.alias.as_ref().map(|p| p.as_path()),

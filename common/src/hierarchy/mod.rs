@@ -4,7 +4,6 @@
 //! CSVから読み込み、Step2のAI解析でマスタ照合を行う。
 
 mod csv_parser;
-mod formatter;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -102,7 +101,7 @@ impl HierarchyMaster {
 
     /// CSV文字列から読み込み
     pub fn from_csv_str(content: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let rows = csv_parser::parse_rows_from_csv(content);
+        let rows = csv_parser::parse_rows_from_csv(content)?;
         Ok(Self::from_rows(rows))
     }
 
@@ -269,39 +268,4 @@ mod tests {
         assert_eq!(matches[0].photo_type, "品質管理写真");
     }
 
-    #[test]
-    fn test_to_hierarchy_json() {
-        let master = HierarchyMaster::from_csv_str(TEST_CSV).unwrap();
-        let json = master.to_hierarchy_json();
-        assert!(json.is_object());
-        assert!(json.get("舗装工").is_some());
-    }
-
-    #[test]
-    fn test_to_compact_text_basic() {
-        let master = HierarchyMaster::from_csv_str(TEST_CSV).unwrap();
-        let text = master.to_compact_text();
-        assert!(text.contains("舗設状況"));
-        assert!(text.contains("区画線設置状況"));
-        assert!(text.contains("品質管理写真"));
-        assert!(text.contains("アスファルト混合物温度測定"));
-    }
-
-    #[test]
-    fn test_to_compact_text_grouping() {
-        let csv = r#"費目,写真区分,工種,種別,細別,撮影内容,検索パターン
-"直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","舗設状況",""
-"直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","初期転圧状況",""
-"直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","施工完了",""
-"現場管理費","安全管理写真","","","","朝礼",""
-"現場管理費","安全管理写真","","","","KY活動",""
-"直接工事費","その他","舗装工","","","使用機械",""
-"#;
-        let master = HierarchyMaster::from_csv_str(csv).unwrap();
-        let text = master.to_compact_text();
-
-        assert!(text.contains("舗設状況, 初期転圧状況, 施工完了"));
-        assert!(text.contains("安全管理写真: 朝礼, KY活動"));
-        assert!(text.contains("その他 > 舗装工: 使用機械"));
-    }
 }

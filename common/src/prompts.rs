@@ -7,6 +7,7 @@
 //! - build_single_step_prompt: 汎用プロンプト（フォールバック）
 
 use crate::hierarchy::HierarchyMaster;
+use crate::prompt_format::hierarchy_to_compact_text;
 
 /// 写真区分（工種階層マスタの写真種別）
 pub const PHOTO_CATEGORIES: &[&str] = &[
@@ -167,7 +168,7 @@ fn build_quality_prompt(
 ) -> String {
     let photo_list = format_photo_list(images);
     let filtered = master.filter_by_photo_type("品質管理写真");
-    let hierarchy_text = filtered.to_compact_text();
+    let hierarchy_text = hierarchy_to_compact_text(&filtered);
     let wt_hint = work_type_hint(work_type, None);
     let json_fmt = json_output_format();
     let common = common_rules();
@@ -229,7 +230,7 @@ fn build_construction_prompt(
 ) -> String {
     let photo_list = format_photo_list(images);
     let filtered = master.filter_by_photo_type("施工状況写真");
-    let hierarchy_text = filtered.to_compact_text();
+    let hierarchy_text = hierarchy_to_compact_text(&filtered);
     let wt_hint = work_type_hint(work_type, variety);
     let json_fmt = json_output_format();
     let common = common_rules();
@@ -273,7 +274,7 @@ fn build_safety_prompt(
 ) -> String {
     let photo_list = format_photo_list(images);
     let filtered = master.filter_by_photo_type("安全管理写真");
-    let hierarchy_text = filtered.to_compact_text();
+    let hierarchy_text = hierarchy_to_compact_text(&filtered);
     let json_fmt = json_output_format();
     let common = common_rules();
     let focus = focus_target_rules();
@@ -314,7 +315,7 @@ fn build_measurement_prompt(
 ) -> String {
     let photo_list = format_photo_list(images);
     let filtered = master.filter_by_photo_type("出来形管理写真");
-    let hierarchy_text = filtered.to_compact_text();
+    let hierarchy_text = hierarchy_to_compact_text(&filtered);
     let wt_hint = work_type_hint(work_type, None);
     let json_fmt = json_output_format();
     let common = common_rules();
@@ -357,7 +358,7 @@ fn build_material_prompt(
 ) -> String {
     let photo_list = format_photo_list(images);
     let filtered = master.filter_by_photo_type("使用材料写真");
-    let hierarchy_text = filtered.to_compact_text();
+    let hierarchy_text = hierarchy_to_compact_text(&filtered);
     let wt_hint = work_type_hint(work_type, None);
     let json_fmt = json_output_format();
     let common = common_rules();
@@ -398,7 +399,7 @@ fn build_before_after_prompt(
 ) -> String {
     let photo_list = format_photo_list(images);
     let filtered = master.filter_by_photo_type("着手前及び完成写真");
-    let hierarchy_text = filtered.to_compact_text();
+    let hierarchy_text = hierarchy_to_compact_text(&filtered);
     let wt_hint = work_type_hint(work_type, None);
     let json_fmt = json_output_format();
     let common = common_rules();
@@ -440,7 +441,7 @@ fn build_other_prompt(
 ) -> String {
     let photo_list = format_photo_list(images);
     let filtered = master.filter_by_photo_type("その他");
-    let hierarchy_text = filtered.to_compact_text();
+    let hierarchy_text = hierarchy_to_compact_text(&filtered);
     let wt_hint = work_type_hint(work_type, None);
     let json_fmt = json_output_format();
     let common = common_rules();
@@ -484,7 +485,7 @@ fn build_generic_prompt(
 ) -> String {
     let photo_list = format_photo_list(images);
     let categories = PHOTO_CATEGORIES.join(", ");
-    let hierarchy_text = master.to_compact_text();
+    let hierarchy_text = hierarchy_to_compact_text(master);
 
     let intro = match work_type {
         Some(wt) => format!("あなたは工事写真帳を作成する現場監督です。工種「{}」の写真を解析してください。", wt),
@@ -643,7 +644,7 @@ mod tests {
 
     #[test]
     fn test_build_generic_prompt_contains_compact_text() {
-        let csv = r#"写真区分,写真種別,工種,種別,細別,撮影内容,検索パターン
+        let csv = r#"費目,写真区分,工種,種別,細別,撮影内容,検索パターン
 "直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","舗設状況",""
 "直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","初期転圧状況",""
 "直接工事費","その他","舗装工","","","使用機械",""
@@ -660,7 +661,7 @@ mod tests {
 
     #[test]
     fn test_build_prompt_for_category_quality() {
-        let csv = r#"写真区分,写真種別,工種,種別,細別,撮影内容,検索パターン
+        let csv = r#"費目,写真区分,工種,種別,細別,撮影内容,検索パターン
 "直接工事費","品質管理写真","舗装工","舗装打換え工","表層工","到着温度","温度管理\|到着温度"
 "直接工事費","品質管理写真","舗装工","舗装打換え工","表層工","敷均し温度",""
 "#;
@@ -676,7 +677,7 @@ mod tests {
 
     #[test]
     fn test_build_prompt_for_category_safety() {
-        let csv = r#"写真区分,写真種別,工種,種別,細別,撮影内容,検索パターン
+        let csv = r#"費目,写真区分,工種,種別,細別,撮影内容,検索パターン
 "現場管理費","安全管理写真","","","","朝礼",""
 "現場管理費","安全管理写真","","","","社外安全パトロール",""
 "#;
@@ -691,7 +692,7 @@ mod tests {
 
     #[test]
     fn test_build_prompt_for_category_fallback() {
-        let csv = r#"写真区分,写真種別,工種,種別,細別,撮影内容,検索パターン
+        let csv = r#"費目,写真区分,工種,種別,細別,撮影内容,検索パターン
 "直接工事費","施工状況写真","舗装工","舗装打換え工","表層工","舗設状況",""
 "#;
         let master = HierarchyMaster::from_csv_str(csv).unwrap();

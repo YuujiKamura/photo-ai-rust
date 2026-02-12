@@ -149,7 +149,7 @@ pub fn generate_pdf(
 ) -> Result<()> {
     let photos_per_page = photos_per_page.clamp(2, 3);
     let layout = PdfLayout::for_photos_per_page(photos_per_page);
-    let layout_core = pdf_common::PdfLayoutCore::from_layout(&layout);
+    let layout_core = pdf_common::PdfMetrics::from_layout(&layout);
 
     // printpdf 0.8: ドキュメント作成
     let mut doc = PdfDocument::new(title);
@@ -370,7 +370,7 @@ fn add_page_number_ops(
     ops: &mut Vec<Op>,
     page_num: usize,
     fonts: &FontSet,
-    layout: &pdf_common::PdfLayoutCore,
+    layout: &pdf_common::PdfMetrics,
 ) {
     ops.push(Op::SetFillColor { col: Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None }) });
     add_text_ops(

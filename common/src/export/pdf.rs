@@ -19,8 +19,6 @@
 //! const infoX = MARGIN + photoWidth;  // ギャップなし
 //! ```
 
-use std::path::Path;
-
 use crate::layout::{
     A4_WIDTH_PT, A4_HEIGHT_PT, MARGIN_PT, GAP_PT,
     IMAGE_RATIO, INFO_RATIO, FieldKey, LAYOUT_FIELDS,
@@ -30,7 +28,7 @@ use crate::types::AnalysisResult;
 /// PDF描画で使用するレイアウト計算結果（pt単位）
 /// GAS版 pdfCore.ts の計算式を完全移植
 #[derive(Debug, Clone)]
-pub struct PdfLayoutCore {
+pub struct PdfMetrics {
     /// A4幅（pt）: 595.35
     pub page_width_pt: f32,
     /// A4高さ（pt）: 842.0
@@ -55,7 +53,7 @@ pub struct PdfLayoutCore {
     pub photo_height_pt: f32,
 }
 
-impl PdfLayoutCore {
+impl PdfMetrics {
     /// GAS準拠のレイアウト計算
     /// pdfCore.ts 148-154行目を完全移植
     pub fn new(photos_per_page: u8) -> Self {
@@ -124,48 +122,17 @@ pub struct PdfInfoField {
 /// 情報欄フィールドを構築（GAS準拠: 8フィールド）
 /// 日時 → 区分 → 工種 → 種別 → 細別 → 測点 → 備考 → 測定値
 pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
-    let is_machinery = result.is_machinery_related();
+    use crate::types::PhotoData;
     LAYOUT_FIELDS
         .iter()
         .map(|field| {
-            let value = match field.key {
-                FieldKey::Date => format_date(&result.date),
-                FieldKey::PhotoCategory => {
-                    if result.photo_category.is_empty() { "-".to_string() }
-                    else { result.photo_category.clone() }
-                }
-                FieldKey::WorkType => {
-                    if result.work_type.is_empty() { "-".to_string() }
-                    else { result.work_type.clone() }
-                }
-                FieldKey::Variety => {
-                    if result.variety.is_empty() { "-".to_string() }
-                    else { result.variety.clone() }
-                }
-                FieldKey::Subphase => {
-                    if result.subphase.is_empty() { "-".to_string() }
-                    else { result.subphase.clone() }
-                }
-                FieldKey::Station => {
-                    if result.station.is_empty() { "-".to_string() }
-                    else { result.station.clone() }
-                }
-                FieldKey::Remarks => {
-                    if result.remarks.is_empty() { "-".to_string() }
-                    else { result.remarks.clone() }
-                }
-                FieldKey::Measurements => {
-                    if result.measurements.is_empty() { "-".to_string() }
-                    else { result.measurements.clone() }
-                }
-            };
-            let label = if is_machinery && field.key == FieldKey::Station {
-                "機種".to_string()
+            let value = if field.key == FieldKey::Date {
+                format_date(&result.date)
             } else {
-                field.label.to_string()
+                result.get_field_value(field.key).to_string()
             };
             PdfInfoField {
-                label,
+                label: result.get_label_for_field(field.key).to_string(),
                 value,
                 row_span: field.row_span,
             }
@@ -187,43 +154,6 @@ fn format_date(date: &str) -> String {
     } else {
         formatted
     }
-}
-
-/// PDF生成後に解析結果を埋め込む
-///
-/// pdf-analysis-embed ライブラリを使用して、PDFのInfo辞書に
-/// 解析結果をJSON形式で埋め込みます。これにより再解析をスキップできます。
-///
-/// # Arguments
-/// * `pdf_path` - 生成されたPDFファイルのパス
-/// * `results` - 埋め込む解析結果
-///
-/// # Example
-/// ```ignore
-/// use photo_ai_common::export::pdf::embed_analysis_to_pdf;
-/// embed_analysis_to_pdf(Path::new("output.pdf"), &results)?;
-/// ```
-pub fn embed_analysis_to_pdf(pdf_path: &Path, results: &[AnalysisResult]) -> crate::error::Result<()> {
-    use pdf_analysis_embed::{embed_data, EmbedConfig, EmbeddedData};
-
-    // 解析結果をJSONにシリアライズ
-    let json_content = serde_json::to_string(results)?;
-
-    // EmbeddedDataを構築
-    let data = EmbeddedData::new(json_content)
-        .with_source("photo-ai-rust")
-        .with_extra(format!("photos: {}", results.len()));
-
-    // photo-ai-rust用のプレフィックスで埋め込み
-    let config = EmbedConfig::with_prefix("PhotoAiRust");
-
-    embed_data(pdf_path, &data, &config)
-        .map_err(|e| crate::error::Error::ExportFailed {
-            format: "PDF".to_string(),
-            detail: format!("埋め込みに失敗: {}", e),
-        })?;
-
-    Ok(())
 }
 
 /// GAS準拠テキスト描画設定（pdfCore.ts 261-306行目）
@@ -282,7 +212,7 @@ mod tests {
 
     #[test]
     fn test_gas_layout_calculation() {
-        let core = PdfLayoutCore::new(3);
+        let core = PdfMetrics::new(3);
 
         // GAS準拠定数の確認
         assert!((core.page_width_pt - 595.35).abs() < 0.01);
@@ -311,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_row_y_calculation() {
-        let core = PdfLayoutCore::new(3);
+        let core = PdfMetrics::new(3);
 
         // rowY = 842 - 28.35 - (i + 1) * 261.77 + 5
         // slot 0: 842 - 28.35 - 261.77 + 5 = 556.88
@@ -329,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_info_x_calculation() {
-        let core = PdfLayoutCore::new(3);
+        let core = PdfMetrics::new(3);
 
         // infoX = 28.35 + 350.12 = 378.47
         let info_x = core.info_x_pt();
@@ -386,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_two_up_layout() {
-        let core = PdfLayoutCore::new(2);
+        let core = PdfMetrics::new(2);
 
         // 2枚モードの確認
         assert_eq!(core.photos_per_page, 2);

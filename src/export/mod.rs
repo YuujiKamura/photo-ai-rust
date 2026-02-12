@@ -5,7 +5,7 @@ pub mod photo_xml;
 use crate::analyzer::AnalysisResult;
 use crate::cli::{ExportFormat, PdfQuality};
 use crate::error::Result;
-use photo_ai_common::export::pdf::embed_analysis_to_pdf;
+use photo_ai_common::export::pdf_embed::embed_analysis_to_pdf;
 use std::path::Path;
 
 fn output_path_for_format(output: &Path, title: &str, extension: &str) -> std::path::PathBuf {

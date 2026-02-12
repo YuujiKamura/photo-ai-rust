@@ -2,7 +2,7 @@
 //!
 //! DEFAULT_WORK_TYPE_DEFINITIONS を analyzer.rs のロジックから分離
 
-use crate::analyzer::WorkTypeDefinition;
+use crate::types::WorkTypeDefinition;
 
 /// デフォルトの工種キーワード定義
 pub const DEFAULT_WORK_TYPE_DEFINITIONS: &[WorkTypeDefinition] = &[

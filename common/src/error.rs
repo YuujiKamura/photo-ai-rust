@@ -1,7 +1,27 @@
 //! エラー型定義
+//!
+//! モジュール別サブエラー（ExportError, HierarchyError）を
+//! 共通 Error で合成する構造。
 
 use std::path::PathBuf;
 use thiserror::Error;
+
+/// エクスポート関連エラー（PDF/Excel）
+#[derive(Error, Debug)]
+pub enum ExportError {
+    #[error("Export failed ({format}): {detail}")]
+    Failed { format: String, detail: String },
+}
+
+/// 階層マスタ関連エラー（CSV読み込み・マスタ照合）
+#[derive(Error, Debug)]
+pub enum HierarchyError {
+    #[error("CSV parse error at line {line}: {detail}")]
+    CsvParse { line: usize, detail: String },
+
+    #[error("Master not found: {0}")]
+    MasterNotFound(String),
+}
 
 /// 共通エラー型
 #[derive(Error, Debug)]
@@ -24,21 +44,17 @@ pub enum Error {
     #[error("AI response parse error: {0}")]
     AiResponseParse(String),
 
-    /// CSVパース失敗
-    #[error("CSV parse error at line {line}: {detail}")]
-    CsvParse { line: usize, detail: String },
-
-    /// 工種マスタで該当なし
-    #[error("Master not found: {0}")]
-    MasterNotFound(String),
-
     /// photo-tagger結果が空
     #[error("Photo tagger returned no results")]
     TaggerEmpty,
 
-    /// エクスポート失敗
-    #[error("Export failed ({format}): {detail}")]
-    ExportFailed { format: String, detail: String },
+    /// エクスポートエラー
+    #[error(transparent)]
+    Export(#[from] ExportError),
+
+    /// 階層マスタエラー
+    #[error(transparent)]
+    Hierarchy(#[from] HierarchyError),
 }
 
 /// Result型エイリアス
@@ -116,10 +132,10 @@ mod tests {
 
     #[test]
     fn test_error_csv_parse() {
-        let error = Error::CsvParse {
+        let error: Error = HierarchyError::CsvParse {
             line: 5,
             detail: "フィールド数不足".to_string(),
-        };
+        }.into();
         let display = format!("{}", error);
         assert!(display.contains("line 5"));
         assert!(display.contains("フィールド数不足"));
@@ -127,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_error_master_not_found() {
-        let error = Error::MasterNotFound("舗装工".to_string());
+        let error: Error = HierarchyError::MasterNotFound("舗装工".to_string()).into();
         let display = format!("{}", error);
         assert!(display.contains("Master not found"));
         assert!(display.contains("舗装工"));
@@ -142,12 +158,29 @@ mod tests {
 
     #[test]
     fn test_error_export_failed() {
-        let error = Error::ExportFailed {
+        let error: Error = ExportError::Failed {
             format: "PDF".to_string(),
             detail: "フォント読み込み失敗".to_string(),
-        };
+        }.into();
         let display = format!("{}", error);
         assert!(display.contains("PDF"));
         assert!(display.contains("フォント読み込み失敗"));
+    }
+
+    #[test]
+    fn test_export_error_from_conversion() {
+        let export_err = ExportError::Failed {
+            format: "Excel".to_string(),
+            detail: "test".to_string(),
+        };
+        let error: Error = export_err.into();
+        assert!(matches!(error, Error::Export(_)));
+    }
+
+    #[test]
+    fn test_hierarchy_error_from_conversion() {
+        let hier_err = HierarchyError::MasterNotFound("test".to_string());
+        let error: Error = hier_err.into();
+        assert!(matches!(error, Error::Hierarchy(_)));
     }
 }
