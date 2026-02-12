@@ -87,6 +87,28 @@ pub const BLOCK_HEIGHT_3UP_PT: f32 = PHOTO_HEIGHT_PT_3UP + GAP_PT * MM_TO_PT; //
 pub const BLOCK_HEIGHT_2UP_PT: f32 = PHOTO_HEIGHT_PT_2UP * 1.5;    // 2upは別計算
 
 // ============================================
+// Excelスタイル定数
+// ============================================
+
+/// ラベルセルのフォントサイズ（pt）
+pub const LABEL_FONT_SIZE: f64 = 9.0;
+
+/// ラベルセルのフォントカラー（RGB）
+pub const LABEL_FONT_COLOR: u32 = 0x555555;
+
+/// ラベルセルの背景色（RGB）
+pub const LABEL_BG_COLOR: u32 = 0xF5F5F5;
+
+/// ラベルセルのボーダーカラー（RGB）
+pub const LABEL_BORDER_COLOR: u32 = 0xAAAAAA;
+
+/// 値セルのフォントサイズ（pt）
+pub const VALUE_FONT_SIZE: f64 = 11.0;
+
+/// 値・写真セルのボーダーカラー（RGB）
+pub const CELL_BORDER_COLOR: u32 = 0xCCCCCC;
+
+// ============================================
 // Excel用レイアウト定数
 // ============================================
 
@@ -143,7 +165,7 @@ pub const LAYOUT_FIELDS: &[FieldDefinition] = &[
     FieldDefinition { key: FieldKey::Subphase, label: "細別", row_span: 1 },
     FieldDefinition { key: FieldKey::Station, label: "測点", row_span: 1 },
     FieldDefinition { key: FieldKey::Remarks, label: "備考", row_span: 1 },
-    FieldDefinition { key: FieldKey::Measurements, label: "測定値", row_span: 1 },
+    FieldDefinition { key: FieldKey::Measurements, label: "測定値", row_span: 2 },
 ];
 
 // ============================================

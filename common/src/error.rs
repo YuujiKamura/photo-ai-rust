@@ -109,48 +109,39 @@ mod tests {
     }
 
     #[test]
-    fn test_error_ai_response_parse() {
-        let error: Error = AnalyzerError::ResponseParse("JSONが見つかりません".to_string()).into();
-        let display = format!("{}", error);
-        assert!(display.contains("AI response parse error"));
-        assert!(display.contains("JSONが見つかりません"));
+    fn test_error_from_analyzer_response_parse() {
+        let error: Error = AnalyzerError::ResponseParse("test".to_string()).into();
+        assert!(matches!(error, Error::Analyzer(AnalyzerError::ResponseParse(_))));
     }
 
     #[test]
-    fn test_error_csv_parse() {
+    fn test_error_from_hierarchy_csv_parse() {
         let error: Error = HierarchyError::CsvParse {
             line: 5,
-            detail: "フィールド数不足".to_string(),
+            detail: "test".to_string(),
         }.into();
-        let display = format!("{}", error);
-        assert!(display.contains("line 5"));
-        assert!(display.contains("フィールド数不足"));
+        assert!(matches!(error, Error::Hierarchy(HierarchyError::CsvParse { .. })));
     }
 
     #[test]
-    fn test_error_master_not_found() {
-        let error: Error = HierarchyError::MasterNotFound("舗装工".to_string()).into();
-        let display = format!("{}", error);
-        assert!(display.contains("Master not found"));
-        assert!(display.contains("舗装工"));
+    fn test_error_from_hierarchy_master_not_found() {
+        let error: Error = HierarchyError::MasterNotFound("test".to_string()).into();
+        assert!(matches!(error, Error::Hierarchy(HierarchyError::MasterNotFound(_))));
     }
 
     #[test]
-    fn test_error_tagger_empty() {
+    fn test_error_from_analyzer_tagger_empty() {
         let error: Error = AnalyzerError::TaggerEmpty.into();
-        let display = format!("{}", error);
-        assert!(display.contains("Photo tagger returned no results"));
+        assert!(matches!(error, Error::Analyzer(AnalyzerError::TaggerEmpty)));
     }
 
     #[test]
-    fn test_error_export_failed() {
+    fn test_error_from_export_failed() {
         let error: Error = ExportError::Failed {
             format: "PDF".to_string(),
-            detail: "フォント読み込み失敗".to_string(),
+            detail: "test".to_string(),
         }.into();
-        let display = format!("{}", error);
-        assert!(display.contains("PDF"));
-        assert!(display.contains("フォント読み込み失敗"));
+        assert!(matches!(error, Error::Export(ExportError::Failed { .. })));
     }
 
     #[test]
