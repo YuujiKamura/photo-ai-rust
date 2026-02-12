@@ -12,14 +12,6 @@ use std::collections::HashMap;
 /// 完全一致を優先し、なければ最長の部分一致パターンで置換する。
 /// どちらにも一致しなければ元の値をそのまま返す。
 pub fn longest_match_transform(value: &str, map: &HashMap<String, String>) -> String {
-    transform_field(value, map)
-}
-
-/// フィールド値をエイリアスマップで変換する。
-///
-/// 完全一致を優先し、なければ最長の部分一致パターンで置換する。
-/// どちらにも一致しなければ元の値をそのまま返す。
-fn transform_field(value: &str, map: &HashMap<String, String>) -> String {
     if value.is_empty() {
         return value.to_string();
     }
@@ -152,10 +144,10 @@ impl AliasConfig {
     pub fn apply(&self, result: &AnalysisResult) -> AnalysisResult {
         let mut updated = result.clone();
 
-        updated.photo_category = transform_field(&result.photo_category, &self.photo_category);
-        updated.work_type = transform_field(&result.work_type, &self.work_type);
-        updated.variety = transform_field(&result.variety, &self.variety);
-        updated.subphase = transform_field(&result.subphase, &self.subphase);
+        updated.photo_category = longest_match_transform(&result.photo_category, &self.photo_category);
+        updated.work_type = longest_match_transform(&result.work_type, &self.work_type);
+        updated.variety = longest_match_transform(&result.variety, &self.variety);
+        updated.subphase = longest_match_transform(&result.subphase, &self.subphase);
 
         updated
     }

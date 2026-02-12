@@ -9,6 +9,8 @@ use crate::layout::{
     ExcelLayout, LAYOUT_FIELDS,
     PHOTO_ROWS,
     LABEL_COL_WIDTH, VALUE_COL_WIDTH,
+    LABEL_FONT_SIZE, LABEL_FONT_COLOR, LABEL_BG_COLOR, LABEL_BORDER_COLOR,
+    VALUE_FONT_SIZE, CELL_BORDER_COLOR,
 };
 use rust_xlsxwriter::*;
 
@@ -19,31 +21,31 @@ pub use super::ImageData;
 fn create_label_format() -> Format {
     Format::new()
         .set_bold()
-        .set_font_size(9.0)
-        .set_font_color(Color::RGB(0x555555))
-        .set_background_color(Color::RGB(0xF5F5F5))
+        .set_font_size(LABEL_FONT_SIZE)
+        .set_font_color(Color::RGB(LABEL_FONT_COLOR))
+        .set_background_color(Color::RGB(LABEL_BG_COLOR))
         .set_align(FormatAlign::Center)
         .set_align(FormatAlign::VerticalCenter)
         .set_border(FormatBorder::Hair)
-        .set_border_color(Color::RGB(0xAAAAAA))
+        .set_border_color(Color::RGB(LABEL_BORDER_COLOR))
 }
 
 /// 値セル用フォーマット
 fn create_value_format() -> Format {
     Format::new()
-        .set_font_size(11.0)
+        .set_font_size(VALUE_FONT_SIZE)
         .set_align(FormatAlign::Left)
         .set_align(FormatAlign::VerticalCenter)
         .set_text_wrap()
         .set_border(FormatBorder::Hair)
-        .set_border_color(Color::RGB(0xCCCCCC))
+        .set_border_color(Color::RGB(CELL_BORDER_COLOR))
 }
 
 /// 写真セル用フォーマット
 fn create_photo_cell_format() -> Format {
     Format::new()
         .set_border(FormatBorder::Thin)
-        .set_border_color(Color::RGB(0xCCCCCC))
+        .set_border_color(Color::RGB(CELL_BORDER_COLOR))
 }
 
 /// Excelをバッファに生成
