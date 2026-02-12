@@ -44,14 +44,23 @@ photo-ai-rust/          # CLI本体（メインクレート）
 - `commands.rs` - コマンドハンドラ（run, analyze, export等）
 - `analysis.rs` - パイプライン（scan→tagger→master→normalize）
 - `normalizer/` - 後処理（3枚セット内で黒板アップの計測値に統一）
+  - `alias.rs` - プリセット別フィールド変換（舗装/区画線/撤去等）
 - `scanner.rs` - 画像スキャン
 
 ### 共有ライブラリ（common/src/）
-- `types.rs` - AnalysisResult, RawImageData
-- `hierarchy.rs` - HierarchyMaster（CSVマスタ読み込み）
-- `layout.rs` - PDF/Excelレイアウト定数（mm基準）
-- `export/pdf.rs` - PDF生成コア
-- `export/excel.rs` - Excel生成コア
+- `types.rs` - AnalysisResult, RawImageData, PhotoDataトレイト, WorkTypeDefinition
+- `hierarchy/` - 工種階層マスタ
+  - `mod.rs` - HierarchyMaster, HierarchyRow, HierarchyError
+  - `csv_parser.rs` - csv crate+serdeによるCSVパース（CsvRow DTO）
+- `analyzer.rs` - 工種自動判定（detect_work_types）, AnalyzerError
+- `layout.rs` - PDF/Excelレイアウト定数、FieldKey enum、fit_image_centered()
+- `prompt_format.rs` - マスタ→AIプロンプト整形（JSON/compact/chain形式）
+- `export/` - エクスポート
+  - `mod.rs` - Exporterトレイト, ImageData, ExportError
+  - `pdf.rs` - PDF生成コア（PdfMetrics, PdfInfoField）
+  - `pdf_embed.rs` - PDF Info辞書への解析結果埋め込み（非WASM）
+  - `excel.rs` - Excel生成コア
+- `error.rs` - Error合成ハブ（ExportError/HierarchyError/AnalyzerErrorをre-export）
 
 ### 外部依存
 - `photo-tagger` (`C:/Users/yuuji/photo-tagger`) - Gemini AIで写真グループ分け
@@ -69,3 +78,6 @@ master/
 - **photo-groups.jsonは消さない** - インクリメンタル、既存結果を保持
 - **フォルダ名がカテゴリ** - フォルダ名→マスタ備考で照合
 - **PRは作成しない** - masterブランチに直接プッシュ
+- **エラー型は各モジュールで定義** - error.rsは合成ハブ（#[from]で集約）
+- **PhotoDataトレイト** - get_field_value/get_label_for_fieldでPDF/Excel共通化
+- **CSVパースはcsv crate+serde** - CsvRow DTOで外部形式と内部型を分離
