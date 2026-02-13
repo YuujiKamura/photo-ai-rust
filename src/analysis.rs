@@ -662,17 +662,18 @@ fn build_line_type_prompt(line_types: &[LineTypeEntry]) -> String {
         .enumerate()
         .map(|(i, lt)| {
             let label = (b'A' + i as u8) as char;
-            format!("({}){}{}m", label, lt.name, lt.length_m)
+            format!("({}){}", label, lt.name)
         })
         .collect();
     let choices_str = choices.join(" ");
 
     format!(
-        "画像をよく見て答えろ。テキストではなく画像の視覚的特徴から判断せよ。\
-        この写真は夜間の舗装工事後に仮ラインテープを路面に貼っている工事写真だ。\
-        この工事の設計書には以下の仮区画線が含まれる：{} \
-        テープの色・太さ・パターン（実線/破線/縞模様）・道路上の位置から、\
-        上記のどれか1つを選べ。記号と線種名のみ回答せよ（例：A 中央線）。判別不能なら「判別不能」。",
+        "夜間道路工事の写真。作業員が仮ラインテープを路面に貼っている。\
+        以下の手順で答えろ。\
+        Step1:作業員の手元に見えるテープの線は直線か曲線か角度がついているか？\
+        Step2:テープ全体でどんな図形を作ろうとしているか？（直線/平行な帯/ひし形/矢印/文字）\
+        Step3:以下から該当する線種を1つ選べ：{} \
+        各Stepの回答を1行ずつ出力。判別不能なら「判別不能」。",
         choices_str
     )
 }
@@ -686,20 +687,24 @@ fn extract_line_type_from_response(response: &str, line_types: &[LineTypeEntry])
         return None;
     }
 
-    // Gemini 3のagentic出力は "I will read..." 等の思考ログを含むため
-    // 最終行（実際の回答）を優先して解析する
-    let last_line = response
+    // 最終行を取得し、CoTの "Step3:" プレフィックスを除去
+    let raw_last = response
         .lines()
         .rev()
         .find(|l| !l.trim().is_empty())
-        .unwrap_or(response);
+        .unwrap_or(response)
+        .trim();
+    let last_line = raw_last
+        .strip_prefix("Step3:")
+        .or_else(|| raw_last.strip_prefix("Step 3:"))
+        .unwrap_or(raw_last)
+        .trim();
 
     // 記号(A,B,C...)で判定（最終行から）
     for (i, lt) in line_types.iter().enumerate() {
         let label = (b'A' + i as u8) as char;
-        let trimmed = last_line.trim();
-        if trimmed.starts_with(label)
-            || trimmed.starts_with(&format!("({})", label))
+        if last_line.starts_with(label)
+            || last_line.starts_with(&format!("({})", label))
         {
             return Some(lt.name.clone());
         }
@@ -763,34 +768,73 @@ pub fn detect_line_type(
     }
 }
 
+/// Git for Windows の bash.exe パスを探す
+fn find_git_bash() -> Option<PathBuf> {
+    // 既知のパスを順に確認
+    let candidates = [
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
+    ];
+    for path in &candidates {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    // where git からGitルートを推定
+    let output = std::process::Command::new("where.exe")
+        .arg("git")
+        .output()
+        .ok()?;
+    let git_path = String::from_utf8_lossy(&output.stdout);
+    for line in git_path.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        // git.exe → 親の親 = Gitルート → usr/bin/bash.exe
+        let mut p = PathBuf::from(line);
+        p.pop(); // bin or cmd
+        p.pop(); // Git root
+        let bash = p.join("usr").join("bin").join("bash.exe");
+        if bash.exists() {
+            return Some(bash);
+        }
+    }
+    None
+}
+
 /// Gemini CLIを呼び出す（線種判定用の軽量版）
 ///
-/// stdin経由でプロンプトを送信。-pフラグは使わない。
+/// Git bash経由で一時ファイル→echo | geminiのシェルパイプを使う。
+/// Rust native stdinパイプだと@fileの画像参照が正しく処理されないため。
 fn run_gemini_cli_for_line_type(stdin_content: &str) -> std::result::Result<String, String> {
-    use std::io::Write;
-
     println!("  🔍 区画線種判定中...");
 
-    // Windows: gemini.cmd, Unix: gemini
-    let cmd = if cfg!(windows) { "gemini.cmd" } else { "gemini" };
+    // Git bashを使う（Windows System32のbash.exeはWSLなのでNG）
+    let bash = if cfg!(windows) {
+        find_git_bash().ok_or_else(|| "Git bash not found".to_string())?
+    } else {
+        PathBuf::from("bash")
+    };
 
-    let mut child = std::process::Command::new(cmd)
-        .args(["-m", "gemini-3-flash-preview", "--yolo", "-o", "text"])
-        .stdin(Stdio::piped())
+    // stdin内容を一時ファイルに書き出し、bash内でcatしてパイプ
+    let temp_stdin = std::env::temp_dir().join(format!("gemini-stdin-{}.txt", std::process::id()));
+    std::fs::write(&temp_stdin, format!("{}\n", stdin_content))
+        .map_err(|e| format!("一時ファイル書き込みエラー: {}", e))?;
+    let temp_unix = temp_stdin.display().to_string().replace('\\', "/");
+
+    let shell_cmd = format!(
+        r#"cat '{}' | gemini -m gemini-2.5-pro --yolo -o text"#,
+        temp_unix
+    );
+
+    let output = std::process::Command::new(&bash)
+        .args(["-c", &shell_cmd])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
+        .output()
         .map_err(|e| format!("Gemini CLI実行エラー: {}", e))?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(stdin_content.as_bytes())
-            .map_err(|e| format!("Gemini CLI stdin書き込みエラー: {}", e))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Gemini CLI実行エラー: {}", e))?;
+    let _ = std::fs::remove_file(&temp_stdin);
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
