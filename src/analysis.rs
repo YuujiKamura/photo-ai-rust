@@ -635,12 +635,16 @@ fn safety_remarks_from_machine_type(machine_type: &str) -> Option<String> {
 }
 
 /// 測点を一括適用
-/// 安全管理写真・品質管理写真は測点ではなく日付（◯月◯日）を設定
+/// - 安全管理写真・品質管理写真 → 日付（◯月◯日）
+/// - 区画線工 → スキップ（線種ごとに撮影するため固定測点は不適切）
 pub fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
     for result in results {
         match result.photo_category.as_str() {
             "安全管理写真" | "品質管理写真" => {
                 result.station = date_to_month_day(&result.date);
+            }
+            _ if result.work_type == "区画線工" => {
+                // 区画線工は線種ごとに撮影するため測点を一律適用しない
             }
             _ => {
                 result.station = station.to_string();
@@ -731,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_station_skips_safety_photos() {
+    fn test_apply_station_skips_safety_and_marking() {
         let mut results = vec![
             analyzer::AnalysisResult {
                 photo_category: "施工状況写真".to_string(),
@@ -748,10 +752,18 @@ mod tests {
                 date: "2026-02-10 01:15:00".to_string(),
                 ..Default::default()
             },
+            analyzer::AnalysisResult {
+                photo_category: "施工状況写真".to_string(),
+                work_type: "区画線工".to_string(),
+                station: "".to_string(),
+                date: "2026-02-10 03:44:26".to_string(),
+                ..Default::default()
+            },
         ];
         apply_station(&mut results, "No.4 左車線");
         assert_eq!(results[0].station, "No.4 左車線");
         assert_eq!(results[1].station, "2月9日");
         assert_eq!(results[2].station, "2月10日");
+        assert_eq!(results[3].station, ""); // 区画線工はスキップ
     }
 }
