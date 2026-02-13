@@ -607,10 +607,31 @@ fn normalize_station(station: &str) -> String {
 }
 
 /// 測点を一括適用
+/// 安全管理写真・品質管理写真は測点ではなく日付（◯月◯日）を設定
 pub fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
     for result in results {
-        result.station = station.to_string();
+        match result.photo_category.as_str() {
+            "安全管理写真" | "品質管理写真" => {
+                result.station = date_to_month_day(&result.date);
+            }
+            _ => {
+                result.station = station.to_string();
+            }
+        }
     }
+}
+
+/// "2026-02-09 21:23:53" → "2月9日"
+fn date_to_month_day(date_str: &str) -> String {
+    let parts: Vec<&str> = date_str.split(&['-', ' '][..]).collect();
+    if parts.len() >= 3 {
+        let month: u32 = parts[1].parse().unwrap_or(0);
+        let day: u32 = parts[2].parse().unwrap_or(0);
+        if month > 0 && day > 0 {
+            return format!("{}月{}日", month, day);
+        }
+    }
+    String::new()
 }
 
 #[cfg(test)]
@@ -652,5 +673,37 @@ mod tests {
     fn test_extract_kv_from_text_empty() {
         let kvs = extract_kv_from_text("");
         assert!(kvs.is_empty());
+    }
+
+    #[test]
+    fn test_date_to_month_day() {
+        assert_eq!(date_to_month_day("2026-02-09 21:23:53"), "2月9日");
+        assert_eq!(date_to_month_day("2026-12-25 00:00:00"), "12月25日");
+        assert_eq!(date_to_month_day(""), "");
+    }
+
+    #[test]
+    fn test_apply_station_skips_safety_photos() {
+        let mut results = vec![
+            analyzer::AnalysisResult {
+                photo_category: "施工状況写真".to_string(),
+                date: "2026-02-09 23:34:47".to_string(),
+                ..Default::default()
+            },
+            analyzer::AnalysisResult {
+                photo_category: "安全管理写真".to_string(),
+                date: "2026-02-09 21:23:53".to_string(),
+                ..Default::default()
+            },
+            analyzer::AnalysisResult {
+                photo_category: "品質管理写真".to_string(),
+                date: "2026-02-10 01:15:00".to_string(),
+                ..Default::default()
+            },
+        ];
+        apply_station(&mut results, "No.4 左車線");
+        assert_eq!(results[0].station, "No.4 左車線");
+        assert_eq!(results[1].station, "2月9日");
+        assert_eq!(results[2].station, "2月10日");
     }
 }
