@@ -7,7 +7,7 @@ mod csv_parser;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// 階層マスタ関連エラー（CSV読み込み・マスタ照合）
@@ -108,6 +108,20 @@ impl HierarchyMaster {
     pub fn from_csv(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
         Self::from_csv_str(&content)
+    }
+
+    /// 複数のCSVファイルからマージして読み込み
+    ///
+    /// 各ファイルの行をすべて結合し、単一のマスタとして構築する。
+    /// 重複行はそのまま保持される（同じ行が複数ファイルにあっても問題ない）。
+    pub fn from_csv_files(paths: &[PathBuf]) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut all_rows = Vec::new();
+        for path in paths {
+            let content = std::fs::read_to_string(path)?;
+            let rows = csv_parser::parse_rows_from_csv(&content)?;
+            all_rows.extend(rows);
+        }
+        Ok(Self::from_rows(all_rows))
     }
 
     /// CSV文字列から読み込み

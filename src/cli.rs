@@ -65,6 +65,10 @@ pub enum Commands {
         /// 除外フォルダも含める（デフォルトは「非使用」等を除外）
         #[arg(long)]
         include_all: bool,
+
+        /// 区画線工の線種リストJSONファイル
+        #[arg(long)]
+        line_types: Option<PathBuf>,
     },
 
     /// 解析結果からPDF/Excelを生成
@@ -155,6 +159,10 @@ pub enum Commands {
         /// 除外フォルダも含める（デフォルトは「非使用」等を除外）
         #[arg(long)]
         include_all: bool,
+
+        /// 区画線工の線種リストJSONファイル
+        #[arg(long)]
+        line_types: Option<PathBuf>,
     },
 
     /// 設定を表示/編集

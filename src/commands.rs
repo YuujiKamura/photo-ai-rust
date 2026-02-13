@@ -10,6 +10,7 @@ use crate::error::{self, Result};
 use crate::normalizer::{self, NormalizationOptions};
 use crate::{analyzer, export, master_selector};
 use ai_code_review::{CodeReviewer, Backend as ReviewBackend};
+use photo_ai_common::{LineTypeEntry, LineTypesConfig};
 use std::path::{Path, PathBuf};
 
 // MasterConfig を再エクスポート
@@ -35,6 +36,7 @@ pub struct AnalyzeCommandArgs {
     pub use_cache: bool,
     pub recursive: bool,
     pub include_all: bool,
+    pub line_types: Option<Vec<LineTypeEntry>>,
     pub cli_args: CommonCliArgs,
 }
 
@@ -53,6 +55,7 @@ pub struct RunCommandArgs {
     pub use_cache: bool,
     pub recursive: bool,
     pub include_all: bool,
+    pub line_types: Option<Vec<LineTypeEntry>>,
     pub cli_args: CommonCliArgs,
 }
 
@@ -157,6 +160,7 @@ struct CommonAnalysisParams {
     include_all: bool,
     verbose: bool,
     provider: AiProvider,
+    line_types: Option<Vec<LineTypeEntry>>,
 }
 
 fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<master_selector::MasterSelection> {
@@ -216,6 +220,7 @@ async fn run_common_analysis(
         include_all: params.include_all,
         step_prefix_scan,
         step_prefix_analyze,
+        line_types: params.line_types.as_deref(),
     };
 
     scan_and_analyze(&scan_config).await
@@ -285,6 +290,7 @@ pub async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
         include_all: args.include_all,
         verbose: args.cli_args.verbose,
         provider: args.cli_args.provider,
+        line_types: args.line_types,
     };
     let results = run_common_analysis(
         &params,
@@ -320,6 +326,7 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
         include_all: args.include_all,
         verbose: args.cli_args.verbose,
         provider: args.cli_args.provider,
+        line_types: args.line_types,
     };
     let results = run_common_analysis(
         &params,
@@ -515,6 +522,17 @@ pub fn handle_cache_command(args: CacheCommandArgs) {
     }
 }
 
+/// --line-types オプションからJSONファイルを読み込む
+fn load_line_types(path: Option<&PathBuf>) -> Result<Option<Vec<LineTypeEntry>>> {
+    let Some(path) = path else { return Ok(None) };
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| error::PhotoAiError::Config(format!("線種リスト読み込み失敗: {}: {}", path.display(), e)))?;
+    let config: LineTypesConfig = serde_json::from_str(&content)
+        .map_err(|e| error::PhotoAiError::Config(format!("線種リストJSON解析失敗: {}: {}", path.display(), e)))?;
+    println!("線種リスト読み込み: {}種 ({})", config.line_types.len(), path.display());
+    Ok(Some(config.line_types))
+}
+
 /// フォルダ名からエクスポートタイトルを生成
 fn derive_export_title(_results: &[analyzer::AnalysisResult], folder: &Path) -> String {
     folder.file_name()
@@ -527,7 +545,8 @@ impl Commands {
     /// コマンドを実行する
     pub async fn execute(self, cli_args: &CommonCliArgs, config: Config) -> Result<()> {
         match self {
-            Commands::Analyze { folder, output, batch_size, master, work_type, photo_type, variety, station, use_cache, recursive, include_all } => {
+            Commands::Analyze { folder, output, batch_size, master, work_type, photo_type, variety, station, use_cache, recursive, include_all, line_types } => {
+                let line_types = load_line_types(line_types.as_ref())?;
                 handle_analyze_command(AnalyzeCommandArgs {
                     folder,
                     output,
@@ -540,6 +559,7 @@ impl Commands {
                     use_cache,
                     recursive,
                     include_all,
+                    line_types,
                     cli_args: cli_args.clone(),
                 }).await?;
             }
@@ -557,7 +577,8 @@ impl Commands {
                 })?;
             }
 
-            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all } => {
+            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all, line_types } => {
+                let line_types = load_line_types(line_types.as_ref())?;
                 handle_run_command(RunCommandArgs {
                     folder,
                     output,
@@ -572,6 +593,7 @@ impl Commands {
                     use_cache,
                     recursive,
                     include_all,
+                    line_types,
                     cli_args: cli_args.clone(),
                 }).await?;
             }

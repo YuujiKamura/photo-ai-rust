@@ -110,6 +110,19 @@ impl AnalysisResult {
     }
 }
 
+/// 区画線工の線種エントリ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LineTypeEntry {
+    pub name: String,
+    pub length_m: f64,
+}
+
+/// 区画線工の線種リスト設定
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LineTypesConfig {
+    pub line_types: Vec<LineTypeEntry>,
+}
+
 /// 写真データのトレイト（異なるAnalysisResult型に対応）
 pub trait PhotoData {
     fn file_path(&self) -> &str;
