@@ -537,30 +537,43 @@ fn convert_groups_to_results(
             .unwrap_or_default();
         result.station = normalize_station(&photo_station);
 
-        // 写真ごとにマスタ照合（混在フォルダ対応）
-        let photo_matched_row = if !rec.detected_text.is_empty() {
-            let texts = vec![rec.detected_text.as_str()];
-            match_master_from_detected_texts(master, &texts, folder_name)
+        // 安全管理系: taggerのmachine_typeから直接判定（黒板なし写真に対応）
+        let safety_remarks = safety_remarks_from_machine_type(&rec.machine_type);
+        if let Some(remarks) = safety_remarks {
+            result.photo_category = "安全管理写真".to_string();
+            result.remarks = remarks;
         } else {
-            folder_fallback_row.clone()
-        };
+            // 写真ごとにマスタ照合（混在フォルダ対応）
+            // machine_typeもキーワードに追加して照合精度を向上
+            let photo_matched_row = if !rec.detected_text.is_empty() {
+                let combined = if !rec.machine_type.is_empty() {
+                    format!("{}\n{}", rec.detected_text, rec.machine_type)
+                } else {
+                    rec.detected_text.clone()
+                };
+                let texts = vec![combined.as_str()];
+                match_master_from_detected_texts(master, &texts, folder_name)
+            } else {
+                folder_fallback_row.clone()
+            };
 
-        // マスタ照合結果を適用
-        if let Some(row) = &photo_matched_row {
-            result.photo_category = row.photo_type.clone();
-            result.work_type = row.work_type.clone();
-            result.variety = row.variety.clone();
-            result.subphase = row.subphase.clone();
-            result.remarks = row.remarks.clone();
-        } else {
-            // マスタ照合失敗: 工種キーワードだけ埋める
-            let extracted_wt = kvs.iter()
-                .find(|(k, _)| k == "工種")
-                .map(|(_, v)| v.clone());
-            if let Some(wt) = extracted_wt {
-                result.work_type = wt;
+            // マスタ照合結果を適用
+            if let Some(row) = &photo_matched_row {
+                result.photo_category = row.photo_type.clone();
+                result.work_type = row.work_type.clone();
+                result.variety = row.variety.clone();
+                result.subphase = row.subphase.clone();
+                result.remarks = row.remarks.clone();
+            } else {
+                // マスタ照合失敗: 工種キーワードだけ埋める
+                let extracted_wt = kvs.iter()
+                    .find(|(k, _)| k == "工種")
+                    .map(|(_, v)| v.clone());
+                if let Some(wt) = extracted_wt {
+                    result.work_type = wt;
+                }
+                result.remarks = folder_name.replace('_', " ");
             }
-            result.remarks = folder_name.replace('_', " ");
         }
 
         result.reasoning = format!("photo-groups.json: {} / {}", rec.machine_type, rec.machine_id);
@@ -604,6 +617,21 @@ fn normalize_station(station: &str) -> String {
         s.push_str(" 右車線");
     }
     s
+}
+
+/// taggerのmachine_typeから安全管理系の写真を判定し、remarksを返す
+///
+/// 朝礼・KY活動など黒板のない写真はdetected_textが空のためマスタ照合できない。
+/// taggerのグループ名（machine_type）から直接判定する。
+fn safety_remarks_from_machine_type(machine_type: &str) -> Option<String> {
+    const SAFETY_MAPPINGS: &[(&str, &str)] = &[
+        ("朝礼", "安全朝礼実施状況"),
+        ("KY", "KY活動状況"),
+        ("新規入場者教育", "新規入場者教育状況"),
+    ];
+    SAFETY_MAPPINGS.iter()
+        .find(|(pattern, _)| machine_type.contains(pattern))
+        .map(|(_, remarks)| remarks.to_string())
 }
 
 /// 測点を一括適用
@@ -680,6 +708,26 @@ mod tests {
         assert_eq!(date_to_month_day("2026-02-09 21:23:53"), "2月9日");
         assert_eq!(date_to_month_day("2026-12-25 00:00:00"), "12月25日");
         assert_eq!(date_to_month_day(""), "");
+    }
+
+    #[test]
+    fn test_safety_remarks_from_machine_type() {
+        assert_eq!(
+            safety_remarks_from_machine_type("朝礼"),
+            Some("安全朝礼実施状況".to_string())
+        );
+        assert_eq!(
+            safety_remarks_from_machine_type("KY活動"),
+            Some("KY活動状況".to_string())
+        );
+        assert_eq!(
+            safety_remarks_from_machine_type("新規入場者教育"),
+            Some("新規入場者教育状況".to_string())
+        );
+        // 施工機械はNone
+        assert_eq!(safety_remarks_from_machine_type("路面切削機"), None);
+        assert_eq!(safety_remarks_from_machine_type("ダンプトラック"), None);
+        assert_eq!(safety_remarks_from_machine_type(""), None);
     }
 
     #[test]
