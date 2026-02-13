@@ -645,6 +645,10 @@ pub fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
             }
             _ if result.work_type == "区画線工" => {
                 // 区画線工は線種ごとに撮影するため測点を一律適用しない
+                // 以前のnormalize -Sで誤設定された値もクリア
+                if result.station == station {
+                    result.station.clear();
+                }
             }
             _ => {
                 result.station = station.to_string();
@@ -759,11 +763,20 @@ mod tests {
                 date: "2026-02-10 03:44:26".to_string(),
                 ..Default::default()
             },
+            // 以前の-Sで誤設定された区画線工
+            analyzer::AnalysisResult {
+                photo_category: "施工状況写真".to_string(),
+                work_type: "区画線工".to_string(),
+                station: "No.4 左車線".to_string(),
+                date: "2026-02-10 03:52:16".to_string(),
+                ..Default::default()
+            },
         ];
         apply_station(&mut results, "No.4 左車線");
         assert_eq!(results[0].station, "No.4 左車線");
         assert_eq!(results[1].station, "2月9日");
         assert_eq!(results[2].station, "2月10日");
         assert_eq!(results[3].station, ""); // 区画線工はスキップ
+        assert_eq!(results[4].station, ""); // 区画線工: 以前の-S値をクリア
     }
 }
