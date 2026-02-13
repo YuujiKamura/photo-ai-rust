@@ -526,7 +526,6 @@ fn match_master_from_detected_texts(
             }
             // variety_hint フィルタ: varietyまたはsubphaseに一致する行を優先
             if let Some(vh) = &variety_hint {
-                // varietyかsubphaseにhintが含まれる行のみ通す
                 r.variety == *vh || r.subphase == *vh || r.variety.contains(vh.as_str()) || vh.contains(&r.variety)
             } else {
                 true
@@ -539,7 +538,6 @@ fn match_master_from_detected_texts(
     let mut best_score: usize = 0;
 
     for row in &candidates {
-        // 検索パターンがあればそれで照合
         if !row.search_patterns.is_empty() {
             let patterns: Vec<&str> = row.search_patterns.split('|').collect();
             let score = keywords.iter()
@@ -715,6 +713,7 @@ fn normalize_station(station: &str) -> String {
 fn safety_remarks_from_machine_type(machine_type: &str) -> Option<String> {
     const SAFETY_MAPPINGS: &[(&str, &str)] = &[
         ("朝礼", "安全朝礼実施状況"),
+        ("安全ミーティング", "安全朝礼実施状況"),
         ("KY", "KY活動状況"),
         ("新規入場者教育", "新規入場者教育状況"),
     ];
