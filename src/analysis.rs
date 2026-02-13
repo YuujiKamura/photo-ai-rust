@@ -310,6 +310,38 @@ fn role_priority(role: &str) -> u8 {
 /// 既知の黒板キー一覧
 const KNOWN_KEYS: &[&str] = &["工事名", "場所", "工種", "測点", "車番", "車両番号"];
 
+/// detected_textを正規化: 既知キー+コロンの前に改行を挿入
+///
+/// photo-taggerがスペース区切り/カンマ区切りで返す場合がある:
+/// "工事名：AAA 場所：BBB 表層工 初期転圧状況"
+/// → "工事名：AAA\n場所：BBB 表層工 初期転圧状況"
+///
+/// その後、extract_kv_from_textがカンマ展開と場所値のパースを行う
+fn normalize_detected_text(text: &str) -> String {
+    let mut s = text.to_string();
+
+    // 既知キー+全角/半角コロンのパターンの前に改行を挿入
+    for &key in KNOWN_KEYS {
+        for colon in &["：", ":"] {
+            let pattern = format!("{}{}", key, colon);
+            let mut idx = 0;
+            while let Some(pos) = s[idx..].find(&pattern) {
+                let abs_pos = idx + pos;
+                if abs_pos > 0 {
+                    let prev_byte = s.as_bytes().get(abs_pos.saturating_sub(1));
+                    if prev_byte != Some(&b'\n') {
+                        s.insert(abs_pos, '\n');
+                        idx = abs_pos + 1 + pattern.len();
+                        continue;
+                    }
+                }
+                idx = abs_pos + pattern.len();
+            }
+        }
+    }
+    s
+}
+
 /// 2つの文字列のトークン重複スコアを計算
 ///
 /// 日本語2文字トークン（bigram）で分割し、一致数を返す。
@@ -352,7 +384,28 @@ fn token_overlap_score(a: &str, b: &str) -> usize {
 /// キーなし行（"路面切削工"、"切削・積込状況"）は ("", value) として返す
 fn extract_kv_from_text(text: &str) -> Vec<(String, String)> {
     let mut result = Vec::new();
-    for line in text.split('\n') {
+
+    // 前処理: 既知キー（全角/半角コロン付き）の前に改行を挿入して正規化
+    // "工事名：AAA 場所：BBB 表層工 初期転圧状況" →
+    // "工事名：AAA\n場所：BBB\n表層工\n初期転圧状況"
+    let normalized = normalize_detected_text(text);
+
+    // 改行で分割し、各行をさらにカンマ区切りで展開
+    let mut lines: Vec<String> = Vec::new();
+    for segment in normalized.split('\n') {
+        let segment = segment.trim();
+        if segment.is_empty() { continue; }
+        if segment.contains(", ") {
+            // カンマ区切り行を展開
+            for part in segment.split(", ") {
+                let p = part.trim();
+                if !p.is_empty() { lines.push(p.to_string()); }
+            }
+        } else {
+            lines.push(segment.to_string());
+        }
+    }
+    for line in &lines {
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -362,7 +415,24 @@ fn extract_kv_from_text(text: &str) -> Vec<(String, String)> {
             let k = k.trim();
             let v = v.trim();
             if !k.is_empty() {
-                result.push((k.to_string(), v.to_string()));
+                // 場所/測点: 値中のスペース後に日本語キーワードが続く場合を分離
+                // "No.6 R 表層工 初期転圧状況" → 場所:"No.6 R", keywords: "表層工","初期転圧状況"
+                if k == "場所" || k == "測点" {
+                    let tokens: Vec<&str> = v.split_whitespace().collect();
+                    let mut station_parts = Vec::new();
+                    let mut found_jp = false;
+                    for t in &tokens {
+                        if !found_jp && !t.chars().any(|c| c > '\u{3000}') {
+                            station_parts.push(*t);
+                        } else {
+                            found_jp = true;
+                            result.push((String::new(), t.to_string()));
+                        }
+                    }
+                    result.push((k.to_string(), station_parts.join(" ")));
+                } else {
+                    result.push((k.to_string(), v.to_string()));
+                }
                 continue;
             }
         }
