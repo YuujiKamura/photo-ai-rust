@@ -87,6 +87,7 @@ pub struct NormalizeCommandArgs {
     pub lane: Option<normalizer::Lane>,
     pub dekigata_remarks: Option<String>,
     pub dry_run: bool,
+    pub line_types: Option<Vec<LineTypeEntry>>,
 }
 
 /// Configコマンドの引数
@@ -467,16 +468,43 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
         }
     }
 
+    // 区画線工の線種判定（差分実行）
+    let mut line_type_changes = 0;
+    if let Some(ref lt) = args.line_types {
+        if !lt.is_empty() {
+            let line_type_names: Vec<&str> = lt.iter().map(|e| e.name.as_str()).collect();
+            for r in &mut results {
+                if r.work_type == "区画線工" && !r.file_path.is_empty() {
+                    // スキップ: stationが既に線種リストのnameに含まれる場合
+                    if !r.station.is_empty() && line_type_names.contains(&r.station.as_str()) {
+                        continue;
+                    }
+                    if let Some(detected) = crate::analysis::detect_line_type(&r.file_path, lt) {
+                        println!("  線種判定: {} → {}", r.file_name, detected);
+                        r.station = detected;
+                        line_type_changes += 1;
+                    }
+                }
+            }
+            println!("線種判定: {}件更新", line_type_changes);
+        }
+    }
+
     // ドライランでなければ適用
-    let has_changes = args.station.is_some() || !result.corrections.is_empty();
-    if !args.dry_run && has_changes {
-        normalizer::apply_corrections(&mut results, &result.corrections);
+    if !args.dry_run {
+        let has_corrections = args.station.is_some() || !result.corrections.is_empty() || line_type_changes > 0;
+        if has_corrections {
+            normalizer::apply_corrections(&mut results, &result.corrections);
+        }
+
+        // 日付ソートは常に適用
+        results.sort_by(|a, b| a.date.cmp(&b.date).then(a.file_name.cmp(&b.file_name)));
 
         let output_path = args.output.unwrap_or(args.input);
         let json = serde_json::to_string_pretty(&results)?;
         std::fs::write(&output_path, json)?;
         println!("\n✔ 保存: {}", output_path.display());
-    } else if args.dry_run {
+    } else {
         println!("\n[ドライラン] 変更は適用されませんでした");
     }
 
@@ -621,7 +649,8 @@ impl Commands {
                 });
             }
 
-            Commands::Normalize { input, output, station, lane, dekigata_remarks, dry_run } => {
+            Commands::Normalize { input, output, station, lane, dekigata_remarks, dry_run, line_types } => {
+                let line_types = load_line_types(line_types.as_ref())?;
                 handle_normalize_command(NormalizeCommandArgs {
                     input,
                     output,
@@ -629,6 +658,7 @@ impl Commands {
                     lane: lane.map(|l| l.to_lane()),
                     dekigata_remarks,
                     dry_run,
+                    line_types,
                 })?;
             }
 

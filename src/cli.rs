@@ -227,6 +227,10 @@ pub enum Commands {
         /// ドライラン（変更を適用せずプレビュー）
         #[arg(long)]
         dry_run: bool,
+
+        /// 線種リストJSON（区画線工の線種を差分判定）
+        #[arg(long, value_name = "FILE")]
+        line_types: Option<PathBuf>,
     },
 
     /// ソースコードをAIでレビュー

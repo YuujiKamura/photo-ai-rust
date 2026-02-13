@@ -584,7 +584,10 @@ fn convert_groups_to_results(
         Some((rec.group, role_priority(&rec.role), result))
     }).collect();
 
-    results.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    // 日付→ファイル名の時系列ソート（グループ順ではなく撮影順）
+    results.sort_by(|a, b| {
+        a.2.date.cmp(&b.2.date).then(a.2.file_name.cmp(&b.2.file_name))
+    });
     let mut final_results: Vec<analyzer::AnalysisResult> = results.into_iter().map(|(_, _, r)| r).collect();
 
     // ポスト処理: フォルダ内の文脈で種別を補正
@@ -720,7 +723,7 @@ fn extract_line_type_from_response(response: &str, line_types: &[LineTypeEntry])
 /// 区画線工の写真に対して、Gemini CLIで線種を判定する
 ///
 /// 戻り値: Some("横断歩道線") など。判定失敗時はNone。
-fn detect_line_type(
+pub fn detect_line_type(
     photo_path: &str,
     line_types: &[LineTypeEntry],
 ) -> Option<String> {
