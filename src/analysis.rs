@@ -4,9 +4,10 @@
 
 use crate::{ai_provider::AiProvider, analyzer, error, scanner};
 use crate::normalizer::{self, NormalizationOptions};
-use photo_ai_common::HierarchyMaster;
+use photo_ai_common::{HierarchyMaster, LineTypeEntry};
 use photo_tagger::GroupRecords;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 
 use crate::error::Result;
 
@@ -25,6 +26,7 @@ pub struct ScanAnalysisConfig<'a> {
     pub include_all: bool,
     pub step_prefix_scan: &'a str,
     pub step_prefix_analyze: &'a str,
+    pub line_types: Option<&'a [LineTypeEntry]>,
 }
 
 /// AI解析のオプション
@@ -140,7 +142,7 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
     }
 
     let folder_name = config.folder.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    let mut results = convert_groups_to_results(&grouped_images, &group_records, &master, folder_name);
+    let mut results = convert_groups_to_results(&grouped_images, &group_records, &master, folder_name, config.line_types);
     println!("✔ マスタ照合完了（{}枚）\n", results.len());
 
     // 4. 正規化
@@ -506,6 +508,7 @@ fn convert_groups_to_results(
     groups: &GroupRecords,
     master: &HierarchyMaster,
     folder_name: &str,
+    line_types: Option<&[LineTypeEntry]>,
 ) -> Vec<analyzer::AnalysisResult> {
     // フォルダ名でのフォールバック照合（detected_textが空の写真用）
     let folder_fallback_row = {
@@ -595,6 +598,19 @@ fn convert_groups_to_results(
         }
     }
 
+    // 区画線工の線種判定: line_typesが指定されている場合のみ
+    if let Some(lt) = line_types {
+        if !lt.is_empty() {
+            for r in &mut final_results {
+                if r.work_type == "区画線工" && !r.file_path.is_empty() {
+                    if let Some(detected) = detect_line_type(&r.file_path, lt) {
+                        r.station = detected;
+                    }
+                }
+            }
+        }
+    }
+
     final_results
 }
 
@@ -632,6 +648,159 @@ fn safety_remarks_from_machine_type(machine_type: &str) -> Option<String> {
     SAFETY_MAPPINGS.iter()
         .find(|(pattern, _)| machine_type.contains(pattern))
         .map(|(_, remarks)| remarks.to_string())
+}
+
+/// 区画線工の線種判定プロンプトを生成する
+///
+/// line_typesから選択肢リストを構築し、Gemini CLIに渡すプロンプトを返す
+fn build_line_type_prompt(line_types: &[LineTypeEntry]) -> String {
+    let choices: Vec<String> = line_types
+        .iter()
+        .enumerate()
+        .map(|(i, lt)| {
+            let label = (b'A' + i as u8) as char;
+            format!("({}){}{}m", label, lt.name, lt.length_m)
+        })
+        .collect();
+    let choices_str = choices.join(" ");
+
+    format!(
+        "画像をよく見て答えろ。テキストではなく画像の視覚的特徴から判断せよ。\
+        この写真は夜間の舗装工事後に仮ラインテープを路面に貼っている工事写真だ。\
+        この工事の設計書には以下の仮区画線が含まれる：{} \
+        テープの色・太さ・パターン（実線/破線/縞模様）・道路上の位置から、\
+        上記のどれか1つを選べ。記号と線種名のみ回答せよ（例：A 中央線）。判別不能なら「判別不能」。",
+        choices_str
+    )
+}
+
+/// AIレスポンスから線種名を抽出する
+///
+/// レスポンス例: "A 中央線", "(B) 停止線", "横断歩道線" など
+fn extract_line_type_from_response(response: &str, line_types: &[LineTypeEntry]) -> Option<String> {
+    let response = response.trim();
+    if response.is_empty() || response.contains("判別不能") {
+        return None;
+    }
+
+    // Gemini 3のagentic出力は "I will read..." 等の思考ログを含むため
+    // 最終行（実際の回答）を優先して解析する
+    let last_line = response
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or(response);
+
+    // 記号(A,B,C...)で判定（最終行から）
+    for (i, lt) in line_types.iter().enumerate() {
+        let label = (b'A' + i as u8) as char;
+        let trimmed = last_line.trim();
+        if trimmed.starts_with(label)
+            || trimmed.starts_with(&format!("({})", label))
+        {
+            return Some(lt.name.clone());
+        }
+    }
+
+    // 線種名の直接マッチ（最終行から優先、次に全文）
+    for lt in line_types {
+        if last_line.contains(&lt.name) {
+            return Some(lt.name.clone());
+        }
+    }
+    for lt in line_types {
+        if response.contains(&lt.name) {
+            return Some(lt.name.clone());
+        }
+    }
+
+    None
+}
+
+/// 区画線工の写真に対して、Gemini CLIで線種を判定する
+///
+/// 戻り値: Some("横断歩道線") など。判定失敗時はNone。
+fn detect_line_type(
+    photo_path: &str,
+    line_types: &[LineTypeEntry],
+) -> Option<String> {
+    if line_types.is_empty() {
+        return None;
+    }
+
+    let prompt = build_line_type_prompt(line_types);
+
+    // Gemini CLIのワークスペース外（H:ドライブ等）の場合に備え、一時ファイルにコピー
+    let photo = Path::new(photo_path);
+    let temp_dir = std::env::temp_dir().join(format!("photo-ai-linetype-{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).ok();
+
+    let ext = photo.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
+    let temp_photo = temp_dir.join(format!("photo.{}", ext));
+    if let Err(e) = std::fs::copy(photo, &temp_photo) {
+        eprintln!("  Warning: 写真コピー失敗 {}: {}", photo_path, e);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return None;
+    }
+
+    let temp_photo_unix = temp_photo.display().to_string().replace('\\', "/");
+    let stdin_content = format!("@{} {}", temp_photo_unix, prompt);
+    // Gemini CLI呼び出し: stdin経由、-pフラグ不使用
+    let result = run_gemini_cli_for_line_type(&stdin_content);
+
+    // 一時ファイル削除
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    match result {
+        Ok(response) => extract_line_type_from_response(&response, line_types),
+        Err(e) => {
+            eprintln!("  Warning: 線種判定失敗: {}", e);
+            None
+        }
+    }
+}
+
+/// Gemini CLIを呼び出す（線種判定用の軽量版）
+///
+/// stdin経由でプロンプトを送信。-pフラグは使わない。
+fn run_gemini_cli_for_line_type(stdin_content: &str) -> std::result::Result<String, String> {
+    use std::io::Write;
+
+    println!("  🔍 区画線種判定中...");
+
+    // Windows: gemini.cmd, Unix: gemini
+    let cmd = if cfg!(windows) { "gemini.cmd" } else { "gemini" };
+
+    let mut child = std::process::Command::new(cmd)
+        .args(["-m", "gemini-3-flash-preview", "--yolo", "-o", "text"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Gemini CLI実行エラー: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(stdin_content.as_bytes())
+            .map_err(|e| format!("Gemini CLI stdin書き込みエラー: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Gemini CLI実行エラー: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    // Gemini CLIはexit 0でもエラーの場合がある → stdoutが空ならstderrを確認
+    if stdout.trim().is_empty() {
+        if !stderr.is_empty() {
+            return Err(format!("Gemini CLI error: {}", stderr.trim()));
+        }
+        return Err("Gemini CLI returned empty response".to_string());
+    }
+
+    Ok(stdout)
 }
 
 /// 測点を一括適用
@@ -778,5 +947,70 @@ mod tests {
         assert_eq!(results[2].station, "2月10日");
         assert_eq!(results[3].station, ""); // 区画線工はスキップ
         assert_eq!(results[4].station, ""); // 区画線工: 以前の-S値をクリア
+    }
+
+    fn sample_line_types() -> Vec<LineTypeEntry> {
+        vec![
+            LineTypeEntry { name: "中央線".to_string(), length_m: 230.0 },
+            LineTypeEntry { name: "停止線".to_string(), length_m: 43.0 },
+            LineTypeEntry { name: "車線分離線".to_string(), length_m: 30.0 },
+            LineTypeEntry { name: "横断歩道線".to_string(), length_m: 100.0 },
+            LineTypeEntry { name: "停車禁止枠線".to_string(), length_m: 27.0 },
+            LineTypeEntry { name: "停車禁止標示".to_string(), length_m: 29.0 },
+            LineTypeEntry { name: "右左折禁止標示".to_string(), length_m: 38.0 },
+        ]
+    }
+
+    #[test]
+    fn test_build_line_type_prompt() {
+        let lt = sample_line_types();
+        let prompt = build_line_type_prompt(&lt);
+        assert!(prompt.contains("(A)中央線230m"));
+        assert!(prompt.contains("(B)停止線43m"));
+        assert!(prompt.contains("(G)右左折禁止標示38m"));
+        assert!(prompt.contains("画像をよく見て答えろ"));
+        assert!(prompt.contains("記号と線種名のみ回答せよ"));
+    }
+
+    #[test]
+    fn test_extract_line_type_from_response_letter() {
+        let lt = sample_line_types();
+        assert_eq!(
+            extract_line_type_from_response("A 中央線", &lt),
+            Some("中央線".to_string())
+        );
+        assert_eq!(
+            extract_line_type_from_response("(B) 停止線", &lt),
+            Some("停止線".to_string())
+        );
+        assert_eq!(
+            extract_line_type_from_response("D 横断歩道線", &lt),
+            Some("横断歩道線".to_string())
+        );
+        assert_eq!(
+            extract_line_type_from_response("G", &lt),
+            Some("右左折禁止標示".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_line_type_from_response_name_match() {
+        let lt = sample_line_types();
+        assert_eq!(
+            extract_line_type_from_response("この写真は横断歩道線です", &lt),
+            Some("横断歩道線".to_string())
+        );
+        assert_eq!(
+            extract_line_type_from_response("停車禁止枠線と判断します", &lt),
+            Some("停車禁止枠線".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_line_type_from_response_unknown() {
+        let lt = sample_line_types();
+        assert_eq!(extract_line_type_from_response("判別不能", &lt), None);
+        assert_eq!(extract_line_type_from_response("", &lt), None);
+        assert_eq!(extract_line_type_from_response("  ", &lt), None);
     }
 }

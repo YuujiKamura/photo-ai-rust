@@ -20,7 +20,7 @@ pub mod step2;
 #[cfg(any(feature = "excel", feature = "pdf"))]
 pub mod export;
 
-pub use types::{AnalysisResult, RawImageData, PhotoData, WorkTypeDefinition};
+pub use types::{AnalysisResult, RawImageData, PhotoData, WorkTypeDefinition, LineTypeEntry, LineTypesConfig};
 pub use layout::{PdfLayout, ExcelLayout, FieldKey};
 pub use alias::{AliasConfig, apply_aliases, longest_match_transform};
 pub use error::{Error, Result, ExportError, HierarchyError, AnalyzerError};
