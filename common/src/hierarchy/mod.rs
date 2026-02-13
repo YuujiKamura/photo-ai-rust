@@ -226,6 +226,20 @@ impl HierarchyMaster {
         Self::from_rows(filtered_rows)
     }
 
+    /// マスタの備考列からユニークな語彙リストを抽出
+    pub fn extract_vocabulary(&self) -> Vec<String> {
+        let mut vocab: Vec<String> = self
+            .rows
+            .iter()
+            .map(|row| row.remarks.clone())
+            .filter(|r| !r.is_empty())
+            .collect::<HashSet<String>>()
+            .into_iter()
+            .collect();
+        vocab.sort();
+        vocab
+    }
+
     /// 指定した工種・種別のみに絞ったマスタを返す
     pub fn filter_by_work_type_and_variety(&self, work_type: &str, variety: Option<&str>) -> Self {
         let filtered_rows: Vec<HierarchyRow> = self
@@ -283,6 +297,19 @@ mod tests {
         let master = HierarchyMaster::from_csv_str(TEST_CSV).unwrap();
         let subphases = master.get_subphases("舗装工", "舗装打換え工");
         assert!(subphases.contains(&"表層工"));
+    }
+
+    #[test]
+    fn test_extract_vocabulary() {
+        let csv = "費目,写真区分,工種,種別,細別,備考,検索パターン\n\
+                   直接工事費,施工状況写真,舗装工,舗装打換え工,表層工,舗設状況,\n\
+                   直接工事費,品質管理写真,舗装工,舗装打換え工,表層工,温度測定,温度管理\n\
+                   直接工事費,施工状況写真,区画線工,区画線工,溶融式区画線,,\n\
+                   直接工事費,施工状況写真,舗装工,舗装打換え工,上層路盤工,舗設状況,\n";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+        let vocab = master.extract_vocabulary();
+        // 空文字は除外、重複は排除、ソート済み
+        assert_eq!(vocab, vec!["温度測定", "舗設状況"]);
     }
 
     #[test]

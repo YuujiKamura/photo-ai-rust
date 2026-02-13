@@ -118,9 +118,14 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
         config.step_prefix_scan,
     )?;
 
-    // 2. photo-tagger（無条件実行）
+    // 2. マスタ読み込み（語彙リスト抽出のため先にロード）
+    let master = load_master_from_config(config.master_config)?;
+    let vocabulary = master.extract_vocabulary();
+
+    // 3. photo-tagger（語彙リスト付き）
     println!("{} photo-tagger実行中...", config.step_prefix_analyze);
-    let group_records = photo_tagger::run_grouping(config.folder, config.batch_size)
+    let vocab_ref = if vocabulary.is_empty() { None } else { Some(vocabulary.as_slice()) };
+    let group_records = photo_tagger::run_grouping(config.folder, config.batch_size, vocab_ref)
         .map_err(|e| error::PhotoAiError::ApiCall(format!("photo-tagger: {}", e)))?;
 
     if group_records.is_empty() {
@@ -128,9 +133,6 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
             format!("photo-taggerの結果が空: {}", config.folder.display())
         ));
     }
-
-    // 3. マスタ照合
-    let master = load_master_from_config(config.master_config)?;
 
     let grouped_images: Vec<_> = images.iter()
         .filter(|img| group_records.contains_key(&img.file_name))
@@ -318,7 +320,8 @@ const KNOWN_KEYS: &[&str] = &["工事名", "場所", "工種", "測点", "車番
 ///
 /// その後、extract_kv_from_textがカンマ展開と場所値のパースを行う
 fn normalize_detected_text(text: &str) -> String {
-    let mut s = text.to_string();
+    // リテラル "\n"（2文字）を実際の改行に変換
+    let mut s = text.replace("\\n", "\n");
 
     // 既知キー+全角/半角コロンのパターンの前に改行を挿入
     for &key in KNOWN_KEYS {
@@ -613,6 +616,18 @@ fn convert_groups_to_results(
         if let Some(remarks) = safety_remarks {
             result.photo_category = "安全管理写真".to_string();
             result.remarks = remarks;
+            // 安全管理写真のstationに日付を設定（測点がない場合）
+            if result.station.is_empty() {
+                if let Some(d) = result.date.split(' ').next() {
+                    // "2026-02-11" → "2月11日"
+                    let parts: Vec<&str> = d.split('-').collect();
+                    if parts.len() == 3 {
+                        if let (Ok(m), Ok(day)) = (parts[1].parse::<u32>(), parts[2].parse::<u32>()) {
+                            result.station = format!("{}月{}日", m, day);
+                        }
+                    }
+                }
+            }
         } else {
             // 写真ごとにマスタ照合（混在フォルダ対応）
             // machine_typeもキーワードに追加して照合精度を向上
@@ -994,6 +1009,39 @@ mod tests {
     fn test_extract_kv_from_text_empty() {
         let kvs = extract_kv_from_text("");
         assert!(kvs.is_empty());
+    }
+
+    #[test]
+    fn test_extract_kv_from_text_literal_backslash_n() {
+        // リテラル "\n" (2文字: バックスラッシュ + n) を含むケース
+        let text = r"工事名：市道 南千反畑第1号線舗装補修工事\n場所：No.4 L\n路面切削工\n切削・積込状況";
+        let kvs = extract_kv_from_text(text);
+        assert_eq!(kvs.len(), 4);
+        assert_eq!(kvs[0], ("工事名".to_string(), "市道 南千反畑第1号線舗装補修工事".to_string()));
+        assert_eq!(kvs[1], ("場所".to_string(), "No.4 L".to_string()));
+        assert_eq!(kvs[2], ("".to_string(), "路面切削工".to_string()));
+        assert_eq!(kvs[3], ("".to_string(), "切削・積込状況".to_string()));
+    }
+
+    #[test]
+    fn test_extract_kv_from_text_halfwidth_colon() {
+        let text = "工事名:市道 南千反畑第1号線舗装補修工事\n場所:No.4 L";
+        let kvs = extract_kv_from_text(text);
+        assert_eq!(kvs.len(), 2);
+        assert_eq!(kvs[0], ("工事名".to_string(), "市道 南千反畑第1号線舗装補修工事".to_string()));
+        assert_eq!(kvs[1], ("場所".to_string(), "No.4 L".to_string()));
+    }
+
+    #[test]
+    fn test_extract_kv_from_text_mixed_format() {
+        // 全角コロン + スペース区切り + キーなし行の混在
+        let text = "工事名：テスト工事\n工種 舗装工\n表層工\n舗設状況";
+        let kvs = extract_kv_from_text(text);
+        assert_eq!(kvs.len(), 4);
+        assert_eq!(kvs[0], ("工事名".to_string(), "テスト工事".to_string()));
+        assert_eq!(kvs[1], ("工種".to_string(), "舗装工".to_string()));
+        assert_eq!(kvs[2], ("".to_string(), "表層工".to_string()));
+        assert_eq!(kvs[3], ("".to_string(), "舗設状況".to_string()));
     }
 
     #[test]
