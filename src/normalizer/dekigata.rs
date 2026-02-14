@@ -62,6 +62,50 @@ impl Default for DekigataValues {
     }
 }
 
+/// スペース区切りテキストをキーワードでセクション分割する
+///
+/// 切削高(設計)、切削高(実施)、左幅員、右幅員をセクション区切りとして扱う
+fn split_by_keywords(text: &str) -> Vec<String> {
+    let keywords = [
+        "切削高(設計)", "切削高（設計）",
+        "切削高(実施)", "切削高（実施）",
+        "左幅員", "右幅員",
+    ];
+
+    // キーワードの出現位置を収集
+    let mut positions: Vec<usize> = Vec::new();
+    for kw in &keywords {
+        let mut start = 0;
+        while let Some(pos) = text[start..].find(kw) {
+            positions.push(start + pos);
+            start += pos + kw.len();
+        }
+    }
+    positions.sort();
+    positions.dedup();
+
+    if positions.is_empty() {
+        return vec![text.to_string()];
+    }
+
+    let mut sections = Vec::new();
+    // テキスト先頭～最初のキーワードまで（測点情報等）
+    if positions[0] > 0 {
+        sections.push(text[..positions[0]].trim().to_string());
+    }
+    // 各キーワード区間
+    for i in 0..positions.len() {
+        let start = positions[i];
+        let end = if i + 1 < positions.len() {
+            positions[i + 1]
+        } else {
+            text.len()
+        };
+        sections.push(text[start..end].trim().to_string());
+    }
+    sections
+}
+
 /// detected_textから出来形管理用紙の値をパースする
 ///
 /// # 入力フォーマット例
@@ -92,6 +136,21 @@ pub fn parse_dekigata_ocr(text: &str) -> Option<DekigataValues> {
         static ref WIDTH_RIGHT_RE: Regex = Regex::new(
             r"右幅員\s*設計\s*(\d+\.?\d*)\s*実測\s*(\d+\.?\d*)"
         ).unwrap();
+        // 実測のみパターン（設計なし）
+        static ref WIDTH_LEFT_ACTUAL_ONLY_RE: Regex = Regex::new(
+            r"左幅員\s*実測\s*(\d+\.?\d*)"
+        ).unwrap();
+        static ref WIDTH_RIGHT_ACTUAL_ONLY_RE: Regex = Regex::new(
+            r"右幅員\s*実測\s*(\d+\.?\d*)"
+        ).unwrap();
+        // GH=, FH= の値を除外するためのパターン
+        static ref GH_FH_RE: Regex = Regex::new(
+            r"[GF]H=\d+\.?\d*"
+        ).unwrap();
+        // 小数点付き数値
+        static ref NUM_RE: Regex = Regex::new(
+            r"(\d+\.\d+)"
+        ).unwrap();
     }
 
     // 測点
@@ -99,41 +158,66 @@ pub fn parse_dekigata_ocr(text: &str) -> Option<DekigataValues> {
         values.station = caps[1].to_string();
     }
 
-    // カンマ区切りでセクション分割
-    let sections: Vec<&str> = text.split(',').map(|s| s.trim()).collect();
+    // セクション分割: カンマ or 切削高キーワードで分割
+    // まずカンマで分割し、カンマがなければ全体を1セクションとして扱う
+    let sections: Vec<String> = if text.contains(',') {
+        text.split(',').map(|s| s.trim().to_string()).collect()
+    } else {
+        // スペース区切りの場合: 切削高キーワードでセクションに分割
+        split_by_keywords(text)
+    };
 
     for section in &sections {
-        if section.contains("切削高(設計)") || section.contains("切削高（設計）") {
+        let is_design = section.contains("切削高(設計)") || section.contains("切削高（設計）");
+        let is_actual = section.contains("切削高(実施)") || section.contains("切削高（実施）");
+
+        if is_design || is_actual {
+            let target = if is_design {
+                &mut values.v_design
+            } else {
+                &mut values.v_actual
+            };
+
+            // V=ラベルありでマッチ
+            let mut v_count = 0;
             for v_cap in V_RE.captures_iter(section) {
                 let idx: usize = v_cap[1].parse().unwrap_or(0);
                 if idx >= 1 && idx <= 5 {
-                    values.v_design[idx - 1] = v_cap[2].parse().ok();
+                    target[idx - 1] = v_cap[2].parse().ok();
+                    v_count += 1;
                 }
             }
-        } else if section.contains("切削高(実施)") || section.contains("切削高（実施）") {
-            for v_cap in V_RE.captures_iter(section) {
-                let idx: usize = v_cap[1].parse().unwrap_or(0);
-                if idx >= 1 && idx <= 5 {
-                    values.v_actual[idx - 1] = v_cap[2].parse().ok();
+
+            // V=ラベルなしフォールバック: GH=/FH=を除外した数値列を順番に割り当て
+            if v_count == 0 {
+                let clean = GH_FH_RE.replace_all(section, "").to_string();
+                for (i, cap) in NUM_RE.captures_iter(&clean).enumerate() {
+                    if i < 5 {
+                        target[i] = cap[1].parse().ok();
+                    }
                 }
             }
         }
 
-        // 幅員
+        // 幅員: 設計+実測パターン優先
         if let Some(caps) = WIDTH_LEFT_RE.captures(section) {
             values.width_left_design = caps[1].parse().ok();
             values.width_left_actual = caps[2].parse().ok();
+        } else if let Some(caps) = WIDTH_LEFT_ACTUAL_ONLY_RE.captures(section) {
+            values.width_left_actual = caps[1].parse().ok();
         }
         if let Some(caps) = WIDTH_RIGHT_RE.captures(section) {
             values.width_right_design = caps[1].parse().ok();
             values.width_right_actual = caps[2].parse().ok();
+        } else if let Some(caps) = WIDTH_RIGHT_ACTUAL_ONLY_RE.captures(section) {
+            values.width_right_actual = caps[1].parse().ok();
         }
     }
 
-    // 最低限のデータ（設計V値+幅員）があるか確認
+    // 最低限のデータがあるか確認（設計のみ or 実施のみでもOK）
     let has_design = values.v_design.iter().any(|v| v.is_some());
     let has_actual = values.v_actual.iter().any(|v| v.is_some());
-    if has_design && has_actual {
+    if has_design || has_actual {
         Some(values)
     } else {
         None
@@ -263,6 +347,8 @@ pub fn find_board_detail_photo(
         let r = &results[i];
         r.detected_text.contains("切削高(設計)")
             || r.detected_text.contains("切削高（設計）")
+            || r.detected_text.contains("切削高(実施)")
+            || r.detected_text.contains("切削高（実施）")
     })
 }
 
@@ -374,6 +460,32 @@ mod tests {
                         実施: V1=9.815 V2=9.842 V3=9.860\n\
                         幅員W1 設計: 4.20 実測: 4.20";
         assert_eq!(m, expected);
+    }
+
+    // 0212 No.9: V=ラベルなし、幅員実測のみ
+    const OCR_0212_NO9: &str = "出来形管理用紙 No.9 GH=10.414 FH=10.426 切削高(実施) 10.375 10.328 10.292 右幅員 実測 3.20";
+
+    // 0212 No.11: V=ラベルなし
+    const OCR_0212_NO11: &str = "出来形管理用紙 No.11 GH=10.669 FH=10.674 切削高(実施) 10.621 10.585 10.568 右幅員 実測 3.20";
+
+    #[test]
+    fn test_parse_dekigata_no_v_labels() {
+        let values = parse_dekigata_ocr(OCR_0212_NO9).unwrap();
+        assert_eq!(values.station, "No.9");
+        // V=ラベルなしの数値がV1～V3に順番に入る
+        assert_eq!(values.v_actual[0], Some(10.375));
+        assert_eq!(values.v_actual[1], Some(10.328));
+        assert_eq!(values.v_actual[2], Some(10.292));
+        assert_eq!(values.width_right_actual, Some(3.20));
+    }
+
+    #[test]
+    fn test_parse_dekigata_no11_no_v_labels() {
+        let values = parse_dekigata_ocr(OCR_0212_NO11).unwrap();
+        assert_eq!(values.station, "No.11");
+        assert_eq!(values.v_actual[0], Some(10.621));
+        assert_eq!(values.v_actual[1], Some(10.585));
+        assert_eq!(values.v_actual[2], Some(10.568));
     }
 
     #[test]
