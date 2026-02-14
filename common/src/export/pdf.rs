@@ -121,10 +121,13 @@ pub struct PdfInfoField {
 
 /// 情報欄フィールドを構築（GAS準拠: 8フィールド）
 /// 日時 → 区分 → 工種 → 種別 → 細別 → 測点 → 備考 → 測定値
+/// 施工状況写真のとき測定値行はラベル毎非表示（スペースを他フィールドに配分）
 pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
     use crate::types::PhotoData;
+    let hide_measurements = result.photo_category == "施工状況写真";
     LAYOUT_FIELDS
         .iter()
+        .filter(|field| !(hide_measurements && field.key == FieldKey::Measurements))
         .map(|field| {
             let value = if field.key == FieldKey::Date {
                 format_date(&result.date)

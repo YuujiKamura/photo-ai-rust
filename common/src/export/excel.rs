@@ -6,7 +6,7 @@ use crate::error::Error;
 use super::ExportError;
 use crate::layout::{
     excel_width_to_px, fit_image_centered, PT_TO_PX,
-    ExcelLayout, LAYOUT_FIELDS,
+    ExcelLayout, FieldKey, LAYOUT_FIELDS,
     PHOTO_ROWS,
     LABEL_COL_WIDTH, VALUE_COL_WIDTH,
     LABEL_FONT_SIZE, LABEL_FONT_COLOR, LABEL_BG_COLOR, LABEL_BORDER_COLOR,
@@ -147,8 +147,10 @@ where
             }
 
             // 情報フィールド（B列:ラベル、C列:値）
+            // 施工状況写真のとき測定値行はラベル毎非表示
+            let hide_measurements = photo.get_field_value(FieldKey::PhotoCategory) == "施工状況写真";
             let mut field_row = start_row;
-            for field in LAYOUT_FIELDS.iter() {
+            for field in LAYOUT_FIELDS.iter().filter(|f| !(hide_measurements && f.key == FieldKey::Measurements)) {
                 let value = photo.get_field_value(field.key);
                 let row_span = field.row_span as u32;
 
