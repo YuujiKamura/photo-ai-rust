@@ -46,10 +46,14 @@ fn token_overlap_score(a: &str, b: &str) -> usize {
 }
 
 /// フォルダ内の全detected_textから工種階層を推定し、マスタ照合する
+///
+/// `focus_target` が指定された場合、Phase 2のbigramスコアにboostを加算し、
+/// taggerのrole（写真の視覚的内容）を考慮した照合を行う。
 pub(crate) fn match_master_from_detected_texts(
     master: &HierarchyMaster,
     detected_texts: &[&str],
     folder_name: &str,
+    focus_target: Option<&str>,
 ) -> Option<photo_ai_common::hierarchy::HierarchyRow> {
     // 全detected_textからキー:値を集約
     let mut work_type: Option<String> = None;
@@ -146,11 +150,19 @@ pub(crate) fn match_master_from_detected_texts(
     }
 
     // 2. remarks列にキーワード部分一致（トークンベース：語順違いに対応）
+    // focus_targetが指定されている場合、remarksとのoverlapをboostとして加算
+    let ft = focus_target.unwrap_or("");
     for row in &candidates {
         if row.remarks.is_empty() { continue; }
-        let score = keywords.iter()
+        let kw_score: usize = keywords.iter()
             .map(|kw| token_overlap_score(kw, &row.remarks))
-            .sum::<usize>();
+            .sum();
+        let ft_boost = if !ft.is_empty() {
+            token_overlap_score(ft, &row.remarks) * 3
+        } else {
+            0
+        };
+        let score = kw_score + ft_boost;
         if score > best_score {
             best_score = score;
             best = Some(row);
@@ -218,5 +230,45 @@ mod tests {
         assert_eq!(safety_remarks_from_machine_type("路面切削機"), None);
         assert_eq!(safety_remarks_from_machine_type("ダンプトラック"), None);
         assert_eq!(safety_remarks_from_machine_type(""), None);
+    }
+
+    #[test]
+    fn test_focus_target_boost_road_cutting() {
+        // R0010387: 黒板OCR「切削・積込状況」が「切削殻積込状況」にマッチしてしまう問題
+        // focusTarget「路面切削状況」でboostすると「路面切削状況」が勝つべき
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,路面切削状況,
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,切削殻積込状況,
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+        let text = "工事名：テスト工事\n路面切削工\n切削・積込状況";
+        let texts = vec![text];
+
+        // focusTargetなし: 「切削殻積込状況」が勝つ（bigram score 4 > 2）
+        let result = match_master_from_detected_texts(&master, &texts, "", None);
+        assert_eq!(result.as_ref().unwrap().remarks, "切削殻積込状況");
+
+        // focusTarget「路面切削状況」あり: boostにより「路面切削状況」が勝つ
+        let result = match_master_from_detected_texts(&master, &texts, "", Some("路面切削状況"));
+        assert_eq!(result.as_ref().unwrap().remarks, "路面切削状況");
+    }
+
+    #[test]
+    fn test_focus_target_no_effect_when_empty() {
+        // focusTargetが空の場合、従来通りの動作
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,施工状況写真,舗装工,舗装打換え工,表層工,舗設状況,
+直接工事費,施工状況写真,舗装工,舗装打換え工,表層工,初期転圧状況,
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+        let text = "表層工\n舗設状況";
+        let texts = vec![text];
+
+        let result_none = match_master_from_detected_texts(&master, &texts, "", None);
+        let result_empty = match_master_from_detected_texts(&master, &texts, "", Some(""));
+        assert_eq!(result_none.as_ref().unwrap().remarks, result_empty.as_ref().unwrap().remarks);
+        assert_eq!(result_none.unwrap().remarks, "舗設状況");
     }
 }

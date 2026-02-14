@@ -320,7 +320,7 @@ fn convert_groups_to_results(
     // フォルダ名でのフォールバック照合（detected_textが空の写真用）
     let folder_fallback_row = {
         let empty: Vec<&str> = Vec::new();
-        match_master_from_detected_texts(master, &empty, folder_name)
+        match_master_from_detected_texts(master, &empty, folder_name, None)
     };
 
     let mut results: Vec<(u32, u8, analyzer::AnalysisResult)> = images.iter().filter_map(|img| {
@@ -374,7 +374,8 @@ fn convert_groups_to_results(
                     rec.detected_text.clone()
                 };
                 let texts = vec![combined.as_str()];
-                match_master_from_detected_texts(master, &texts, folder_name)
+                let ft = if rec.role.is_empty() { None } else { Some(rec.role.as_str()) };
+                match_master_from_detected_texts(master, &texts, folder_name, ft)
             } else {
                 folder_fallback_row.clone()
             };

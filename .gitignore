@@ -3,8 +3,6 @@ common/target
 common/Cargo.lock
 web-wasm/target
 /temp-images
-*.json
-!master/*.json
 *.xlsx
 *.pdf
 test-photos/
