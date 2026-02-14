@@ -147,8 +147,9 @@ where
             }
 
             // 情報フィールド（B列:ラベル、C列:値）
-            // 施工状況写真のとき測定値行はラベル毎非表示
-            let hide_measurements = photo.get_field_value(FieldKey::PhotoCategory) == "施工状況写真";
+            // 測定値が空のとき測定値行はラベル毎非表示
+            let m = photo.get_field_value(FieldKey::Measurements);
+            let hide_measurements = m.is_empty() || m == "-";
             let mut field_row = start_row;
             for field in LAYOUT_FIELDS.iter().filter(|f| !(hide_measurements && f.key == FieldKey::Measurements)) {
                 let value = photo.get_field_value(field.key);
