@@ -479,7 +479,7 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
                     if !r.station.is_empty() && line_type_names.contains(&r.station.as_str()) {
                         continue;
                     }
-                    if let Some(detected) = crate::analysis::detect_line_type(&r.file_path, lt) {
+                    if let Some(detected) = crate::line_type_detector::detect_line_type(&r.file_path, lt) {
                         println!("  線種判定: {} → {}", r.file_name, detected);
                         r.station = detected;
                         line_type_changes += 1;
