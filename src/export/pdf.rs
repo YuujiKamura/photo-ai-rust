@@ -489,11 +489,14 @@ fn split_at_half_width(text: &str, max_hw: usize) -> (&str, &str) {
             // 非区切り→区切り: ここが折り返し候補
             last_word_start = Some(i);
         }
-        // カタカナ↔非カタカナの境界も折り返し候補
-        // 例: "タックコート乳剤" → "ト"と"乳"の間
+        // 文字種境界で折り返し候補を記録
         if let Some(pc) = prev_char {
-            if !is_sep && !prev_was_sep && is_katakana(pc) != is_katakana(c) && !c.is_ascii() {
-                last_word_start = Some(i);
+            if !is_sep && !prev_was_sep && !c.is_ascii() {
+                // カタカナ↔非カタカナの境界: "タックコート乳剤" → "ト"と"乳"の間
+                // 「工」の直後: "路面切削工出来形測定" → "工"と"出"の間
+                if is_katakana(pc) != is_katakana(c) || pc == '工' {
+                    last_word_start = Some(i);
+                }
             }
         }
         prev_was_sep = is_sep;
@@ -674,15 +677,15 @@ fn add_info_field_ops(
 
     // 測定値フィールド用: ラベル省略してフル幅使用、フォント大きめ
     let wide_text_config = TextFitConfig {
-        max_half_width: 38,
-        base_font_size: 11.0,
-        min_font_size: 9.0,
+        max_half_width: 34,
+        base_font_size: 10.0,
+        min_font_size: 8.5,
         ..TextFitConfig::default()
     };
 
     // 備考フィールド用: 長い備考（タックコート乳剤散布状況等）を同じフォントサイズで改行
     let remarks_text_config = TextFitConfig {
-        max_half_width: 16,
+        max_half_width: 20,
         min_font_size: UNIFIED_FONT_SIZE, // 縮小せず改行のみ
         ..TextFitConfig::default()
     };

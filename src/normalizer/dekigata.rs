@@ -316,8 +316,14 @@ fn format_left(values: &DekigataValues) -> String {
 }
 
 fn format_right(values: &DekigataValues) -> String {
-    let v_design = format_v_values(&values.v_design[3..5], 4);
-    let v_actual = format_v_values(&values.v_actual[3..5], 4);
+    // V3を右車線に含めるのは左車線(V1,V2)が空の場合のみ
+    // V1～V5全部ある場合、V3は左車線(V1～V3)に属する
+    let left_empty = values.v_design[0].is_none() && values.v_design[1].is_none()
+        && values.v_actual[0].is_none() && values.v_actual[1].is_none();
+    let has_v3 = left_empty && (values.v_design[2].is_some() || values.v_actual[2].is_some());
+    let (start, v_num) = if has_v3 { (2, 3) } else { (3, 4) };
+    let v_design = format_v_values(&values.v_design[start..5], v_num);
+    let v_actual = format_v_values(&values.v_actual[start..5], v_num);
     let width = format_width(
         "幅員W2",
         values.width_right_design,
