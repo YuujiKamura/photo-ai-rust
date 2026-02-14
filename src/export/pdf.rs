@@ -471,19 +471,33 @@ fn half_width_count(text: &str) -> usize {
     text.chars().map(|c| if c.is_ascii() { 1 } else { 2 }).sum()
 }
 
-/// 半角換算幅で文字列を分割（スペース区切り優先）
+/// カタカナ文字判定（U+30A0〜U+30FF）
+fn is_katakana(c: char) -> bool {
+    ('\u{30A0}'..='\u{30FF}').contains(&c)
+}
+
+/// 半角換算幅で文字列を分割（スペース区切り・文字種境界を優先）
 fn split_at_half_width(text: &str, max_hw: usize) -> (&str, &str) {
     let mut hw = 0;
-    // 最後の「単語の開始位置」を記録（スペース/区切りの直前）
+    // 最後の「単語の開始位置」を記録（スペース/区切り/文字種境界）
     let mut last_word_start = None;
     let mut prev_was_sep = false;
+    let mut prev_char: Option<char> = None;
     for (i, c) in text.char_indices() {
         let is_sep = c == ' ' || c == '/' || c == '\u{3000}';
         if !prev_was_sep && is_sep {
             // 非区切り→区切り: ここが折り返し候補
             last_word_start = Some(i);
         }
+        // カタカナ↔非カタカナの境界も折り返し候補
+        // 例: "タックコート乳剤" → "ト"と"乳"の間
+        if let Some(pc) = prev_char {
+            if !is_sep && !prev_was_sep && is_katakana(pc) != is_katakana(c) && !c.is_ascii() {
+                last_word_start = Some(i);
+            }
+        }
         prev_was_sep = is_sep;
+        prev_char = Some(c);
         hw += if c.is_ascii() { 1 } else { 2 };
         if hw > max_hw {
             if let Some(sp) = last_word_start {
@@ -666,6 +680,13 @@ fn add_info_field_ops(
         ..TextFitConfig::default()
     };
 
+    // 備考フィールド用: 長い備考（タックコート乳剤散布状況等）を同じフォントサイズで改行
+    let remarks_text_config = TextFitConfig {
+        max_half_width: 16,
+        min_font_size: UNIFIED_FONT_SIZE, // 縮小せず改行のみ
+        ..TextFitConfig::default()
+    };
+
     for (i, field) in fields.iter().enumerate() {
         let field_height = unit_height * field.row_span as f32;
         let field_bottom = current_top - field_height;
@@ -682,10 +703,12 @@ fn add_info_field_ops(
                 let text_y = wide_text_config.centered_first_line_y(&value_text, field_center, field_height);
                 add_measurements_text_ops(ops, &value_text, info_x_pt + 5.0, text_y, field_height, fonts, &wide_text_config);
             } else {
+                let is_remarks = field.label == "備考";
+                let cfg = if is_remarks { &remarks_text_config } else { &text_config };
                 let label_y = field_center - UNIFIED_FONT_SIZE * 0.3;
-                let text_y = text_config.centered_first_line_y(&value_text, field_center, field_height);
+                let text_y = cfg.centered_first_line_y(&value_text, field_center, field_height);
                 add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
-                add_fitted_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, field_height, fonts, &text_config);
+                add_fitted_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, field_height, fonts, cfg);
             }
 
             // 行の下に水平線（最後の行以外）
