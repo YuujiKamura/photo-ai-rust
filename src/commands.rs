@@ -167,10 +167,13 @@ struct CommonAnalysisParams {
 fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<master_selector::MasterSelection> {
     if let Some(path) = master {
         // パスからwork_typeを推定（by_work_type/xxx.csv → xxx）
-        let work_type = path.file_stem()
-            .and_then(|s| s.to_str())
-            .filter(|s| *s != "construction_hierarchy")
-            .map(|s| s.to_string());
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        if stem == "construction_hierarchy" {
+            // 共通マスタ指定 → 全工種マージ読み込み
+            let all_paths = master_selector::collect_all_master_paths();
+            return Some(master_selector::MasterSelection { path, work_type: None, all_paths });
+        }
+        let work_type = Some(stem.to_string());
         return Some(master_selector::MasterSelection { path, work_type, all_paths: None });
     }
 
