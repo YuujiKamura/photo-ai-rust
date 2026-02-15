@@ -448,6 +448,12 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
         apply_station(&mut results, st);
     }
 
+    // 温度管理フォールバック再分類（normalize前に実行：remarks修正がグループ化に影響するため）
+    let reclassified = normalizer::reclassify_temperature_fallback(&mut results);
+    if reclassified > 0 {
+        println!("温度管理再分類: {}件", reclassified);
+    }
+
     // 正規化オプション
     let options = NormalizationOptions {
         dekigata_lane: args.lane,
@@ -492,12 +498,6 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
         let has_corrections = args.station.is_some() || !result.corrections.is_empty() || line_type_changes > 0;
         if has_corrections {
             normalizer::apply_corrections(&mut results, &result.corrections);
-        }
-
-        // 温度管理フォールバック再分類
-        let reclassified = normalizer::reclassify_temperature_fallback(&mut results);
-        if reclassified > 0 {
-            println!("温度管理再分類: {}件", reclassified);
         }
 
         // 日付ソートは常に適用

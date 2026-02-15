@@ -147,9 +147,13 @@ pub fn normalize_results(
         }
 
         // Step 4: グループ単位での計測値統一
-        let group_corrections = unify_measurements_by_group(results);
+        // Step 1-3のcorrectionsを作業コピーに適用してからunifyを実行
+        // （remarks修正がunifyのグループ化に影響するため）
+        let mut working = results.to_vec();
+        apply_corrections(&mut working, &corrections);
+        let group_corrections = unify_measurements_by_group(&working);
         for correction in group_corrections {
-            if !corrections.iter().any(|c| c.file_name == correction.file_name) {
+            if !corrections.iter().any(|c| c.file_name == correction.file_name && c.field == CorrectionField::Measurements) {
                 stats.measurement_corrections += 1;
                 stats.corrected_records += 1;
                 corrections.push(correction);
@@ -244,6 +248,16 @@ fn fix_misclassified_temperature(results: &[AnalysisResult]) -> Vec<Normalizatio
             continue;
         }
 
+        // focusTargetが自身のremarksを支持している場合はスキップ
+        // （focusTargetは視覚的判定なので、remarksと一致していれば正しい可能性が高い）
+        if !r.focus_target.is_empty() && measurements::is_temperature_photo(&r.focus_target) {
+            let ft_base = r.focus_target.trim_end_matches("測定");
+            let rem_base = r.remarks.trim_end_matches("測定");
+            if ft_base == rem_base {
+                continue;
+            }
+        }
+
         // 前の写真のremarksを確認
         let prev_remarks = if i > 0 {
             let prev = &results[i - 1];
@@ -314,34 +328,33 @@ fn unify_measurements_by_group(results: &[AnalysisResult]) -> Vec<NormalizationC
         groups.push(current_group);
     }
 
-    // 各グループで黒板アップの値に統一
+    // 各グループでソース写真の値に統一
     for group in groups {
-        // 黒板アップを探す
-        let board_up = group.iter().find(|&&i| {
-            results[i].focus_target == "黒板アップ"
+        // 黒板アップを優先、なければmeasurementsを持つ任意の写真をソースにする
+        let source_idx = group.iter().find(|&&i| {
+            results[i].focus_target == "黒板アップ" && !results[i].measurements.is_empty()
+        }).or_else(|| {
+            group.iter().find(|&&i| !results[i].measurements.is_empty())
         });
 
-        if let Some(&board_idx) = board_up {
-            let source_value = &results[board_idx].measurements;
-            if source_value.is_empty() {
-                continue;
-            }
+        if let Some(&src_idx) = source_idx {
+            let source_value = results[src_idx].measurements.clone();
 
-            // 他の写真の値を統一
+            // 他の写真の値を統一（空のものにも適用）
             for &idx in &group {
-                if idx == board_idx {
+                if idx == src_idx {
                     continue;
                 }
                 let target = &results[idx];
-                if target.measurements != *source_value && !target.measurements.is_empty() {
+                if target.measurements != source_value {
                     corrections.push(NormalizationCorrection {
                         file_name: target.file_name.clone(),
                         field: CorrectionField::Measurements,
                         original: target.measurements.clone(),
                         corrected: source_value.clone(),
                         reason: format!(
-                            "黒板アップ({})の値に統一",
-                            results[board_idx].file_name
+                            "グループ内統一({})",
+                            results[src_idx].file_name
                         ),
                     });
                 }
