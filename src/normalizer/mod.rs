@@ -109,15 +109,27 @@ pub fn normalize_results(
     };
 
     if options.unify_measurements {
-        // 温度値のバリデーションと修正
+        // Step 1: detected_textから温度値を抽出してmeasurementsに設定
+        let populate_corrections = populate_temperature_measurements(results);
+        for correction in populate_corrections {
+            stats.measurement_corrections += 1;
+            stats.corrected_records += 1;
+            corrections.push(correction);
+        }
+
+        // Step 2: 誤分類修正（温度範囲チェック + 隣接写真からのremarks伝搬）
+        let reclassify_corrections = fix_misclassified_temperature(results);
+        for correction in reclassify_corrections {
+            stats.corrected_records += 1;
+            corrections.push(correction);
+        }
+
+        // Step 3: 温度値のバリデーションと修正
         for result in results {
-            // 温度写真かどうか判定
             let combined_text = format!("{} {} {}", result.remarks, result.description, result.detected_text);
             if measurements::is_temperature_photo(&combined_text) {
-                // 温度種別を判定
                 let temp_type = measurements::TemperatureType::from_text(&combined_text);
 
-                // measurements フィールドの温度値を検証
                 if !result.measurements.is_empty() {
                     if let Some(corrected) = measurements::validate_temperature(&result.measurements, temp_type.clone()) {
                         corrections.push(NormalizationCorrection {
@@ -133,11 +145,8 @@ pub fn normalize_results(
                 }
             }
         }
-    }
 
-    if options.unify_measurements {
-        // グループ単位での計測値統一
-        // 温度管理: 3枚セット（全景+黒板アップ+温度計アップ）で黒板アップの値に統一
+        // Step 4: グループ単位での計測値統一
         let group_corrections = unify_measurements_by_group(results);
         for correction in group_corrections {
             if !corrections.iter().any(|c| c.file_name == correction.file_name) {
@@ -167,6 +176,101 @@ pub fn normalize_results(
     }
 
     NormalizationResult { corrections, stats }
+}
+
+/// detected_textから温度値を抽出してmeasurementsに設定する
+///
+/// measurementsが空の温度写真に対して、detected_textから対応する温度値を抽出する。
+fn populate_temperature_measurements(results: &[AnalysisResult]) -> Vec<NormalizationCorrection> {
+    let mut corrections = Vec::new();
+
+    for result in results {
+        // measurementsが既にあればスキップ
+        if !result.measurements.is_empty() {
+            continue;
+        }
+
+        // 温度写真かどうか判定
+        let is_temp = measurements::is_temperature_photo(&result.remarks)
+            || (result.photo_category == "品質管理写真"
+                && measurements::is_temperature_photo(&result.detected_text));
+
+        if !is_temp {
+            continue;
+        }
+
+        // detected_textから備考に対応する温度値を抽出
+        if let Some(value) = measurements::extract_temperature_for_remarks(
+            &result.detected_text,
+            &result.remarks,
+        ) {
+            corrections.push(NormalizationCorrection {
+                file_name: result.file_name.clone(),
+                field: CorrectionField::Measurements,
+                original: String::new(),
+                corrected: value,
+                reason: "detected_textから温度値抽出".to_string(),
+            });
+        }
+    }
+
+    corrections
+}
+
+/// 温度写真の誤分類を修正する
+///
+/// 隣接する写真のremarksから、孤立した写真のremarksを修正する。
+/// 例: 前後が「舗装日外気温」の写真が「開放温度」になっている場合、
+/// detected_textに温度キーワードがなければ「舗装日外気温」に修正。
+fn fix_misclassified_temperature(results: &[AnalysisResult]) -> Vec<NormalizationCorrection> {
+    let mut corrections = Vec::new();
+
+    for i in 0..results.len() {
+        let r = &results[i];
+
+        // 温度写真でなければスキップ
+        if !measurements::is_temperature_photo(&r.remarks) {
+            continue;
+        }
+
+        // detected_textに温度キーワード（到着/敷均し/初期/開放/外気温）が含まれていれば確定済み
+        let dt = &r.detected_text;
+        let has_strong_keyword = dt.contains("到着温度") || dt.contains("敷均し温度")
+            || dt.contains("初期転圧前温度") || dt.contains("初期締固め前温度")
+            || dt.contains("開放温度") || dt.contains("解放温度")
+            || dt.contains("舗装日外気温") || dt.contains("外気温");
+
+        if has_strong_keyword {
+            continue;
+        }
+
+        // 前の写真のremarksを確認
+        let prev_remarks = if i > 0 {
+            let prev = &results[i - 1];
+            if measurements::is_temperature_photo(&prev.remarks) {
+                Some(prev.remarks.as_str())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // 前の写真と同じremarks型であるべき場合、修正
+        if let Some(prev_rem) = prev_remarks {
+            if r.remarks != prev_rem {
+                corrections.push(NormalizationCorrection {
+                    file_name: r.file_name.clone(),
+                    field: CorrectionField::Remarks,
+                    original: r.remarks.clone(),
+                    corrected: prev_rem.to_string(),
+                    reason: format!("隣接写真({})からremarks伝搬", results[i - 1].file_name),
+                });
+            }
+        }
+    }
+
+    corrections
 }
 
 /// 3枚セット内で黒板アップの計測値に統一する
@@ -246,6 +350,115 @@ fn unify_measurements_by_group(results: &[AnalysisResult]) -> Vec<NormalizationC
     }
 
     corrections
+}
+
+/// ダンプ台数を測点に付加する
+///
+/// 温度管理写真のdetected_textから「N台目」を抽出し、stationに追加。
+/// 3枚セット（全景+黒板+温度計）内で、黒板写真の台数を全写真に伝搬する。
+pub fn append_dump_number_to_station(results: &mut [AnalysisResult]) {
+    // 隣接3枚セットで同一remarksのグループを処理
+    let len = results.len();
+    let mut i = 0;
+    while i < len {
+        // 温度写真でなければスキップ
+        if !measurements::is_temperature_photo(&results[i].remarks) {
+            i += 1;
+            continue;
+        }
+
+        // 同一remarksの連続写真の範囲を特定
+        let remarks = results[i].remarks.clone();
+        let mut j = i + 1;
+        while j < len && results[j].remarks == remarks {
+            j += 1;
+        }
+        let group = &results[i..j];
+
+        // グループ内のどれかのdetected_textから台数を抽出
+        let dump_num = group.iter()
+            .filter_map(|r| measurements::extract_dump_number(&r.detected_text))
+            .next();
+
+        if let Some(num) = dump_num {
+            for r in &mut results[i..j] {
+                let base = r.station.split('\n').next().unwrap_or(&r.station).to_string();
+                r.station = format!("{} {}", base, num);
+            }
+        }
+
+        i = j;
+    }
+}
+
+/// "温度管理"フォールバックを正しいremarksに再分類する
+///
+/// master_matcherが照合に失敗して"温度管理"になった写真を、
+/// photo-taggerのfocusTargetから正しい温度種別に再分類する。
+pub fn reclassify_temperature_fallback(results: &mut [AnalysisResult]) -> usize {
+    let mut count = 0;
+    for r in results.iter_mut() {
+        if r.remarks != "温度管理" {
+            continue;
+        }
+        // focusTargetから温度種別を判定
+        let ft = &r.focus_target;
+        if ft.is_empty() {
+            continue;
+        }
+        if measurements::is_temperature_photo(ft) {
+            let new_remarks = if ft.ends_with("測定") {
+                ft.clone()
+            } else {
+                format!("{}測定", ft)
+            };
+            eprintln!(
+                "  再分類: {} [{}] → {}",
+                r.file_name, r.remarks, new_remarks
+            );
+            r.remarks = new_remarks;
+            count += 1;
+        }
+    }
+    count
+}
+
+/// 3枚セットを超える温度管理写真にskipフラグを設定する
+///
+/// 連続する同一remarksの温度写真グループが3枚を超える場合、
+/// 4枚目以降にskip=trueを設定してエクスポートから除外する。
+pub fn dedup_temperature_groups(results: &mut [AnalysisResult]) -> usize {
+    let mut count = 0;
+    let len = results.len();
+    let mut i = 0;
+    while i < len {
+        if !measurements::is_temperature_photo(&results[i].remarks) {
+            i += 1;
+            continue;
+        }
+
+        // 同一remarksの連続写真の範囲を特定
+        let remarks = results[i].remarks.clone();
+        let mut j = i + 1;
+        while j < len && results[j].remarks == remarks {
+            j += 1;
+        }
+
+        // 3枚超過分をスキップ
+        if j - i > 3 {
+            for k in (i + 3)..j {
+                eprintln!(
+                    "  スキップ: {} [{}] ({}枚中{}枚目)",
+                    results[k].file_name, remarks, j - i, k - i + 1
+                );
+                results[k].skip = true;
+                count += 1;
+            }
+        }
+
+        i = j;
+    }
+    count
 }
 
 /// 修正を適用する

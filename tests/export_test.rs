@@ -28,6 +28,7 @@ fn create_test_result(index: usize) -> AnalysisResult {
         reasoning: String::new(),
         remarks_candidates: Vec::new(),
         focus_target: String::new(),
+        skip: false,
     }
 }
 
@@ -46,6 +47,7 @@ fn test_pdf_generation_without_images() {
         3, // photos_per_page
         "テスト写真帳",
         PdfQuality::Medium,
+        false,
     );
 
     assert!(result.is_ok(), "PDF生成に失敗: {:?}", result.err());
@@ -70,6 +72,7 @@ fn test_pdf_generation_empty_results() {
         3,
         "空のテスト",
         PdfQuality::Medium,
+        false,
     );
 
     // 空の結果でも正常に処理されるべき
@@ -127,6 +130,7 @@ fn test_pdf_quality_options() {
             3,
             &format!("品質テスト {:?}", quality),
             quality,
+            false,
         );
 
         assert!(result.is_ok(), "PDF生成({:?})に失敗: {:?}", quality, result.err());
@@ -153,6 +157,7 @@ fn test_pdf_excel_both_generation() {
         3,
         "整合性テスト",
         PdfQuality::Medium,
+        false,
     );
     assert!(pdf_result.is_ok(), "PDF生成に失敗: {:?}", pdf_result.err());
 
@@ -197,6 +202,7 @@ fn test_excel_data_consistency() {
             reasoning: String::new(),
             remarks_candidates: Vec::new(),
             focus_target: String::new(),
+            skip: false,
         },
     ];
 
@@ -263,6 +269,7 @@ fn test_excel_japanese_text() {
             reasoning: String::new(),
             remarks_candidates: Vec::new(),
             focus_target: String::new(),
+            skip: false,
         },
     ];
 

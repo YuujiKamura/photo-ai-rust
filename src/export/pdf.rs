@@ -146,6 +146,7 @@ pub fn generate_pdf(
     photos_per_page: u8,
     title: &str,
     quality: PdfQuality,
+    hide_measurements: bool,
 ) -> Result<()> {
     let photos_per_page = photos_per_page.clamp(2, 3);
     let layout = PdfLayout::for_photos_per_page(photos_per_page);
@@ -242,6 +243,7 @@ pub fn generate_pdf(
                 row_y_pt,
                 layout_core.photo_height_pt,
                 &fonts,
+                hide_measurements,
             );
         }
 
@@ -660,8 +662,9 @@ fn add_info_field_ops(
     row_y_pt: f32,
     photo_height_pt: f32,
     fonts: &FontSet,
+    hide_measurements: bool,
 ) {
-    let fields = pdf_common::build_pdf_info_fields(result);
+    let fields = pdf_common::build_pdf_info_fields_opt(result, hide_measurements);
     let label_width = 35.0;
 
     // row_spanの合計で1単位あたりの高さを計算
@@ -675,11 +678,9 @@ fn add_info_field_ops(
     // 各フィールドのtop位置を累積計算
     let mut current_top = row_y_pt + photo_height_pt;
 
-    // 測定値フィールド用: ラベル省略してフル幅使用、フォント大きめ
+    // 測定値フィールド用: ラベル右側に通常フォントサイズで描画
     let wide_text_config = TextFitConfig {
-        max_half_width: 34,
-        base_font_size: 10.0,
-        min_font_size: 8.5,
+        max_half_width: 20,
         ..TextFitConfig::default()
     };
 
@@ -700,11 +701,13 @@ fn add_info_field_ops(
 
             let field_center = field_bottom + field_height / 2.0;
 
-            // 測定値フィールド: ラベル省略、フル幅で描画、実測値は赤
+            // 測定値フィールド: ラベル表示 + 実測値は赤で描画
             let is_measurements = field.label == "測定値";
             if is_measurements && value_text != "-" {
+                let label_y = field_center - UNIFIED_FONT_SIZE * 0.3;
                 let text_y = wide_text_config.centered_first_line_y(&value_text, field_center, field_height);
-                add_measurements_text_ops(ops, &value_text, info_x_pt + 5.0, text_y, field_height, fonts, &wide_text_config);
+                add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
+                add_measurements_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, field_height, fonts, &wide_text_config);
             } else {
                 let is_remarks = field.label == "備考";
                 let cfg = if is_remarks { &remarks_text_config } else { &text_config };

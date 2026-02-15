@@ -2,6 +2,8 @@
 //!
 //! 写真からGemini CLIを使って区画線の線種を判定する。
 
+use crate::analyzer::AnalysisResult;
+use crate::domain::WORK_LANE_MARKING;
 use photo_ai_common::LineTypeEntry;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -76,6 +78,30 @@ pub(crate) fn extract_line_type_from_response(response: &str, line_types: &[Line
     }
 
     None
+}
+
+/// 区画線工の写真に対して線種を判定し、stationフィールドに設定する
+///
+/// Returns: 更新された件数
+pub fn apply_line_type_detection(
+    results: &mut [AnalysisResult],
+    line_types: &[LineTypeEntry],
+) -> usize {
+    let line_type_names: Vec<&str> = line_types.iter().map(|e| e.name.as_str()).collect();
+    let mut changes = 0;
+    for r in results.iter_mut() {
+        if r.work_type == WORK_LANE_MARKING && !r.file_path.is_empty() {
+            if !r.station.is_empty() && line_type_names.contains(&r.station.as_str()) {
+                continue;
+            }
+            if let Some(detected) = detect_line_type(&r.file_path, line_types) {
+                println!("  線種判定: {} → {}", r.file_name, detected);
+                r.station = detected;
+                changes += 1;
+            }
+        }
+    }
+    changes
 }
 
 /// 区画線工の写真に対して、Gemini CLIで線種を判定する

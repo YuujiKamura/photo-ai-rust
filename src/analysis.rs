@@ -5,6 +5,7 @@
 //! このモジュールはパイプラインのオーケストレーションに専念する。
 
 use crate::{ai_provider::AiProvider, analyzer, error, scanner};
+use crate::domain::*;
 use crate::normalizer::{self, NormalizationOptions};
 use crate::ocr_parser::{extract_kv_from_text, normalize_station};
 use crate::master_matcher::{
@@ -34,20 +35,6 @@ pub struct ScanAnalysisConfig<'a> {
     pub step_prefix_scan: &'a str,
     pub step_prefix_analyze: &'a str,
     pub line_types: Option<&'a [LineTypeEntry]>,
-}
-
-/// AI解析のオプション
-pub struct AnalysisOptions<'a> {
-    pub folder: &'a Path,
-    pub batch_size: usize,
-    pub verbose: bool,
-    pub master: Option<&'a Path>,
-    pub photo_type: Option<&'a str>,
-    pub use_cache: bool,
-    pub provider: AiProvider,
-    pub work_type: Option<&'a str>,
-    pub variety: Option<&'a str>,
-    pub step_prefix: &'a str,
 }
 
 /// マスタ選択結果
@@ -125,8 +112,18 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
         config.step_prefix_scan,
     )?;
 
-    // 2. マスタ読み込み（語彙リスト抽出のため先にロード）
-    let master = load_master_from_config(config.master_config)?;
+    // 2. マスタ読み込み + work_type/photo_typeでフィルタ
+    let mut master = load_master_from_config(config.master_config)?;
+    if let Some(ref wt) = config.master_config.effective_work_type {
+        let before = master.rows().len();
+        master = master.filter_by_work_types(&[wt.clone()]);
+        println!("  マスタフィルタ: 工種={} ({} → {}件)", wt, before, master.rows().len());
+    }
+    if let Some(pt) = config.photo_type {
+        let before = master.rows().len();
+        master = master.filter_by_photo_type(pt);
+        println!("  マスタフィルタ: 写真区分={} ({} → {}件)", pt, before, master.rows().len());
+    }
     let vocabulary = master.extract_vocabulary();
 
     // 3. photo-tagger（語彙リスト付き）
@@ -224,90 +221,6 @@ pub fn normalize_results_with_station(
     }
 }
 
-/// AI解析を実行（常に1ステップ解析）
-pub async fn run_analysis(
-    images: &[scanner::ImageInfo],
-    options: &AnalysisOptions<'_>,
-) -> Result<Vec<analyzer::AnalysisResult>> {
-    // マスタパスを決定
-    let master_path_buf = resolve_master_path(options.master, options.work_type)?;
-
-    // 工種指定なし + by_work_typeディレクトリあり → マージ読み込み
-    let hierarchy = if options.work_type.is_none() {
-        if let Some(all_paths) = crate::master_selector::collect_all_master_paths() {
-            HierarchyMaster::from_csv_files(&all_paths)
-                .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?
-        } else {
-            HierarchyMaster::from_csv(&master_path_buf)
-                .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?
-        }
-    } else {
-        HierarchyMaster::from_csv(&master_path_buf)
-            .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))?
-    };
-
-    // photo_type指定時はそちらでフィルタ、なければwork_typeでフィルタ
-    let master = if let Some(pt) = options.photo_type {
-        println!("{} 1ステップ解析中 (写真種類: {})...", options.step_prefix, pt);
-        let filtered = hierarchy.filter_by_photo_type(pt);
-        println!("  マスタ読み込み: {}件 (写真種類: {})", filtered.rows().len(), pt);
-        filtered
-    } else if let Some(wt) = options.work_type {
-        println!("{} 1ステップ解析中 (工種: {})...", options.step_prefix, wt);
-        let filtered = hierarchy.filter_by_work_types(&[wt.to_string()]);
-        println!("  マスタ読み込み: {}件 (工種: {})", filtered.rows().len(), wt);
-        filtered
-    } else {
-        println!("{} 1ステップ解析中 (全工種)...", options.step_prefix);
-        println!("  マスタ読み込み: {}件", hierarchy.rows().len());
-        hierarchy
-    };
-
-    analyzer::analyze_images_single_step(
-        images,
-        &master,
-        options.work_type,
-        options.variety,
-        options.photo_type,
-        options.batch_size,
-        options.verbose,
-        options.provider,
-    ).await
-}
-
-/// マスタファイルのパスを解決する
-///
-/// 優先順位:
-/// 1. 明示的に指定されたマスタパス
-/// 2. 工種指定時: 工種別マスタ (master/by_work_type/{work_type}.csv)
-/// 3. デフォルトマスタ (master/construction_hierarchy.csv)
-pub fn resolve_master_path(master: Option<&Path>, work_type: Option<&str>) -> Result<PathBuf> {
-    if let Some(mp) = master {
-        return Ok(mp.to_path_buf());
-    }
-
-    // 工種指定時は工種別マスタを優先
-    if let Some(wt) = work_type {
-        let by_work_type = PathBuf::from("master/by_work_type").join(format!("{}.csv", wt));
-        if by_work_type.exists() {
-            return Ok(by_work_type);
-        }
-    }
-
-    // デフォルトマスタ
-    let default = PathBuf::from("master/construction_hierarchy.csv");
-    if default.exists() {
-        return Ok(default);
-    }
-
-    Err(error::PhotoAiError::MasterLoad("マスタファイルが見つかりません".to_string()))
-}
-
-/// 後方互換: 工種指定必須版
-pub fn resolve_master_for_work_type(master: Option<&Path>, work_type: &str) -> Result<PathBuf> {
-    resolve_master_path(master, Some(work_type))
-}
-
 /// photo-groups.json のレコードを AnalysisResult に変換し、マスタ照合する
 /// グループ番号→全景優先でソート
 fn convert_groups_to_results(
@@ -350,7 +263,7 @@ fn convert_groups_to_results(
         // 安全管理系: taggerのmachine_typeから直接判定（黒板なし写真に対応）
         let safety_remarks = safety_remarks_from_machine_type(&rec.machine_type);
         if let Some(remarks) = safety_remarks {
-            result.photo_category = "安全管理写真".to_string();
+            result.photo_category = PHOTO_CAT_SAFETY.to_string();
             result.remarks = remarks;
             // 安全管理写真のstationに日付を設定（測点がない場合）
             if result.station.is_empty() {
@@ -410,13 +323,25 @@ fn convert_groups_to_results(
     });
     let mut final_results: Vec<analyzer::AnalysisResult> = results.into_iter().map(|(_, _, r)| r).collect();
 
-    // ポスト処理: フォルダ内の文脈で種別を補正
+    apply_domain_corrections(&mut final_results, line_types);
+
+    final_results
+}
+
+/// フォルダ内の文脈でドメイン固有の種別補正を適用
+///
+/// - 路面切削工が存在する場合、舗装打換え工/表層工 → 切削オーバーレイ工/表層工
+/// - 区画線工の線種判定（line_typesが指定されている場合のみ）
+fn apply_domain_corrections(
+    results: &mut Vec<analyzer::AnalysisResult>,
+    line_types: Option<&[LineTypeEntry]>,
+) {
     // 路面切削工が存在する場合、舗装打換え工/表層工 → 切削オーバーレイ工/表層工
-    let has_road_cutting = final_results.iter().any(|r| r.variety == "路面切削工");
+    let has_road_cutting = results.iter().any(|r| r.variety == VARIETY_ROAD_CUTTING);
     if has_road_cutting {
-        for r in &mut final_results {
-            if r.variety == "舗装打換え工" && r.subphase == "表層工" {
-                r.variety = "切削オーバーレイ工".to_string();
+        for r in results.iter_mut() {
+            if r.variety == VARIETY_PAVEMENT_REPLACE && r.subphase == SUBPHASE_SURFACE {
+                r.variety = VARIETY_CUTTING_OVERLAY.to_string();
             }
         }
     }
@@ -424,8 +349,8 @@ fn convert_groups_to_results(
     // 区画線工の線種判定: line_typesが指定されている場合のみ
     if let Some(lt) = line_types {
         if !lt.is_empty() {
-            for r in &mut final_results {
-                if r.work_type == "区画線工" && !r.file_path.is_empty() {
+            for r in results.iter_mut() {
+                if r.work_type == WORK_LANE_MARKING && !r.file_path.is_empty() {
                     if let Some(detected) = detect_line_type(&r.file_path, lt) {
                         r.station = detected;
                     }
@@ -433,20 +358,25 @@ fn convert_groups_to_results(
             }
         }
     }
-
-    final_results
 }
 
 /// 測点を一括適用
 /// - 安全管理写真・品質管理写真 → 日付（◯月◯日）
 /// - 区画線工 → スキップ（線種ごとに撮影するため固定測点は不適切）
 pub fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
+    // -S で日付形式（"X月Y日"）が渡された場合、品質管理・安全管理にもそのまま使う
+    let station_is_date = station.contains('月') && station.contains('日');
+
     for result in results {
         match result.photo_category.as_str() {
-            "安全管理写真" | "品質管理写真" => {
-                result.station = date_to_month_day(&result.date);
+            PHOTO_CAT_SAFETY | PHOTO_CAT_QUALITY => {
+                result.station = if station_is_date {
+                    station.to_string()
+                } else {
+                    date_to_month_day(&result.date)
+                };
             }
-            _ if result.work_type == "区画線工" => {
+            _ if result.work_type == WORK_LANE_MARKING => {
                 // 区画線工は線種ごとに撮影するため測点を一律適用しない
                 // 以前のnormalize -Sで誤設定された値もクリア
                 if result.station == station {
@@ -468,31 +398,31 @@ mod tests {
     fn test_apply_station_skips_safety_and_marking() {
         let mut results = vec![
             analyzer::AnalysisResult {
-                photo_category: "施工状況写真".to_string(),
+                photo_category: PHOTO_CAT_CONSTRUCTION.to_string(),
                 date: "2026-02-09 23:34:47".to_string(),
                 ..Default::default()
             },
             analyzer::AnalysisResult {
-                photo_category: "安全管理写真".to_string(),
+                photo_category: PHOTO_CAT_SAFETY.to_string(),
                 date: "2026-02-09 21:23:53".to_string(),
                 ..Default::default()
             },
             analyzer::AnalysisResult {
-                photo_category: "品質管理写真".to_string(),
+                photo_category: PHOTO_CAT_QUALITY.to_string(),
                 date: "2026-02-10 01:15:00".to_string(),
                 ..Default::default()
             },
             analyzer::AnalysisResult {
-                photo_category: "施工状況写真".to_string(),
-                work_type: "区画線工".to_string(),
+                photo_category: PHOTO_CAT_CONSTRUCTION.to_string(),
+                work_type: WORK_LANE_MARKING.to_string(),
                 station: "".to_string(),
                 date: "2026-02-10 03:44:26".to_string(),
                 ..Default::default()
             },
             // 以前の-Sで誤設定された区画線工
             analyzer::AnalysisResult {
-                photo_category: "施工状況写真".to_string(),
-                work_type: "区画線工".to_string(),
+                photo_category: PHOTO_CAT_CONSTRUCTION.to_string(),
+                work_type: WORK_LANE_MARKING.to_string(),
                 station: "No.4 左車線".to_string(),
                 date: "2026-02-10 03:52:16".to_string(),
                 ..Default::default()

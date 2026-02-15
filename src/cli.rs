@@ -104,6 +104,10 @@ pub enum Commands {
         /// カスタムエイリアスファイル（JSON）
         #[arg(long)]
         alias: Option<PathBuf>,
+
+        /// 測定値フィールドを非表示
+        #[arg(long)]
+        hide_measurements: bool,
     },
 
     /// 解析からPDF/Excel出力まで一括実行
@@ -163,6 +167,10 @@ pub enum Commands {
         /// 区画線工の線種リストJSONファイル
         #[arg(long)]
         line_types: Option<PathBuf>,
+
+        /// 測定値フィールドを非表示
+        #[arg(long)]
+        hide_measurements: bool,
     },
 
     /// 設定を表示/編集
@@ -332,6 +340,7 @@ impl std::fmt::Display for PdfQuality {
 pub enum LaneArg {
     Left,
     Right,
+    Both,
 }
 
 impl LaneArg {
@@ -339,6 +348,7 @@ impl LaneArg {
         match self {
             LaneArg::Left => crate::normalizer::Lane::Left,
             LaneArg::Right => crate::normalizer::Lane::Right,
+            LaneArg::Both => crate::normalizer::Lane::Both,
         }
     }
 }
@@ -350,7 +360,8 @@ impl std::str::FromStr for LaneArg {
         match s.to_lowercase().as_str() {
             "left" | "l" | "左" => Ok(LaneArg::Left),
             "right" | "r" | "右" => Ok(LaneArg::Right),
-            _ => Err(format!("Unknown lane: {}. Use left/right", s)),
+            "both" | "b" | "両" => Ok(LaneArg::Both),
+            _ => Err(format!("Unknown lane: {}. Use left/right/both", s)),
         }
     }
 }
