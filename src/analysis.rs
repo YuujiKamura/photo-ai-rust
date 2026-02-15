@@ -370,11 +370,15 @@ pub fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
     for result in results {
         match result.photo_category.as_str() {
             PHOTO_CAT_SAFETY | PHOTO_CAT_QUALITY => {
-                result.station = if station_is_date {
-                    station.to_string()
-                } else {
-                    date_to_month_day(&result.date)
-                };
+                // 既に日付形式のstationがあれば上書きしない（tagger由来の作業日を優先）
+                let already_has_date = result.station.contains('月') && result.station.contains('日');
+                if !already_has_date {
+                    result.station = if station_is_date {
+                        station.to_string()
+                    } else {
+                        date_to_month_day(&result.date)
+                    };
+                }
             }
             _ if result.work_type == WORK_LANE_MARKING => {
                 // 区画線工は線種ごとに撮影するため測点を一律適用しない
