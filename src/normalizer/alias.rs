@@ -67,7 +67,7 @@ impl AliasConfig {
         // 種別
         config.variety.insert("打換え".into(), "舗装打換え工".into());
         config.variety.insert("打換".into(), "舗装打換え工".into());
-        config.variety.insert("オーバーレイ".into(), "舗装オーバーレイ工".into());
+
 
         // 作業段階
         config.subphase.insert("表層".into(), "表層工".into());
