@@ -6,8 +6,7 @@ use crate::error::Error;
 use super::ExportError;
 use crate::layout::{
     excel_width_to_px, fit_image_centered, PT_TO_PX,
-    ExcelLayout, FieldKey, LAYOUT_FIELDS,
-    PHOTO_ROWS,
+    ExcelLayout, LAYOUT_FIELDS,
     LABEL_COL_WIDTH, VALUE_COL_WIDTH,
     LABEL_FONT_SIZE, LABEL_FONT_COLOR, LABEL_BG_COLOR, LABEL_BORDER_COLOR,
     VALUE_FONT_SIZE, CELL_BORDER_COLOR,
@@ -106,7 +105,7 @@ where
         for photo in page_photos {
             let start_row = current_row;
             let rows_per_block = layout.rows_per_block as u32;
-            let photo_rows = PHOTO_ROWS as u32;
+            let photo_rows = layout.photo_rows as u32;
 
             // 行高さ設定
             for r in start_row..(start_row + rows_per_block) {
@@ -147,11 +146,8 @@ where
             }
 
             // 情報フィールド（B列:ラベル、C列:値）
-            // 測定値が空のとき測定値行はラベル毎非表示
-            let m = photo.get_field_value(FieldKey::Measurements);
-            let hide_measurements = m.is_empty() || m == "-";
             let mut field_row = start_row;
-            for field in LAYOUT_FIELDS.iter().filter(|f| !(hide_measurements && f.key == FieldKey::Measurements)) {
+            for field in LAYOUT_FIELDS.iter() {
                 let value = photo.get_field_value(field.key);
                 let row_span = field.row_span as u32;
 
