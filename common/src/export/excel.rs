@@ -8,6 +8,7 @@ use crate::layout::{
     excel_width_to_px, fit_image_centered, PT_TO_PX,
     ExcelLayout, FieldKey, LAYOUT_FIELDS,
     PHOTO_ROWS,
+    COL_PHOTO, COL_LABEL, COL_VALUE,
     LABEL_COL_WIDTH, VALUE_COL_WIDTH,
     LABEL_FONT_SIZE, LABEL_FONT_COLOR, LABEL_BG_COLOR, LABEL_BORDER_COLOR,
     VALUE_FONT_SIZE, CELL_BORDER_COLOR,
@@ -94,11 +95,11 @@ where
         let row_height_px = (layout.row_height_pt * PT_TO_PX).round() as u32;
         let col_b_px = excel_width_to_px(LABEL_COL_WIDTH) as u32;
         let col_c_px = excel_width_to_px(VALUE_COL_WIDTH) as u32;
-        worksheet.set_column_width_pixels(0, col_a_px)
+        worksheet.set_column_width_pixels(COL_PHOTO, col_a_px)
             .map_err(|e| excel_err(format!("列幅設定: {}", e)))?;
-        worksheet.set_column_width_pixels(1, col_b_px)
+        worksheet.set_column_width_pixels(COL_LABEL, col_b_px)
             .map_err(|e| excel_err(format!("列幅設定: {}", e)))?;
-        worksheet.set_column_width_pixels(2, col_c_px)
+        worksheet.set_column_width_pixels(COL_VALUE, col_c_px)
             .map_err(|e| excel_err(format!("列幅設定: {}", e)))?;
 
         let mut current_row: u32 = 0;
@@ -116,7 +117,7 @@ where
 
             // 写真セル（A列）- マージ
             let photo_end_row = start_row + photo_rows - 1;
-            worksheet.merge_range(start_row, 0, photo_end_row, 0, "", &photo_cell_format)
+            worksheet.merge_range(start_row, COL_PHOTO, photo_end_row, COL_PHOTO, "", &photo_cell_format)
                 .map_err(|e| excel_err(format!("セルマージ: {}", e)))?;
 
             // 画像埋め込み
@@ -139,7 +140,7 @@ where
                     .set_object_movement(ObjectMovement::DontMoveOrSizeWithCells);
 
                 worksheet.insert_image_with_offset(
-                    start_row, 0, &image,
+                    start_row, COL_PHOTO, &image,
                     off_x.round() as u32,
                     off_y.round() as u32,
                 )
@@ -147,29 +148,32 @@ where
             }
 
             // 情報フィールド（B列:ラベル、C列:値）
-            // 測定値が空のとき測定値行はラベル毎非表示
-            let m = photo.get_field_value(FieldKey::Measurements);
-            let hide_measurements = m.is_empty() || m == "-";
             let mut field_row = start_row;
-            for field in LAYOUT_FIELDS.iter().filter(|f| !(hide_measurements && f.key == FieldKey::Measurements)) {
+            for field in LAYOUT_FIELDS.iter() {
                 let value = photo.get_field_value(field.key);
                 let row_span = field.row_span as u32;
 
+                // 測定値が空のときテキストを非表示（スペースは維持）
+                let hide = field.key == FieldKey::Measurements
+                    && (value.is_empty() || value == "-");
+                let label_text = if hide { "" } else { field.label };
+                let value_text = if hide { "" } else { value };
+
                 // ラベルセル（B列）
                 if row_span > 1 {
-                    worksheet.merge_range(field_row, 1, field_row + row_span - 1, 1, field.label, &label_format)
+                    worksheet.merge_range(field_row, COL_LABEL, field_row + row_span - 1, COL_LABEL, label_text, &label_format)
                         .map_err(|e| excel_err(format!("ラベルマージ: {}", e)))?;
                 } else {
-                    worksheet.write_string_with_format(field_row, 1, field.label, &label_format)
+                    worksheet.write_string_with_format(field_row, COL_LABEL, label_text, &label_format)
                         .map_err(|e| excel_err(format!("ラベル書き込み: {}", e)))?;
                 }
 
                 // 値セル（C列）
                 if row_span > 1 {
-                    worksheet.merge_range(field_row, 2, field_row + row_span - 1, 2, value, &value_format)
+                    worksheet.merge_range(field_row, COL_VALUE, field_row + row_span - 1, COL_VALUE, value_text, &value_format)
                         .map_err(|e| excel_err(format!("値マージ: {}", e)))?;
                 } else {
-                    worksheet.write_string_with_format(field_row, 2, value, &value_format)
+                    worksheet.write_string_with_format(field_row, COL_VALUE, value_text, &value_format)
                         .map_err(|e| excel_err(format!("値書き込み: {}", e)))?;
                 }
 

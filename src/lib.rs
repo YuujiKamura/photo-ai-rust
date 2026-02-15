@@ -14,3 +14,4 @@ pub mod master_matcher;
 pub mod line_type_detector;
 pub mod analysis;
 pub mod commands;
+pub mod export_history;

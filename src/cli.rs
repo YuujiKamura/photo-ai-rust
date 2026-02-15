@@ -233,6 +233,21 @@ pub enum Commands {
         line_types: Option<PathBuf>,
     },
 
+    /// 履歴にある全アルバムを再エクスポート
+    ReExportAll {
+        /// 出力形式 (pdf/excel/xml/both)
+        #[arg(short, long)]
+        format: Option<ExportFormat>,
+
+        /// PDF画像品質 (high/medium/low)
+        #[arg(long)]
+        pdf_quality: Option<PdfQuality>,
+
+        /// 実行せず一覧表示のみ
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// ソースコードをAIでレビュー
     Review {
         /// レビュー対象のファイルまたはフォルダ
@@ -246,6 +261,21 @@ pub enum Commands {
         /// AIモデル指定（プロバイダに依存）
         #[arg(short, long)]
         model: Option<String>,
+    },
+
+    /// エクスポート済みの全写真帳を1箇所に収集
+    Collect {
+        /// 収集先ディレクトリ
+        #[arg(required = true)]
+        dest: PathBuf,
+
+        /// 対象フォーマット (pdf/excel/both) デフォルト: both
+        #[arg(short, long, default_value = "both")]
+        format: ExportFormat,
+
+        /// 実行せず一覧表示のみ
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -268,6 +298,17 @@ impl std::str::FromStr for ExportFormat {
             "xml" | "photo-xml" | "photo.xml" => Ok(ExportFormat::PhotoXml),
             "both" => Ok(ExportFormat::Both),
             _ => Err(format!("Unknown format: {}. Use pdf, excel, xml, or both", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for ExportFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExportFormat::Pdf => write!(f, "pdf"),
+            ExportFormat::Excel => write!(f, "excel"),
+            ExportFormat::PhotoXml => write!(f, "xml"),
+            ExportFormat::Both => write!(f, "both"),
         }
     }
 }

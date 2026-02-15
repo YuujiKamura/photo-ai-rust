@@ -114,6 +114,7 @@ impl PdfMetrics {
 /// PDFの情報欄に表示する1行
 #[derive(Debug, Clone)]
 pub struct PdfInfoField {
+    pub key: FieldKey,
     pub label: String,
     pub value: String,
     pub row_span: u8,
@@ -124,11 +125,8 @@ pub struct PdfInfoField {
 /// 測定値が空のとき測定値行はラベル毎非表示（スペースを他フィールドに配分）
 pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
     use crate::types::PhotoData;
-    let m = result.get_field_value(FieldKey::Measurements);
-    let hide_measurements = m.is_empty() || m == "-";
     LAYOUT_FIELDS
         .iter()
-        .filter(|field| !(hide_measurements && field.key == FieldKey::Measurements))
         .map(|field| {
             let value = if field.key == FieldKey::Date {
                 format_date(&result.date)
@@ -136,6 +134,7 @@ pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
                 result.get_field_value(field.key).to_string()
             };
             PdfInfoField {
+                key: field.key,
                 label: result.get_label_for_field(field.key).to_string(),
                 value,
                 row_span: field.row_span,

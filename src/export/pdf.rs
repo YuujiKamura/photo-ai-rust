@@ -8,6 +8,14 @@ use crate::analyzer::AnalysisResult;
 use crate::cli::PdfQuality;
 use crate::error::{PhotoAiError, Result};
 use photo_ai_common::export::pdf as pdf_common;
+use photo_ai_common::layout::{
+    FieldKey,
+    PDF_INFO_LABEL_WIDTH_PT, PDF_INFO_PADDING_PT, PDF_INFO_LABEL_VALUE_GAP_PT,
+    PDF_PAGE_NUMBER_FONT_SIZE,
+    PDF_TEXT_MAX_HALF_WIDTH, PDF_TEXT_MIN_FONT_SIZE, PDF_TEXT_MAX_LINES,
+    PDF_MEASUREMENTS_MAX_HALF_WIDTH, PDF_MEASUREMENTS_BASE_FONT_SIZE, PDF_MEASUREMENTS_MIN_FONT_SIZE,
+    PDF_REMARKS_MAX_HALF_WIDTH,
+};
 use photo_ai_common::PdfLayout;
 use printpdf::*;
 use std::path::{Path, PathBuf};
@@ -242,6 +250,7 @@ pub fn generate_pdf(
                 row_y_pt,
                 layout_core.photo_height_pt,
                 &fonts,
+                &layout_core,
             );
         }
 
@@ -378,7 +387,7 @@ fn add_page_number_ops(
         &format!("Page {}", page_num),
         layout.page_width_pt - layout.margin_pt - 50.0,
         layout.page_height_pt - layout.margin_pt + 2.0,
-        9.0,
+        PDF_PAGE_NUMBER_FONT_SIZE,
         fonts,
     );
 }
@@ -458,10 +467,10 @@ struct TextFitConfig {
 impl Default for TextFitConfig {
     fn default() -> Self {
         Self {
-            max_half_width: 22,
+            max_half_width: PDF_TEXT_MAX_HALF_WIDTH,
             base_font_size: UNIFIED_FONT_SIZE,
-            min_font_size: 10.0,
-            max_lines: 2,
+            min_font_size: PDF_TEXT_MIN_FONT_SIZE,
+            max_lines: PDF_TEXT_MAX_LINES,
         }
     }
 }
@@ -660,9 +669,9 @@ fn add_info_field_ops(
     row_y_pt: f32,
     photo_height_pt: f32,
     fonts: &FontSet,
+    layout_core: &pdf_common::PdfMetrics,
 ) {
     let fields = pdf_common::build_pdf_info_fields(result);
-    let label_width = 35.0;
 
     // row_spanの合計で1単位あたりの高さを計算
     let total_spans: f32 = fields.iter().map(|f| f.row_span as f32).sum();
@@ -677,15 +686,15 @@ fn add_info_field_ops(
 
     // 測定値フィールド用: ラベル省略してフル幅使用、フォント大きめ
     let wide_text_config = TextFitConfig {
-        max_half_width: 34,
-        base_font_size: 10.0,
-        min_font_size: 8.5,
+        max_half_width: PDF_MEASUREMENTS_MAX_HALF_WIDTH,
+        base_font_size: PDF_MEASUREMENTS_BASE_FONT_SIZE,
+        min_font_size: PDF_MEASUREMENTS_MIN_FONT_SIZE,
         ..TextFitConfig::default()
     };
 
     // 備考フィールド用: 長い備考（タックコート乳剤散布状況等）を同じフォントサイズで改行
     let remarks_text_config = TextFitConfig {
-        max_half_width: 20,
+        max_half_width: PDF_REMARKS_MAX_HALF_WIDTH,
         min_font_size: UNIFIED_FONT_SIZE, // 縮小せず改行のみ
         ..TextFitConfig::default()
     };
@@ -698,25 +707,29 @@ fn add_info_field_ops(
             let label_text = process_text(&field.label, fonts.is_japanese());
             let value_text = process_text(&field.value, fonts.is_japanese());
 
-            let field_center = field_bottom + field_height / 2.0;
+            // 測定値が空のときテキストを非表示（スペース・セパレータ線は維持）
+            let hide = field.key == FieldKey::Measurements
+                && (value_text == "-" || value_text.is_empty());
 
-            // 測定値フィールド: ラベル省略、フル幅で描画、実測値は赤
-            let is_measurements = field.label == "測定値";
-            if is_measurements && value_text != "-" {
-                let text_y = wide_text_config.centered_first_line_y(&value_text, field_center, field_height);
-                add_measurements_text_ops(ops, &value_text, info_x_pt + 5.0, text_y, field_height, fonts, &wide_text_config);
-            } else {
-                let is_remarks = field.label == "備考";
-                let cfg = if is_remarks { &remarks_text_config } else { &text_config };
-                let label_y = field_center - UNIFIED_FONT_SIZE * 0.3;
-                let text_y = cfg.centered_first_line_y(&value_text, field_center, field_height);
-                add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
-                add_fitted_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, field_height, fonts, cfg);
+            if !hide {
+                let field_center = field_bottom + field_height / 2.0;
+
+                // 測定値フィールド: ラベル省略、フル幅で描画、実測値は赤
+                if field.key == FieldKey::Measurements {
+                    let text_y = wide_text_config.centered_first_line_y(&value_text, field_center, field_height);
+                    add_measurements_text_ops(ops, &value_text, info_x_pt + PDF_INFO_PADDING_PT, text_y, field_height, fonts, &wide_text_config);
+                } else {
+                    let cfg = if field.key == FieldKey::Remarks { &remarks_text_config } else { &text_config };
+                    let label_y = field_center - UNIFIED_FONT_SIZE * 0.3;
+                    let text_y = cfg.centered_first_line_y(&value_text, field_center, field_height);
+                    add_text_ops(ops, &label_text, info_x_pt + PDF_INFO_PADDING_PT, label_y, UNIFIED_FONT_SIZE, fonts);
+                    add_fitted_text_ops(ops, &value_text, info_x_pt + PDF_INFO_LABEL_WIDTH_PT + PDF_INFO_LABEL_VALUE_GAP_PT, text_y, field_height, fonts, cfg);
+                }
             }
 
-            // 行の下に水平線（最後の行以外）
+            // 行の下に水平線（最後の行以外、非表示でも描画）
             if i < fields.len() - 1 {
-                add_horizontal_line_ops(ops, info_x_pt, info_x_pt + 180.0, field_bottom);
+                add_horizontal_line_ops(ops, info_x_pt, info_x_pt + layout_core.info_width_pt, field_bottom);
             }
         }
 

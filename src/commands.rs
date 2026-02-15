@@ -7,6 +7,7 @@ use crate::analysis::{apply_station, ScanAnalysisConfig, prepare_analysis, scan_
 use crate::cli::{Commands, ExportFormat, PdfQuality};
 use crate::config::Config;
 use crate::error::{self, Result};
+use crate::export_history::{self, ExportHistoryEntry};
 use crate::normalizer::{self, NormalizationOptions};
 use crate::{analyzer, export, master_selector};
 use ai_code_review::{CodeReviewer, Backend as ReviewBackend};
@@ -274,7 +275,102 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
 
     export::export_results(&results, &args.format, &output_dir, args.photos_per_page, &title, args.pdf_quality)?;
 
+    // 履歴記録
+    let input_abs = std::fs::canonicalize(&args.input)
+        .unwrap_or_else(|_| args.input.clone());
+    let output_abs = std::fs::canonicalize(&output_dir)
+        .unwrap_or_else(|_| output_dir.clone());
+    if let Err(e) = export_history::record(ExportHistoryEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        input: input_abs.to_string_lossy().to_string(),
+        format: args.format.to_string(),
+        output: output_abs.to_string_lossy().to_string(),
+        photos_per_page: args.photos_per_page,
+        title: title.clone(),
+        pdf_quality: args.pdf_quality.to_string(),
+        preset: args.preset.clone(),
+        alias: args.alias.as_ref().map(|p| p.to_string_lossy().to_string()),
+    }) {
+        eprintln!("⚠ 履歴記録に失敗: {e}");
+    }
+
     println!("\n✅ エクスポート完了");
+    Ok(())
+}
+
+/// ReExportAllコマンドを処理
+pub fn handle_re_export_all_command(
+    format: Option<ExportFormat>,
+    pdf_quality: Option<PdfQuality>,
+    dry_run: bool,
+) -> Result<()> {
+    let entries = export_history::list();
+    if entries.is_empty() {
+        println!("履歴がありません");
+        return Ok(());
+    }
+
+    if dry_run {
+        println!("📋 エクスポート履歴 ({}件)\n", entries.len());
+        for (i, entry) in entries.iter().enumerate() {
+            let exists = Path::new(&entry.input).exists();
+            let mark = if exists { "✔" } else { "✘" };
+            println!(
+                "  {}. [{}] {} (format={}, quality={})",
+                i + 1,
+                mark,
+                entry.input,
+                entry.format,
+                entry.pdf_quality,
+            );
+            println!(
+                "     → {} (title={}, {}枚/page)",
+                entry.output, entry.title, entry.photos_per_page,
+            );
+        }
+        return Ok(());
+    }
+
+    println!("🔄 全履歴を再エクスポート ({}件)\n", entries.len());
+    let mut success = 0usize;
+    let mut skipped = 0usize;
+
+    for entry in &entries {
+        let input_path = PathBuf::from(&entry.input);
+        if !input_path.exists() {
+            eprintln!("⚠ スキップ (入力なし): {}", entry.input);
+            skipped += 1;
+            continue;
+        }
+
+        let entry_format = format
+            .clone()
+            .unwrap_or_else(|| entry.format.parse().unwrap_or_default());
+        let entry_quality = pdf_quality
+            .unwrap_or_else(|| entry.pdf_quality.parse().unwrap_or_default());
+
+        println!("- {} ...", entry.input);
+        let result = handle_export_command(ExportCommandArgs {
+            input: input_path,
+            format: entry_format,
+            output: Some(PathBuf::from(&entry.output)),
+            photos_per_page: entry.photos_per_page,
+            title: entry.title.clone(),
+            pdf_quality: entry_quality,
+            preset: entry.preset.clone(),
+            alias: entry.alias.as_ref().map(PathBuf::from),
+        });
+
+        match result {
+            Ok(()) => success += 1,
+            Err(e) => {
+                eprintln!("⚠ 失敗: {}: {e}", entry.input);
+                skipped += 1;
+            }
+        }
+    }
+
+    println!("\n✅ 再エクスポート完了: 成功={}, スキップ={}", success, skipped);
     Ok(())
 }
 
@@ -351,6 +447,25 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
     println!("[4/4] エクスポート中...");
     let title = derive_export_title(&results, &args.folder);
     export::export_results(&results, &args.format, &output_paths.export_path, 3, &title, args.pdf_quality)?;
+
+    // 履歴記録
+    let input_abs = std::fs::canonicalize(&json_path)
+        .unwrap_or_else(|_| json_path.clone());
+    let output_abs = std::fs::canonicalize(&output_paths.export_path)
+        .unwrap_or_else(|_| output_paths.export_path.clone());
+    if let Err(e) = export_history::record(ExportHistoryEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        input: input_abs.to_string_lossy().to_string(),
+        format: args.format.to_string(),
+        output: output_abs.to_string_lossy().to_string(),
+        photos_per_page: 3,
+        title: title.clone(),
+        pdf_quality: args.pdf_quality.to_string(),
+        preset: None,
+        alias: None,
+    }) {
+        eprintln!("⚠ 履歴記録に失敗: {e}");
+    }
 
     println!("\n✅ 完了");
     Ok(())
@@ -553,6 +668,111 @@ pub fn handle_cache_command(args: CacheCommandArgs) {
     }
 }
 
+/// Collectコマンドを処理
+pub fn handle_collect_command(dest: &Path, format: &ExportFormat, dry_run: bool) -> Result<()> {
+    let entries = export_history::list();
+    if entries.is_empty() {
+        println!("履歴がありません");
+        return Ok(());
+    }
+
+    // 対象拡張子を決定
+    let extensions: Vec<&str> = match format {
+        ExportFormat::Pdf => vec!["pdf"],
+        ExportFormat::Excel => vec!["xlsx"],
+        ExportFormat::Both => vec!["pdf", "xlsx"],
+        ExportFormat::PhotoXml => vec!["pdf", "xlsx", "xml"],
+    };
+
+    // 衝突回避用カウンタ
+    let mut name_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut copy_items: Vec<(PathBuf, PathBuf)> = Vec::new();
+
+    for entry in &entries {
+        let output_dir = Path::new(&entry.output);
+        for ext in &extensions {
+            let src = output_dir.join(format!("{}.{}", entry.title, ext));
+            if !src.exists() {
+                continue;
+            }
+
+            let base_name = derive_collect_name(entry, ext);
+            let count = name_counts.entry(base_name.clone()).or_insert(0);
+            *count += 1;
+            let dest_name = if *count == 1 {
+                base_name
+            } else {
+                // 拡張子を分離してサフィックスを挿入
+                let stem = Path::new(&base_name).file_stem().unwrap_or_default().to_string_lossy();
+                format!("{}_{}.{}", stem, count, ext)
+            };
+            let dest_path = dest.join(&dest_name);
+            copy_items.push((src, dest_path));
+        }
+    }
+
+    if copy_items.is_empty() {
+        println!("コピー対象のファイルがありません");
+        return Ok(());
+    }
+
+    if dry_run {
+        println!("📋 収集予定 ({}件)\n", copy_items.len());
+        for (src, dst) in &copy_items {
+            println!("  {} → {}", src.display(), dst.file_name().unwrap_or_default().to_string_lossy());
+        }
+        return Ok(());
+    }
+
+    // dest ディレクトリを作成
+    std::fs::create_dir_all(dest)?;
+
+    let mut success = 0usize;
+    let mut failed = 0usize;
+    for (src, dst) in &copy_items {
+        match std::fs::copy(src, dst) {
+            Ok(_) => {
+                println!("  ✔ {}", dst.file_name().unwrap_or_default().to_string_lossy());
+                success += 1;
+            }
+            Err(e) => {
+                eprintln!("  ✘ {} : {}", src.display(), e);
+                failed += 1;
+            }
+        }
+    }
+
+    println!("\n✅ 収集完了: 成功={}, 失敗={}", success, failed);
+    Ok(())
+}
+
+/// エクスポート履歴エントリからコピー先ファイル名を導出
+///
+/// entry.output のパスから末尾2コンポーネントを取得し "_" で結合
+/// 例: `.../0209切削/施工状況` → `0209切削_施工状況.pdf`
+fn derive_collect_name(entry: &ExportHistoryEntry, ext: &str) -> String {
+    let output_path = Path::new(&entry.output);
+    let components: Vec<&str> = output_path
+        .components()
+        .filter_map(|c| {
+            match c {
+                std::path::Component::Normal(s) => s.to_str(),
+                _ => None,
+            }
+        })
+        .collect();
+
+    let prefix = if components.len() >= 2 {
+        format!("{}_{}", components[components.len() - 2], components[components.len() - 1])
+    } else if components.len() == 1 {
+        components[0].to_string()
+    } else {
+        "unknown".to_string()
+    };
+
+    format!("{}.{}", prefix, ext)
+}
+
 /// --line-types オプションからJSONファイルを読み込む
 fn load_line_types(path: Option<&PathBuf>) -> Result<Option<Vec<LineTypeEntry>>> {
     let Some(path) = path else { return Ok(None) };
@@ -665,6 +885,10 @@ impl Commands {
                 })?;
             }
 
+            Commands::ReExportAll { format, pdf_quality, dry_run } => {
+                handle_re_export_all_command(format, pdf_quality, dry_run)?;
+            }
+
             Commands::Review { path, watch, model } => {
                 handle_review_command(ReviewCommandArgs {
                     path,
@@ -672,6 +896,10 @@ impl Commands {
                     model,
                     cli_args: cli_args.clone(),
                 })?;
+            }
+
+            Commands::Collect { dest, format, dry_run } => {
+                handle_collect_command(&dest, &format, dry_run)?;
             }
         }
 

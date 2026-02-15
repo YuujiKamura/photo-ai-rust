@@ -87,6 +87,51 @@ pub const BLOCK_HEIGHT_3UP_PT: f32 = PHOTO_HEIGHT_PT_3UP + GAP_PT * MM_TO_PT; //
 pub const BLOCK_HEIGHT_2UP_PT: f32 = PHOTO_HEIGHT_PT_2UP * 1.5;    // 2upは別計算
 
 // ============================================
+// Excel列インデックス
+// ============================================
+
+/// 写真列（A列）
+pub const COL_PHOTO: u16 = 0;
+/// ラベル列（B列）
+pub const COL_LABEL: u16 = 1;
+/// 値列（C列）
+pub const COL_VALUE: u16 = 2;
+
+// ============================================
+// PDF情報パネルレイアウト定数
+// ============================================
+
+/// 情報パネル内ラベル幅（pt）
+pub const PDF_INFO_LABEL_WIDTH_PT: f32 = 35.0;
+/// 情報パネル内パディング（pt）- ラベル/値の左端オフセット
+pub const PDF_INFO_PADDING_PT: f32 = 5.0;
+/// ラベルと値の間のギャップ（pt）
+pub const PDF_INFO_LABEL_VALUE_GAP_PT: f32 = 10.0;
+/// ページ番号フォントサイズ（pt）
+pub const PDF_PAGE_NUMBER_FONT_SIZE: f32 = 9.0;
+
+// ============================================
+// PDFテキスト自動調整定数
+// ============================================
+
+/// 通常フィールド: 半角換算最大幅
+pub const PDF_TEXT_MAX_HALF_WIDTH: usize = 22;
+/// 通常フィールド: 最小フォントサイズ（pt）
+pub const PDF_TEXT_MIN_FONT_SIZE: f32 = 10.0;
+/// 通常フィールド: 最大行数
+pub const PDF_TEXT_MAX_LINES: usize = 2;
+
+/// 測定値フィールド: 半角換算最大幅（ラベル省略でフル幅）
+pub const PDF_MEASUREMENTS_MAX_HALF_WIDTH: usize = 34;
+/// 測定値フィールド: 基本フォントサイズ（pt）
+pub const PDF_MEASUREMENTS_BASE_FONT_SIZE: f32 = 10.0;
+/// 測定値フィールド: 最小フォントサイズ（pt）
+pub const PDF_MEASUREMENTS_MIN_FONT_SIZE: f32 = 8.5;
+
+/// 備考フィールド: 半角換算最大幅
+pub const PDF_REMARKS_MAX_HALF_WIDTH: usize = 20;
+
+// ============================================
 // Excelスタイル定数
 // ============================================
 
