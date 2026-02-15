@@ -395,6 +395,10 @@ pub fn append_dump_number_to_station(results: &mut [AnalysisResult]) {
 
         if let Some(num) = dump_num {
             for r in &mut results[i..j] {
+                // 既に台目が付いていればスキップ
+                if r.station.contains("台目") {
+                    continue;
+                }
                 let base = r.station.split('\n').next().unwrap_or(&r.station).to_string();
                 r.station = format!("{} {}", base, num);
             }
