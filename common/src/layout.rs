@@ -115,14 +115,15 @@ pub const CELL_BORDER_COLOR: u32 = 0xCCCCCC;
 /// 全体スケール
 pub const EXCEL_SCALE: f32 = 1.1;
 
-/// 行の設計（写真高さ242.9ptを10行 + 余白1行）
-pub const PHOTO_ROWS: u8 = 10;
+/// 行の設計 - layout-config.json準拠
+pub const PHOTO_ROWS_3UP: u8 = 10;
+pub const PHOTO_ROWS_2UP: u8 = 16;
 pub const GAP_ROWS: u8 = 1;
-pub const ROWS_PER_BLOCK_3UP: u8 = PHOTO_ROWS + GAP_ROWS; // 11行/ブロック
-pub const ROWS_PER_BLOCK_2UP: u8 = PHOTO_ROWS + GAP_ROWS; // 2upも同様
+pub const ROWS_PER_BLOCK_3UP: u8 = PHOTO_ROWS_3UP + GAP_ROWS; // 11行/ブロック
+pub const ROWS_PER_BLOCK_2UP: u8 = PHOTO_ROWS_2UP + GAP_ROWS; // 17行/ブロック
 
-/// 行高さ (pt) = 列幅から4:3比率で導出
-pub const ROW_HEIGHT_PT: f32 = 27.0;
+/// 行高さ (pt) - layout-config.json準拠
+pub const ROW_HEIGHT_PT: f32 = 26.0;
 
 /// 列幅 (Excel単位)
 pub const PHOTO_COL_WIDTH: f32 = 56.1;  // アスペクト比に合わせて調整
@@ -164,8 +165,8 @@ pub const LAYOUT_FIELDS: &[FieldDefinition] = &[
     FieldDefinition { key: FieldKey::Variety, label: "種別", row_span: 1 },
     FieldDefinition { key: FieldKey::Subphase, label: "細別", row_span: 1 },
     FieldDefinition { key: FieldKey::Station, label: "測点", row_span: 1 },
-    FieldDefinition { key: FieldKey::Remarks, label: "備考", row_span: 1 },
-    FieldDefinition { key: FieldKey::Measurements, label: "測定値", row_span: 2 },
+    FieldDefinition { key: FieldKey::Remarks, label: "備考", row_span: 2 },
+    FieldDefinition { key: FieldKey::Measurements, label: "測定値", row_span: 3 },
 ];
 
 // ============================================
@@ -283,7 +284,7 @@ impl ExcelLayout {
     pub fn three_up() -> Self {
         Self {
             rows_per_block: ROWS_PER_BLOCK_3UP,
-            photo_rows: PHOTO_ROWS,
+            photo_rows: PHOTO_ROWS_3UP,
             row_height_pt: ROW_HEIGHT_PT,
             col_a_width: PHOTO_COL_WIDTH,
             col_b_width: LABEL_COL_WIDTH,
@@ -298,7 +299,7 @@ impl ExcelLayout {
     pub fn two_up() -> Self {
         Self {
             rows_per_block: ROWS_PER_BLOCK_2UP,
-            photo_rows: PHOTO_ROWS,
+            photo_rows: PHOTO_ROWS_2UP,
             row_height_pt: ROW_HEIGHT_PT,
             col_a_width: PHOTO_COL_WIDTH,
             col_b_width: LABEL_COL_WIDTH,
@@ -445,10 +446,14 @@ mod tests {
         let layout = ExcelLayout::three_up();
         assert_eq!(layout.rows_per_block, 11);
         assert_eq!(layout.photo_rows, 10);
-        assert!((layout.row_height_pt - 27.0).abs() < 0.01);
+        assert!((layout.row_height_pt - 26.0).abs() < 0.01);
         assert!((layout.col_a_width - 56.1).abs() < 0.01);
         assert!((layout.col_b_width - 11.0).abs() < 0.01);
         assert!((layout.col_c_width - 28.6).abs() < 0.01);
+
+        let layout2 = ExcelLayout::two_up();
+        assert_eq!(layout2.rows_per_block, 17);
+        assert_eq!(layout2.photo_rows, 16);
     }
 
     #[test]
@@ -502,7 +507,14 @@ mod tests {
         let (w, h) = layout.photo_area_px();
         // width = excel_width_to_px(56.1) = round(56.1 * 7.1 + 5.0) = round(403.31) = 403
         assert_eq!(w, 403);
-        // height = round(27.0 * 96/72) * 10 = round(36.0) * 10 = 360
-        assert_eq!(h, 360);
+        // height = round(26.0 * 96/72) * 10 = round(34.67) * 10 = 350
+        assert_eq!(h, 350);
+    }
+
+    #[test]
+    fn test_layout_fields_total_spans() {
+        // layout-config.json準拠: total_spans = 11
+        let total: u8 = LAYOUT_FIELDS.iter().map(|f| f.row_span).sum();
+        assert_eq!(total, 11);
     }
 }

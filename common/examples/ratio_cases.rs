@@ -1,5 +1,5 @@
 use photo_ai_common::layout::{
-    fit_image_centered, ExcelLayout, PHOTO_ROWS, PT_TO_PX,
+    fit_image_centered, ExcelLayout, PT_TO_PX,
 };
 use rust_xlsxwriter::{Format, FormatBorder, Image, Workbook, XlsxError};
 use std::env;
@@ -31,7 +31,7 @@ fn main() -> Result<(), XlsxError> {
 
     let layout = ExcelLayout::three_up();
     let (target_width_px, target_height_px) = layout.photo_area_px();
-    let photo_rows = PHOTO_ROWS as u32;
+    let photo_rows = layout.photo_rows as u32;
     let row_height_px = (layout.row_height_pt * PT_TO_PX).round() as u32;
 
     let mut workbook = Workbook::new();

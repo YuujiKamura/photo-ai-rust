@@ -124,11 +124,8 @@ pub struct PdfInfoField {
 /// 測定値が空のとき測定値行はラベル毎非表示（スペースを他フィールドに配分）
 pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
     use crate::types::PhotoData;
-    let m = result.get_field_value(FieldKey::Measurements);
-    let hide_measurements = m.is_empty() || m == "-";
     LAYOUT_FIELDS
         .iter()
-        .filter(|field| !(hide_measurements && field.key == FieldKey::Measurements))
         .map(|field| {
             let value = if field.key == FieldKey::Date {
                 format_date(&result.date)
