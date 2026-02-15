@@ -107,7 +107,7 @@ pub fn extract_dimension_mm(text: &str) -> Option<f64> {
 pub fn is_temperature_photo(text: &str) -> bool {
     lazy_static::lazy_static! {
         static ref TEMP_KEYWORDS: Regex = Regex::new(
-            r"(?i)(到着温度|敷均し温度|初期締固め|温度測定|温度計|出荷時|舗設温度|開放温度)"
+            r"(?i)(到着温度|敷均し温度|初期締固め|温度測定|温度計|出荷時|舗設温度|開放温度|舗装日外気温|外気温)"
         ).unwrap();
     }
 
@@ -200,6 +200,77 @@ pub fn validate_temperature(temp_text: &str, temp_type: TemperatureType) -> Opti
     }
 
     None
+}
+
+/// 備考の別名マッピング（黒板表記のゆれ対応）
+/// 備考が「到着温度測定」のように「測定」付きでも、黒板は「到着温度」で書かれるため
+/// 「測定」を除いた名前も検索対象にする
+fn alternative_names(remarks: &str) -> Vec<&'static str> {
+    // 「測定」サフィックスを除去して元の温度名で照合
+    let base = remarks.trim_end_matches("測定");
+    match base {
+        "初期締固め前温度" => vec!["初期転圧前温度", "初期締固め前温度"],
+        "開放温度" => vec!["解放温度", "開放温度"],
+        "舗装日外気温" => vec!["外気温", "舗装日外気温"],
+        "到着温度" => vec!["到着温度"],
+        "敷均し温度" => vec!["敷均し温度"],
+        _ => vec![],
+    }
+}
+
+/// detected_textから、備考に対応する温度値を抽出
+///
+/// 返り値の形式: "{備考}測定 {値}℃"（例: "到着温度測定 159.7℃"）
+///
+/// パターン:
+/// - "到着温度 159.7℃" → "到着温度測定 159.7℃" (備考名+数値)
+/// - "159.7℃" or "159.7" → "到着温度測定 159.7℃" (数値のみ=温度計アップ)
+/// - "舗装日外気温 1℃, 解放温度 33.9℃" → 備考に応じた値を抽出
+pub fn extract_temperature_for_remarks(detected_text: &str, remarks: &str) -> Option<String> {
+    if detected_text.is_empty() || remarks.is_empty() {
+        return None;
+    }
+
+    lazy_static::lazy_static! {
+        static ref NUMBER_ONLY_RE: Regex = Regex::new(
+            r"^\s*(\d+\.?\d*)\s*[℃度]?\s*$"
+        ).unwrap();
+    }
+
+    // 1. 備考名(+別名)の後に続く温度値を探す
+    let names_to_try: Vec<&str> = std::iter::once(remarks)
+        .chain(alternative_names(remarks))
+        .collect();
+
+    for name in &names_to_try {
+        // "名前 数値℃" or "名前 数値"
+        let pattern = format!(r"{}[\s:：]*(\d+\.?\d*)\s*[℃度]?", regex::escape(name));
+        if let Ok(re) = Regex::new(&pattern) {
+            if let Some(cap) = re.captures(detected_text) {
+                return Some(format!("{}℃", &cap[1]));
+            }
+        }
+    }
+
+    // 2. 数値のみ（温度計アップ写真）
+    if let Some(cap) = NUMBER_ONLY_RE.captures(detected_text.trim()) {
+        return Some(format!("{}℃", &cap[1]));
+    }
+
+    None
+}
+
+/// detected_textからダンプ台数（N台目）を抽出する
+///
+/// パターン: "ダンプ台数 1台目"、"6台目"、"11台目" 等
+/// 返り値: Some("1台目") / None
+pub fn extract_dump_number(detected_text: &str) -> Option<String> {
+    lazy_static::lazy_static! {
+        static ref DUMP_RE: Regex = Regex::new(r"(\d+)\s*台目").unwrap();
+    }
+    DUMP_RE.captures(detected_text).map(|caps| {
+        format!("{}台目", &caps[1])
+    })
 }
 
 #[cfg(test)]
@@ -301,6 +372,62 @@ mod tests {
             let corrected_temp = extract_temperature(&corrected).unwrap();
             assert!(TemperatureType::Opening.is_valid_temperature(corrected_temp));
         }
+    }
+
+    #[test]
+    fn test_extract_temperature_for_remarks_named() {
+        assert_eq!(
+            extract_temperature_for_remarks("到着温度 159.7℃, ダンプ台数 1台目", "到着温度"),
+            Some("159.7℃".to_string())
+        );
+        assert_eq!(
+            extract_temperature_for_remarks(
+                "到着温度 160.6℃, 敷均し温度 154.5℃, 初期転圧前温度 147.8℃",
+                "敷均し温度"
+            ),
+            Some("154.5℃".to_string())
+        );
+        assert_eq!(
+            extract_temperature_for_remarks(
+                "到着温度 160.6℃, 初期転圧前温度 147.8℃",
+                "初期締固め前温度"
+            ),
+            Some("147.8℃".to_string())
+        );
+        assert_eq!(
+            extract_temperature_for_remarks("舗装日外気温 1℃, 解放温度 33.9℃", "開放温度"),
+            Some("33.9℃".to_string())
+        );
+        assert_eq!(
+            extract_temperature_for_remarks("舗装日外気温 1℃, 解放温度 33.9℃", "舗装日外気温"),
+            Some("1℃".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_temperature_for_remarks_number_only() {
+        assert_eq!(
+            extract_temperature_for_remarks("159.7℃", "到着温度"),
+            Some("159.7℃".to_string())
+        );
+        assert_eq!(
+            extract_temperature_for_remarks("148.1", "初期締固め前温度"),
+            Some("148.1℃".to_string())
+        );
+        assert_eq!(
+            extract_temperature_for_remarks("33.9℃", "開放温度"),
+            Some("33.9℃".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_temperature_for_remarks_no_match() {
+        // 天気アプリスクリーンショット: 備考名なし → None
+        assert_eq!(
+            extract_temperature_for_remarks("今日2/10(火), くもり のち 雨, 80%, 11℃, -1℃", "開放温度"),
+            None
+        );
+        assert_eq!(extract_temperature_for_remarks("", "到着温度"), None);
     }
 
     #[test]

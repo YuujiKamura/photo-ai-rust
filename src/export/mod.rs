@@ -36,12 +36,21 @@ pub fn export_results(
     photos_per_page: u8,
     title: &str,
     pdf_quality: PdfQuality,
+    hide_measurements: bool,
 ) -> Result<()> {
+    // skip=trueの写真を除外
+    let active: Vec<AnalysisResult> = results.iter().filter(|r| !r.skip).cloned().collect();
+    let skipped = results.len() - active.len();
+    if skipped > 0 {
+        println!("  スキップ除外: {}枚", skipped);
+    }
+    let results = &active;
+
     match format {
         ExportFormat::Pdf => {
             let output_path = output_path_for_format(output_dir, title, "pdf");
             println!("- PDFを生成中... (品質: {})", pdf_quality);
-            pdf::generate_pdf(results, &output_path, photos_per_page, title, pdf_quality)?;
+            pdf::generate_pdf(results, &output_path, photos_per_page, title, pdf_quality, hide_measurements)?;
             // 解析結果をPDFに埋め込み
             if let Err(e) = embed_analysis_to_pdf(&output_path, results) {
                 eprintln!("警告: PDF埋め込みに失敗: {}", e);
@@ -65,7 +74,7 @@ pub fn export_results(
             let (pdf_path, excel_path) = output_paths_for_both(output_dir, title);
 
             println!("- PDFを生成中... (品質: {})", pdf_quality);
-            pdf::generate_pdf(results, &pdf_path, photos_per_page, title, pdf_quality)?;
+            pdf::generate_pdf(results, &pdf_path, photos_per_page, title, pdf_quality, hide_measurements)?;
             // 解析結果をPDFに埋め込み
             if let Err(e) = embed_analysis_to_pdf(&pdf_path, results) {
                 eprintln!("警告: PDF埋め込みに失敗: {}", e);

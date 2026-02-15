@@ -84,6 +84,14 @@ pub struct AnalysisResult {
 
     #[serde(default)]
     pub focus_target: String,     // 撮影対象（全景/黒板アップ/温度計アップ等）
+
+    /// スキップフラグ（3枚セット超過分をエクスポートから除外）
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub skip: bool,
+}
+
+fn is_false(v: &bool) -> bool {
+    !v
 }
 
 impl AnalysisResult {

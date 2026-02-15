@@ -18,6 +18,8 @@ pub enum Lane {
     Left,
     /// 右車線: V4～V5, W2（右幅員）
     Right,
+    /// 両車線: V1～V5, W1+W2
+    Both,
 }
 
 impl std::fmt::Display for Lane {
@@ -25,6 +27,7 @@ impl std::fmt::Display for Lane {
         match self {
             Lane::Left => write!(f, "左車線"),
             Lane::Right => write!(f, "右車線"),
+            Lane::Both => write!(f, "両車線"),
         }
     }
 }
@@ -280,6 +283,7 @@ pub fn format_measurements(values: &DekigataValues, lane: Lane) -> String {
     match lane {
         Lane::Left => format_left(values),
         Lane::Right => format_right(values),
+        Lane::Both => format_both(values),
     }
 }
 
@@ -333,6 +337,28 @@ fn format_right(values: &DekigataValues) -> String {
     format!(
         "右車線\u{3000}切削基準高 幅員W2\n設計: {}\n実施: {}\n{}",
         v_design, v_actual, width
+    )
+}
+
+fn format_both(values: &DekigataValues) -> String {
+    let left_design = format_v_values(&values.v_design[0..3], 1);
+    let left_actual = format_v_values(&values.v_actual[0..3], 1);
+    let right_design = format_v_values(&values.v_design[3..5], 4);
+    let right_actual = format_v_values(&values.v_actual[3..5], 4);
+    let w1 = format_width(
+        "幅員W1",
+        values.width_left_design,
+        values.width_left_actual,
+    );
+    let w2 = format_width(
+        "幅員W2",
+        values.width_right_design,
+        values.width_right_actual,
+    );
+
+    format!(
+        "設計: {}\n実施: {}\n設計: {}\n実施: {}\n{}\n{}",
+        left_design, left_actual, right_design, right_actual, w1, w2
     )
 }
 

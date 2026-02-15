@@ -16,6 +16,16 @@ use std::path::{Path, PathBuf};
 // MasterConfig を再エクスポート
 pub use crate::analysis::MasterConfig;
 
+impl From<AiProvider> for ReviewBackend {
+    fn from(provider: AiProvider) -> Self {
+        match provider {
+            AiProvider::Claude => ReviewBackend::Claude,
+            AiProvider::Codex => ReviewBackend::Codex,
+            AiProvider::Gemini => ReviewBackend::Gemini,
+        }
+    }
+}
+
 /// 共通CLI引数
 #[derive(Clone)]
 pub struct CommonCliArgs {
@@ -56,6 +66,7 @@ pub struct RunCommandArgs {
     pub recursive: bool,
     pub include_all: bool,
     pub line_types: Option<Vec<LineTypeEntry>>,
+    pub hide_measurements: bool,
     pub cli_args: CommonCliArgs,
 }
 
@@ -69,6 +80,7 @@ pub struct ExportCommandArgs {
     pub pdf_quality: PdfQuality,
     pub preset: Option<String>,
     pub alias: Option<PathBuf>,
+    pub hide_measurements: bool,
 }
 
 /// Reviewコマンドの引数
@@ -272,7 +284,7 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
         args.input.parent().unwrap_or(Path::new(".")).to_path_buf()
     });
 
-    export::export_results(&results, &args.format, &output_dir, args.photos_per_page, &title, args.pdf_quality)?;
+    export::export_results(&results, &args.format, &output_dir, args.photos_per_page, &title, args.pdf_quality, args.hide_measurements)?;
 
     println!("\n✅ エクスポート完了");
     Ok(())
@@ -350,7 +362,7 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
     // 4. Export
     println!("[4/4] エクスポート中...");
     let title = derive_export_title(&results, &args.folder);
-    export::export_results(&results, &args.format, &output_paths.export_path, 3, &title, args.pdf_quality)?;
+    export::export_results(&results, &args.format, &output_paths.export_path, 3, &title, args.pdf_quality, args.hide_measurements)?;
 
     println!("\n✅ 完了");
     Ok(())
@@ -360,12 +372,7 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
 pub fn handle_review_command(args: ReviewCommandArgs) -> Result<()> {
     println!("🔍 photo-ai-rust - コードレビュー\n");
 
-    // AIプロバイダからレビューバックエンドへ変換
-    let backend = match args.cli_args.provider {
-        AiProvider::Claude => ReviewBackend::Claude,
-        AiProvider::Codex => ReviewBackend::Codex,
-        AiProvider::Gemini => ReviewBackend::Gemini,
-    };
+    let backend: ReviewBackend = args.cli_args.provider.into();
 
     // ファイル指定の場合は親ディレクトリでReviewerを初期化
     let (base_dir, target_file) = if args.path.is_file() {
@@ -472,26 +479,13 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
     }
 
     // 区画線工の線種判定（差分実行）
-    let mut line_type_changes = 0;
-    if let Some(ref lt) = args.line_types {
+    let line_type_changes = if let Some(ref lt) = args.line_types {
         if !lt.is_empty() {
-            let line_type_names: Vec<&str> = lt.iter().map(|e| e.name.as_str()).collect();
-            for r in &mut results {
-                if r.work_type == "区画線工" && !r.file_path.is_empty() {
-                    // スキップ: stationが既に線種リストのnameに含まれる場合
-                    if !r.station.is_empty() && line_type_names.contains(&r.station.as_str()) {
-                        continue;
-                    }
-                    if let Some(detected) = crate::line_type_detector::detect_line_type(&r.file_path, lt) {
-                        println!("  線種判定: {} → {}", r.file_name, detected);
-                        r.station = detected;
-                        line_type_changes += 1;
-                    }
-                }
-            }
-            println!("線種判定: {}件更新", line_type_changes);
-        }
-    }
+            let changes = crate::line_type_detector::apply_line_type_detection(&mut results, lt);
+            println!("線種判定: {}件更新", changes);
+            changes
+        } else { 0 }
+    } else { 0 };
 
     // ドライランでなければ適用
     if !args.dry_run {
@@ -500,8 +494,23 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
             normalizer::apply_corrections(&mut results, &result.corrections);
         }
 
+        // 温度管理フォールバック再分類
+        let reclassified = normalizer::reclassify_temperature_fallback(&mut results);
+        if reclassified > 0 {
+            println!("温度管理再分類: {}件", reclassified);
+        }
+
         // 日付ソートは常に適用
         results.sort_by(|a, b| a.date.cmp(&b.date).then(a.file_name.cmp(&b.file_name)));
+
+        // 3枚セット超過分をスキップ
+        let deduped = normalizer::dedup_temperature_groups(&mut results);
+        if deduped > 0 {
+            println!("超過写真スキップ: {}件", deduped);
+        }
+
+        // ダンプ台数を測点に付加
+        normalizer::append_dump_number_to_station(&mut results);
 
         let output_path = args.output.unwrap_or(args.input);
         let json = serde_json::to_string_pretty(&results)?;
@@ -595,7 +604,7 @@ impl Commands {
                 }).await?;
             }
 
-            Commands::Export { input, format, output, photos_per_page, title, pdf_quality, preset, alias } => {
+            Commands::Export { input, format, output, photos_per_page, title, pdf_quality, preset, alias, hide_measurements } => {
                 handle_export_command(ExportCommandArgs {
                     input,
                     format,
@@ -605,10 +614,11 @@ impl Commands {
                     pdf_quality,
                     preset,
                     alias,
+                    hide_measurements,
                 })?;
             }
 
-            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all, line_types } => {
+            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all, line_types, hide_measurements } => {
                 let line_types = load_line_types(line_types.as_ref())?;
                 handle_run_command(RunCommandArgs {
                     folder,
@@ -625,6 +635,7 @@ impl Commands {
                     recursive,
                     include_all,
                     line_types,
+                    hide_measurements,
                     cli_args: cli_args.clone(),
                 }).await?;
             }

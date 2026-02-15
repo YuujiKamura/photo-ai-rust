@@ -1,10 +1,23 @@
-//! 工種マスタ照合ロジック
+//! マスタ照合モジュール
 //!
-//! detected_text（黒板OCR）から抽出したキーワードを
-//! 工種階層マスタの検索パターン・備考と照合する。
+//! ## 照合アルゴリズム
+//! 1. OCRテキストからキーワード抽出（工種/種別ヒント含む）
+//! 2. Phase 1: マスタの検索パターン(正規表現)でマッチ → スコア1000
+//! 3. Phase 2: マスタの備考とbigramトークン重複でスコアリング
+//!    - focus_target boost: taggerのroleとの一致度 × 3倍
+//! 4. 最高スコアの候補を選定
 
 use photo_ai_common::HierarchyMaster;
+use photo_ai_common::hierarchy::HierarchyRow;
+#[allow(unused_imports)]
+use crate::domain::*;
 use crate::ocr_parser::extract_kv_from_text;
+
+/// スコアリング定数
+const EXACT_MATCH_SCORE: usize = 100;
+const PARTIAL_MATCH_SCORE: usize = 50;
+const FOCUS_TARGET_BOOST_MULTIPLIER: usize = 3;
+const SEARCH_PATTERN_PRIORITY_SCORE: usize = 1000;
 
 /// 全景を先頭にするためのロール優先度
 pub(crate) fn role_priority(role: &str) -> u8 {
@@ -24,11 +37,11 @@ fn token_overlap_score(a: &str, b: &str) -> usize {
     }
     // 完全一致は最高スコア
     if a == b {
-        return 100;
+        return EXACT_MATCH_SCORE;
     }
     // 部分文字列一致
     if b.contains(a) || a.contains(b) {
-        return 50;
+        return PARTIAL_MATCH_SCORE;
     }
     // 2文字bigramで重複カウント
     let a_chars: Vec<char> = a.chars().collect();
@@ -45,17 +58,17 @@ fn token_overlap_score(a: &str, b: &str) -> usize {
     a_bigrams.intersection(&b_bigrams).count()
 }
 
-/// フォルダ内の全detected_textから工種階層を推定し、マスタ照合する
+/// OCRテキストからマッチ用キーワードを抽出する
 ///
-/// `focus_target` が指定された場合、Phase 2のbigramスコアにboostを加算し、
-/// taggerのrole（写真の視覚的内容）を考慮した照合を行う。
-pub(crate) fn match_master_from_detected_texts(
+/// 返り値: (keywords, work_type_hint, variety_hint)
+/// - keywords: 照合に使うキーワード群
+/// - work_type_hint: OCRから抽出した工種ヒント
+/// - variety_hint: OCRから抽出した種別ヒント
+fn extract_match_keywords(
     master: &HierarchyMaster,
     detected_texts: &[&str],
     folder_name: &str,
-    focus_target: Option<&str>,
-) -> Option<photo_ai_common::hierarchy::HierarchyRow> {
-    // 全detected_textからキー:値を集約
+) -> (Vec<String>, Option<String>, Option<String>) {
     let mut work_type: Option<String> = None;
     let mut variety_hint: Option<String> = None;
     let mut keywords: Vec<String> = Vec::new();
@@ -110,47 +123,81 @@ pub(crate) fn match_master_from_detected_texts(
         }
     }
 
+    (keywords, work_type, variety_hint)
+}
+
+/// マスタ候補にスコアを付ける
+///
+/// Phase 1: 検索パターン列でマッチ → SEARCH_PATTERN_PRIORITY_SCORE
+/// Phase 2: 備考とbigramトークン重複 + focus_target boost
+fn score_candidates(
+    master: &HierarchyMaster,
+    keywords: &[String],
+    work_type_hint: Option<&str>,
+    variety_hint: Option<&str>,
+    focus_target: Option<&str>,
+) -> Vec<(HierarchyRow, usize)> {
     // 工種・種別でマスタをフィルタ
     let candidates: Vec<_> = master.rows().iter()
         .filter(|r| {
             // work_type フィルタ
-            if let Some(wt) = &work_type {
-                if r.work_type != *wt && !r.work_type.is_empty() {
+            if let Some(wt) = work_type_hint {
+                if r.work_type != wt && !r.work_type.is_empty() {
                     return false;
                 }
             }
             // variety_hint フィルタ: varietyまたはsubphaseに一致する行を優先
-            if let Some(vh) = &variety_hint {
-                r.variety == *vh || r.subphase == *vh || r.variety.contains(vh.as_str()) || vh.contains(&r.variety)
+            if let Some(vh) = variety_hint {
+                r.variety == vh || r.subphase == vh || r.variety.contains(vh) || vh.contains(&r.variety)
             } else {
                 true
             }
         })
         .collect();
 
-    // 1. 検索パターン列でマッチ
-    let mut best: Option<&photo_ai_common::hierarchy::HierarchyRow> = None;
-    let mut best_score: usize = 0;
+    let mut scored: Vec<(HierarchyRow, usize)> = Vec::new();
 
+    // Phase 1: 検索パターン列でマッチ
+    let mut phase1_matches: Vec<(&HierarchyRow, usize)> = Vec::new();
     for row in &candidates {
         if !row.search_patterns.is_empty() {
             let patterns: Vec<&str> = row.search_patterns.split('|').collect();
             let score = keywords.iter()
                 .filter(|kw| patterns.iter().any(|p| kw.contains(p) || p.contains(kw.as_str())))
                 .count();
-            if score > best_score {
-                best_score = score;
-                best = Some(row);
+            if score > 0 {
+                phase1_matches.push((row, score));
             }
         }
     }
 
-    if best.is_some() {
-        return best.cloned();
+    if !phase1_matches.is_empty() {
+        let max_score = phase1_matches.iter().map(|(_, s)| *s).max().unwrap();
+        let best_matches: Vec<_> = phase1_matches.into_iter()
+            .filter(|(_, s)| *s == max_score)
+            .collect();
+
+        if best_matches.len() == 1 {
+            scored.push((best_matches[0].0.clone(), SEARCH_PATTERN_PRIORITY_SCORE));
+            return scored;
+        }
+
+        // 同スコアの複数候補 → focus_targetでタイブレイク
+        let ft = focus_target.unwrap_or("");
+        if !ft.is_empty() {
+            let best = best_matches.iter()
+                .max_by_key(|(row, _)| token_overlap_score(ft, &row.remarks))
+                .unwrap();
+            scored.push((best.0.clone(), SEARCH_PATTERN_PRIORITY_SCORE));
+            return scored;
+        }
+
+        // focus_targetなし → 最初の候補
+        scored.push((best_matches[0].0.clone(), SEARCH_PATTERN_PRIORITY_SCORE));
+        return scored;
     }
 
-    // 2. remarks列にキーワード部分一致（トークンベース：語順違いに対応）
-    // focus_targetが指定されている場合、remarksとのoverlapをboostとして加算
+    // Phase 2: remarks列にキーワード部分一致（トークンベース：語順違いに対応）
     let ft = focus_target.unwrap_or("");
     for row in &candidates {
         if row.remarks.is_empty() { continue; }
@@ -158,31 +205,59 @@ pub(crate) fn match_master_from_detected_texts(
             .map(|kw| token_overlap_score(kw, &row.remarks))
             .sum();
         let ft_boost = if !ft.is_empty() {
-            token_overlap_score(ft, &row.remarks) * 3
+            token_overlap_score(ft, &row.remarks) * FOCUS_TARGET_BOOST_MULTIPLIER
         } else {
             0
         };
         let score = kw_score + ft_boost;
-        if score > best_score {
-            best_score = score;
-            best = Some(row);
+        if score > 0 {
+            scored.push(((*row).clone(), score));
         }
     }
 
-    best.cloned()
+    scored
 }
+
+/// フォルダ内の全detected_textから工種階層を推定し、マスタ照合する
+///
+/// `focus_target` が指定された場合、Phase 2のbigramスコアにboostを加算し、
+/// taggerのrole（写真の視覚的内容）を考慮した照合を行う。
+pub(crate) fn match_master_from_detected_texts(
+    master: &HierarchyMaster,
+    detected_texts: &[&str],
+    folder_name: &str,
+    focus_target: Option<&str>,
+) -> Option<HierarchyRow> {
+    let (keywords, work_type_hint, variety_hint) = extract_match_keywords(master, detected_texts, folder_name);
+
+    let scored = score_candidates(
+        master,
+        &keywords,
+        work_type_hint.as_deref(),
+        variety_hint.as_deref(),
+        focus_target,
+    );
+
+    scored.into_iter()
+        .max_by_key(|(_, score)| *score)
+        .map(|(row, _)| row)
+}
+
+/// 安全管理写真の機械種別→備考マッピング
+/// photo-taggerのmachine_type(グループ名)から安全管理系の備考を直接判定する
+const SAFETY_MAPPINGS: &[(&str, &str)] = &[
+    // machine_type keyword → remarks
+    ("朝礼", "安全朝礼実施状況"),
+    ("安全ミーティング", "安全朝礼実施状況"),
+    ("KY", "KY活動状況"),
+    ("新規入場者教育", "新規入場者教育状況"),
+];
 
 /// taggerのmachine_typeから安全管理系の写真を判定し、remarksを返す
 ///
 /// 朝礼・KY活動など黒板のない写真はdetected_textが空のためマスタ照合できない。
 /// taggerのグループ名（machine_type）から直接判定する。
 pub(crate) fn safety_remarks_from_machine_type(machine_type: &str) -> Option<String> {
-    const SAFETY_MAPPINGS: &[(&str, &str)] = &[
-        ("朝礼", "安全朝礼実施状況"),
-        ("安全ミーティング", "安全朝礼実施状況"),
-        ("KY", "KY活動状況"),
-        ("新規入場者教育", "新規入場者教育状況"),
-    ];
     SAFETY_MAPPINGS.iter()
         .find(|(pattern, _)| machine_type.contains(pattern))
         .map(|(_, remarks)| remarks.to_string())
@@ -252,6 +327,34 @@ mod tests {
         // focusTarget「路面切削状況」あり: boostにより「路面切削状況」が勝つ
         let result = match_master_from_detected_texts(&master, &texts, "", Some("路面切削状況"));
         assert_eq!(result.as_ref().unwrap().remarks, "路面切削状況");
+    }
+
+    #[test]
+    fn test_phase1_tiebreak_with_focus_target() {
+        // 黒板に複数温度が併記されている場合、検索パターンが全てマッチするが
+        // focus_targetで正しい温度を選ぶ
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,品質管理写真,舗装工,舗装打換え工,表層工,到着温度,到着温度|出荷温度|合材到着
+直接工事費,品質管理写真,舗装工,舗装打換え工,表層工,敷均し温度,敷均し温度|敷きならし|舗設温度
+直接工事費,品質管理写真,舗装工,舗装打換え工,表層工,初期締固め前温度,初期締固|初転圧前|初期転圧温度|初期転圧前
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+        // 黒板に全温度が併記: 「到着温度 159.7, 敷均し温度 154.8, 初期転圧前温度 148.1」
+        let text = "表層工\n到着温度 159.7\n敷均し温度 154.8\n初期転圧前温度 148.1";
+        let texts = vec![text];
+
+        // ft=敷均し温度 → 敷均し温度が勝つ
+        let result = match_master_from_detected_texts(&master, &texts, "", Some("敷均し温度"));
+        assert_eq!(result.as_ref().unwrap().remarks, "敷均し温度");
+
+        // ft=初期転圧前温度 → 初期締固め前温度が勝つ（bigram: 初期, 前温, 温度 が共通）
+        let result = match_master_from_detected_texts(&master, &texts, "", Some("初期転圧前温度"));
+        assert_eq!(result.as_ref().unwrap().remarks, "初期締固め前温度");
+
+        // ft=到着温度 → 到着温度が勝つ
+        let result = match_master_from_detected_texts(&master, &texts, "", Some("到着温度"));
+        assert_eq!(result.as_ref().unwrap().remarks, "到着温度");
     }
 
     #[test]
