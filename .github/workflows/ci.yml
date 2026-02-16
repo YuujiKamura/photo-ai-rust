@@ -34,6 +34,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Checkout sibling repos
+        shell: bash
         run: |
           for repo in pdf-analysis-embed ai-code-review photo-tagger cli-ai-analyzer folder-watcher; do
             git clone --depth 1 https://github.com/YuujiKamura/$repo.git ../$repo
@@ -86,6 +87,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Checkout sibling repos
+        shell: bash
         run: |
           for repo in pdf-analysis-embed ai-code-review photo-tagger cli-ai-analyzer folder-watcher; do
             git clone --depth 1 https://github.com/YuujiKamura/$repo.git ../$repo
