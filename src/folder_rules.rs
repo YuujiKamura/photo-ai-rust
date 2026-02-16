@@ -33,7 +33,7 @@ pub fn extract_dekigata_station(text: &str) -> Option<String> {
     None
 }
 
-pub fn apply_folder_specific_corrections(results: &mut Vec<AnalysisResult>, folder_name: &str) {
+pub fn apply_folder_specific_corrections(results: &mut [AnalysisResult], folder_name: &str) {
     if folder_name.contains("Photomanager")
         && folder_name.contains("20260211")
         && folder_name.contains("出荷指示確認")

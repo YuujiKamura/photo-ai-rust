@@ -147,7 +147,7 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
     let mut master = load_master_from_config(config.master_config)?;
     if let Some(ref wt) = config.master_config.effective_work_type {
         let before = master.rows().len();
-        master = master.filter_by_work_types(&[wt.clone()]);
+        master = master.filter_by_work_types(std::slice::from_ref(wt));
         println!("  マスタフィルタ: 工種={} ({} → {}件)", wt, before, master.rows().len());
     }
     if let Some(pt) = config.photo_type {
@@ -239,7 +239,7 @@ pub fn scan_images(
 /// * `station` - 適用する測点（Noneの場合はスキップ）
 /// * `verbose` - 詳細出力するか
 pub fn normalize_results_with_station(
-    results: &mut Vec<analyzer::AnalysisResult>,
+    results: &mut [analyzer::AnalysisResult],
     station: Option<&str>,
     verbose: bool,
 ) {
@@ -451,7 +451,7 @@ fn convert_groups_to_results(
 /// - 路面切削工が存在する場合、舗装打換え工/表層工 → 切削オーバーレイ工/表層工
 /// - 区画線工の線種判定（line_typesが指定されている場合のみ）
 fn apply_domain_corrections(
-    results: &mut Vec<analyzer::AnalysisResult>,
+    results: &mut [analyzer::AnalysisResult],
     line_types: Option<&[LineTypeEntry]>,
 ) {
     // 路面切削工が存在する場合、舗装打換え工/表層工 → 切削オーバーレイ工/表層工
@@ -644,7 +644,7 @@ mod tests {
 }
 
 fn apply_folder_specific_corrections(
-    results: &mut Vec<analyzer::AnalysisResult>,
+    results: &mut [analyzer::AnalysisResult],
     folder_name: &str,
 ) {
     crate::folder_rules::apply_folder_specific_corrections(results, folder_name);
@@ -731,7 +731,7 @@ fn classify_temperature_remarks(
 }
 
 fn extract_month_day_from_text(text: &str) -> Option<String> {
-    let compact = text.replace(' ', "").replace('　', "");
+    let compact = text.replace([' ', '　'], "");
     let month_pos = compact.find('月')?;
     let month_digits_rev: String = compact[..month_pos]
         .chars()

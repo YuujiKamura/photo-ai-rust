@@ -459,6 +459,7 @@ struct TextFitConfig {
     max_half_width: usize,
     base_font_size: f32,
     min_font_size: f32,
+    #[allow(dead_code)]
     max_lines: usize,
 }
 
@@ -511,7 +512,7 @@ fn split_at_half_width(text: &str, max_hw: usize) -> (&str, &str) {
         hw += if c.is_ascii() { 1 } else { 2 };
         if hw > max_hw {
             if let Some(sp) = last_word_start {
-                let line2 = text[sp..].trim_start_matches(|c: char| c == ' ' || c == '/' || c == '\u{3000}');
+                let line2 = text[sp..].trim_start_matches([' ', '/', '\u{3000}']);
                 return (text[..sp].trim_end(), line2);
             }
             return (&text[..i], &text[i..]);
