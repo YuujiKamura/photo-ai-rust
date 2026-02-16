@@ -103,13 +103,20 @@ pub(crate) fn extract_kv_from_text(text: &str) -> Vec<(String, String)> {
             }
         }
         // 既知キーでスペース分割を試みる（"場所 No. 4 L" 等）
+        // キー直後が「・」等の接続文字の場合は複合ラベル（"工種・種別"）なのでスキップ
         let mut matched = false;
         for &key in KNOWN_KEYS {
             if line.starts_with(key) && line.len() > key.len() {
-                let rest = line[key.len()..].trim_start();
-                result.push((key.to_string(), rest.to_string()));
-                matched = true;
-                break;
+                let after = line[key.len()..].chars().next();
+                match after {
+                    Some(' ') | Some('\u{3000}') => {
+                        let rest = line[key.len()..].trim_start();
+                        result.push((key.to_string(), rest.to_string()));
+                        matched = true;
+                        break;
+                    }
+                    _ => {} // "工種・種別" 等 → マッチしない
+                }
             }
         }
         if !matched {
@@ -213,5 +220,14 @@ mod tests {
         assert_eq!(kvs[1], ("工種".to_string(), "舗装工".to_string()));
         assert_eq!(kvs[2], ("".to_string(), "表層工".to_string()));
         assert_eq!(kvs[3], ("".to_string(), "舗設状況".to_string()));
+    }
+
+    #[test]
+    fn test_extract_kv_compound_label_not_matched() {
+        // "工種・種別 舗装工" は複合ラベルなのでキーマッチしない → キーワードとして返す
+        let text = "工種・種別 舗装工, 細別・規格 再生密粒度アスコン20mm, 解放温度 36.1 ℃";
+        let kvs = extract_kv_from_text(text);
+        // 全てキーなし行
+        assert!(kvs.iter().all(|(k, _)| k.is_empty()), "compound labels should not match KNOWN_KEYS: {:?}", kvs);
     }
 }

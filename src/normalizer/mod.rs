@@ -408,37 +408,6 @@ pub fn append_dump_number_to_station(results: &mut [AnalysisResult]) {
     }
 }
 
-/// "温度管理"フォールバックを正しいremarksに再分類する
-///
-/// master_matcherが照合に失敗して"温度管理"になった写真を、
-/// photo-taggerのfocusTargetから正しい温度種別に再分類する。
-pub fn reclassify_temperature_fallback(results: &mut [AnalysisResult]) -> usize {
-    let mut count = 0;
-    for r in results.iter_mut() {
-        if r.remarks != "温度管理" {
-            continue;
-        }
-        // focusTargetから温度種別を判定
-        let ft = &r.focus_target;
-        if ft.is_empty() {
-            continue;
-        }
-        if measurements::is_temperature_photo(ft) {
-            let new_remarks = if ft.ends_with("測定") {
-                ft.clone()
-            } else {
-                format!("{}測定", ft)
-            };
-            eprintln!(
-                "  再分類: {} [{}] → {}",
-                r.file_name, r.remarks, new_remarks
-            );
-            r.remarks = new_remarks;
-            count += 1;
-        }
-    }
-    count
-}
 
 /// 3枚セットを超える温度管理写真にskipフラグを設定する
 ///

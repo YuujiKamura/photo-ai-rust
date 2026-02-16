@@ -195,12 +195,17 @@ fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<mas
     }
 
     // デフォルトマスタ（全工種 → マージ読み込み）
-    let default_path = PathBuf::from("master").join("construction_hierarchy.csv");
-    if default_path.exists() {
-        let all_paths = master_selector::collect_all_master_paths();
-        Some(master_selector::MasterSelection { path: default_path, work_type: None, all_paths })
-    } else {
-        None
+    let all_paths = master_selector::collect_all_master_paths();
+    match all_paths {
+        Some(paths) => {
+            let first = paths[0].clone();
+            Some(master_selector::MasterSelection {
+                path: first,
+                work_type: None,
+                all_paths: Some(paths),
+            })
+        }
+        None => None,
     }
 }
 
@@ -448,12 +453,6 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
         apply_station(&mut results, st);
     }
 
-    // 温度管理フォールバック再分類（normalize前に実行：remarks修正がグループ化に影響するため）
-    let reclassified = normalizer::reclassify_temperature_fallback(&mut results);
-    if reclassified > 0 {
-        println!("温度管理再分類: {}件", reclassified);
-    }
-
     // 正規化オプション
     let options = NormalizationOptions {
         dekigata_lane: args.lane,
@@ -573,12 +572,79 @@ fn load_line_types(path: Option<&PathBuf>) -> Result<Option<Vec<LineTypeEntry>>>
     Ok(Some(config.line_types))
 }
 
-/// フォルダ名からエクスポートタイトルを生成
-fn derive_export_title(_results: &[analyzer::AnalysisResult], folder: &Path) -> String {
-    folder.file_name()
+/// 写真区分名を略称に変換（"安全管理写真" → "安全管理"）
+fn shorten_photo_category(cat: &str) -> String {
+    match cat {
+        "安全管理写真" => "安全管理".to_string(),
+        "施工状況写真" => "施工状況".to_string(),
+        "品質管理写真" => "品質管理".to_string(),
+        "出来形管理写真" => "出来形管理".to_string(),
+        "使用材料写真" => "使用材料".to_string(),
+        "着手前及び完成写真" => "着手前完成".to_string(),
+        _ => cat.trim_end_matches("写真").to_string(),
+    }
+}
+
+/// 解析結果から最頻出の写真区分を取得
+fn most_common_category(results: &[analyzer::AnalysisResult]) -> String {
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for r in results {
+        if !r.photo_category.is_empty() {
+            *counts.entry(r.photo_category.as_str()).or_default() += 1;
+        }
+    }
+    counts.into_iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(k, _)| k.to_string())
+        .unwrap_or_default()
+}
+
+/// 解析結果の日付からMMDD形式を抽出（"2026-02-12 ..." → "0212"）
+fn extract_mmdd_from_results(results: &[analyzer::AnalysisResult]) -> Option<String> {
+    results.iter()
+        .find(|r| r.date.len() >= 10)
+        .map(|r| {
+            let month = &r.date[5..7];
+            let day = &r.date[8..10];
+            format!("{}{}", month, day)
+        })
+}
+
+/// 解析結果とフォルダ名から統一命名規則でタイトルを生成
+///
+/// 命名規則: {写真区分略称}_{活動名}_{MMDD}
+/// 例: 出来形管理_切削出来形立会_0212, 施工状況_0209
+fn derive_export_title(results: &[analyzer::AnalysisResult], folder: &Path) -> String {
+    let folder_name = folder.file_name()
         .and_then(|n| n.to_str())
-        .map(|n| format!("写真帳_{}", n))
-        .unwrap_or_else(|| "工事写真帳".to_string())
+        .unwrap_or("写真");
+    // スペースを除去
+    let folder_clean = folder_name.replace(' ', "");
+
+    let category = most_common_category(results);
+    if category.is_empty() {
+        // 写真区分が不明: フォールバック
+        return format!("写真帳_{}", folder_clean);
+    }
+    let cat_short = shorten_photo_category(&category);
+    let mmdd = extract_mmdd_from_results(results);
+
+    // フォルダ名が写真区分と同じor含まれる場合は活動名を省略
+    let activity = if folder_clean == cat_short
+        || folder_clean.contains(&cat_short)
+        || cat_short.contains(&folder_clean)
+    {
+        None
+    } else {
+        Some(folder_clean.as_str())
+    };
+
+    match (activity, mmdd.as_deref()) {
+        (Some(act), Some(d)) => format!("{}_{}_{}", cat_short, act, d),
+        (Some(act), None) => format!("{}_{}", cat_short, act),
+        (None, Some(d)) => format!("{}_{}", cat_short, d),
+        (None, None) => cat_short,
+    }
 }
 
 impl Commands {

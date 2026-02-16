@@ -36,7 +36,7 @@ impl From<CsvRow> for HierarchyRow {
             work_type: row.work_type,
             variety: row.variety,
             subphase: row.subphase,
-            remarks: row.remarks,
+            remarks: row.remarks.replace("\\n", "\n"),
             search_patterns: row.search_patterns,
         }
     }
