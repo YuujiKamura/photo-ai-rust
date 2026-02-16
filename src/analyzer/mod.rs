@@ -130,6 +130,7 @@ pub async fn analyze_images_with_cache(
 ///
 /// 工種が既知の場合、1回のAI呼び出しで解析
 /// 2段階解析より高速・低コスト
+#[allow(clippy::too_many_arguments)]
 pub async fn analyze_images_single_step(
     images: &[ImageInfo],
     master: &photo_ai_common::HierarchyMaster,

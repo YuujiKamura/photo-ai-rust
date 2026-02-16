@@ -169,10 +169,7 @@ pub fn normalize_results(
         );
         for correction in dekigata_corrections {
             if !corrections.iter().any(|c| c.file_name == correction.file_name && c.field == correction.field) {
-                match correction.field {
-                    CorrectionField::Measurements => stats.measurement_corrections += 1,
-                    _ => {}
-                }
+                if correction.field == CorrectionField::Measurements { stats.measurement_corrections += 1 }
                 stats.corrected_records += 1;
                 corrections.push(correction);
             }
@@ -432,12 +429,12 @@ pub fn dedup_temperature_groups(results: &mut [AnalysisResult]) -> usize {
 
         // 3枚超過分をスキップ
         if j - i > 3 {
-            for k in (i + 3)..j {
+            for (idx, result) in results[(i + 3)..j].iter_mut().enumerate() {
                 eprintln!(
                     "  スキップ: {} [{}] ({}枚中{}枚目)",
-                    results[k].file_name, remarks, j - i, k - i + 1
+                    result.file_name, remarks, j - i, idx + 4
                 );
-                results[k].skip = true;
+                result.skip = true;
                 count += 1;
             }
         }
@@ -501,7 +498,7 @@ fn unify_dekigata_measurements(
     }
 
     // 各測点グループで統一
-    for (_station, group) in &station_groups {
+    for group in station_groups.values() {
         if let Some(measurements) =
             dekigata::unify_dekigata_set(results, group, lane_override)
         {
