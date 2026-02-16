@@ -54,11 +54,10 @@ fn extract_variety_from_folder(master: &HierarchyMaster, folder_name: &str) -> O
         } else {
             0
         };
-        if overlap >= 2 {
-            if best.is_none() || overlap > best.unwrap().1 {
+        if overlap >= 2
+            && (best.is_none() || overlap > best.unwrap().1) {
                 best = Some((v, overlap));
             }
-        }
     }
     best.map(|(v, _)| v.to_string())
 }
@@ -120,7 +119,7 @@ fn extract_match_keywords(
     for text in detected_texts {
         for (key, value) in extract_kv_from_text(text) {
             match key.as_str() {
-                "工種" => { work_type = Some(normalize_work_type(&value)); }
+                "工種" => { if !value.is_empty() { work_type = Some(normalize_work_type(&value)); } }
                 "工事名" | "車番" | "車両番号" => {} // 照合に不要
                 "場所" | "測点" => {} // 測点は別管理
                 "" => {
@@ -482,5 +481,31 @@ mod tests {
         let result_empty = match_master_from_detected_texts(&master, &texts, "", Some(""));
         assert_eq!(result_none.as_ref().unwrap().remarks, result_empty.as_ref().unwrap().remarks);
         assert_eq!(result_none.unwrap().remarks, "舗設状況");
+    }
+
+    #[test]
+    fn test_empty_work_type_in_ocr_does_not_filter_out_all_rows() {
+        // スマホ写真の黒板OCR: "工種:" が空 → work_type_hint=Noneとして扱う
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,切削完了,切削完了
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,端部舗装版撤去状況,端部舗装版撤去
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,不純物の除去確認,不純物.*除去|除去確認
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+
+        // 「工種:」空のOCR
+        let text = "工事名:テスト工事, 工種:, 測点:No.12, 切削完了";
+        let texts = vec![text];
+        let result = match_master_from_detected_texts(&master, &texts, "施工状況", Some("切削完了"));
+        assert!(result.is_some(), "should match 切削完了 despite empty 工種:");
+        assert_eq!(result.unwrap().remarks, "切削完了");
+
+        // 端部舗装版撤去
+        let text2 = "工事名:テスト工事, 工種:, 測点:No.12, 端部舗装版撤去状況";
+        let texts2 = vec![text2];
+        let result2 = match_master_from_detected_texts(&master, &texts2, "施工状況", Some("端部舗装版撤去状況"));
+        assert!(result2.is_some(), "should match 端部舗装版撤去状況");
+        assert_eq!(result2.unwrap().remarks, "端部舗装版撤去状況");
     }
 }
