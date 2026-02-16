@@ -276,6 +276,20 @@ pub(crate) fn safety_remarks_from_machine_type(machine_type: &str) -> Option<Str
         .map(|(_, remarks)| remarks.to_string())
 }
 
+/// detected_textから安全管理系の写真を判定し、remarksを返す
+///
+/// machine_typeが機械名（アスファルトフィニッシャー等）の場合、
+/// safety_remarks_from_machine_typeでは判定できない。
+/// 黒板OCRに「重機始業前点検」等が含まれていれば安全管理と判定する。
+pub(crate) fn safety_remarks_from_detected_text(detected_text: &str) -> Option<String> {
+    if detected_text.is_empty() {
+        return None;
+    }
+    SAFETY_MAPPINGS.iter()
+        .find(|(pattern, _)| detected_text.contains(pattern))
+        .map(|(_, remarks)| remarks.to_string())
+}
+
 /// "2026-02-09 21:23:53" → "2月9日"
 pub(crate) fn date_to_month_day(date_str: &str) -> String {
     let parts: Vec<&str> = date_str.split(&['-', ' '][..]).collect();
@@ -318,6 +332,26 @@ mod tests {
         assert_eq!(safety_remarks_from_machine_type("路面切削機"), None);
         assert_eq!(safety_remarks_from_machine_type("ダンプトラック"), None);
         assert_eq!(safety_remarks_from_machine_type(""), None);
+    }
+
+    #[test]
+    fn test_safety_remarks_from_detected_text() {
+        // 黒板に「重機始業前点検」と書いてある場合
+        assert_eq!(
+            safety_remarks_from_detected_text("工事名 テスト工事, 測点 2月13日, 重機始業前点検"),
+            Some("重機始業前点検".to_string())
+        );
+        // 黒板に「安全パトロール」と書いてある場合
+        assert_eq!(
+            safety_remarks_from_detected_text("安全パトロール 実施状況"),
+            Some("安全パトロール実施状況".to_string())
+        );
+        // 施工状況の黒板はNone
+        assert_eq!(
+            safety_remarks_from_detected_text("工種:表層工, 路面切削状況"),
+            None
+        );
+        assert_eq!(safety_remarks_from_detected_text(""), None);
     }
 
     #[test]

@@ -10,7 +10,7 @@ use crate::normalizer::{self, NormalizationOptions};
 use crate::ocr_parser::{extract_kv_from_text, normalize_station};
 use crate::master_matcher::{
     date_to_month_day, match_master_from_detected_texts, role_priority,
-    safety_remarks_from_machine_type,
+    safety_remarks_from_machine_type, safety_remarks_from_detected_text,
 };
 use crate::line_type_detector::detect_line_type;
 use photo_ai_common::{HierarchyMaster, LineTypeEntry};
@@ -283,8 +283,9 @@ fn convert_groups_to_results(
         };
         result.station = normalize_station(&photo_station);
 
-        // 安全管理系: taggerのmachine_typeから直接判定（黒板なし写真に対応）
-        let safety_remarks = safety_remarks_from_machine_type(&rec.machine_type);
+        // 安全管理系: taggerのmachine_type → detected_text の順で判定
+        let safety_remarks = safety_remarks_from_machine_type(&rec.machine_type)
+            .or_else(|| safety_remarks_from_detected_text(&rec.detected_text));
         if let Some(remarks) = safety_remarks {
             result.photo_category = PHOTO_CAT_SAFETY.to_string();
             result.remarks = remarks;
