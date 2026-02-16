@@ -278,16 +278,6 @@ pub(crate) fn match_master_from_detected_texts(
     folder_name: &str,
     focus_target: Option<&str>,
 ) -> Option<HierarchyRow> {
-    // focusTarget（Gemini判定）でマスタのremarks列を直引き
-    if let Some(ft) = focus_target {
-        if !ft.is_empty() {
-            let direct = master.rows().iter().find(|r| r.remarks == ft);
-            if let Some(row) = direct {
-                return Some(row.clone());
-            }
-        }
-    }
-
     let (keywords, work_type_hint, variety_hint) = extract_match_keywords(master, detected_texts, folder_name);
 
     let scored = score_candidates(
@@ -301,76 +291,6 @@ pub(crate) fn match_master_from_detected_texts(
     scored.into_iter()
         .max_by_key(|(_, score)| *score)
         .map(|(row, _)| row)
-}
-
-/// 写真カテゴリマッピング
-/// photo-taggerのmachine_type(グループ名)やdetected_textから写真区分・備考を直接判定する
-/// (pattern, photoCategory, remarks, auto_date_station)
-/// auto_date_station: trueなら撮影日から「X月Y日」をstationに自動設定
-const CATEGORY_MAPPINGS: &[(&str, &str, &str, bool)] = &[
-    // 安全管理写真（朝礼・KY等は日付station）
-    ("朝礼", PHOTO_CAT_SAFETY, "安全朝礼実施状況", true),
-    ("安全ミーティング", PHOTO_CAT_SAFETY, "安全朝礼実施状況", true),
-    ("KY", PHOTO_CAT_SAFETY, "KY活動状況", true),
-    ("新規入場者教育", PHOTO_CAT_SAFETY, "新規入場者教育状況", true),
-    ("パトロール", PHOTO_CAT_SAFETY, "安全パトロール実施状況", true),
-    ("始業前点検", PHOTO_CAT_SAFETY, "重機始業前点検", true),
-    ("安全訓練", PHOTO_CAT_SAFETY, "安全訓練実施状況", true),
-    // 交通保安施設（測点は設置場所なので日付不要）
-    ("交通保安施設", PHOTO_CAT_SAFETY, "交通保安施設設置状況", false),
-    // 品質管理写真（測点は測定場所なので日付不要）
-    ("トラックスケール", PHOTO_CAT_QUALITY, "トラックスケール計量状況", false),
-    ("出荷指示", PHOTO_CAT_QUALITY, "出荷指示確認", false),
-    // 施工状況写真
-    ("処分状況", PHOTO_CAT_CONSTRUCTION, "処分状況", false),
-];
-
-/// カテゴリ判定結果
-pub(crate) struct CategoryMatch {
-    pub category: String,
-    pub remarks: String,
-    pub auto_date_station: bool,
-}
-
-/// taggerのmachine_typeから写真カテゴリ・備考を判定する
-///
-/// 朝礼・KY活動など黒板のない写真はdetected_textが空のためマスタ照合できない。
-/// taggerのグループ名（machine_type）から直接判定する。
-/// 「使用機械」は写真区分「その他」、remarks空（analysis.rs側で設定）。
-pub(crate) fn category_from_machine_type(machine_type: &str) -> Option<CategoryMatch> {
-    // 使用機械は特別扱い: 写真区分「その他」、remarks空
-    if machine_type.contains("使用機械") {
-        return Some(CategoryMatch {
-            category: PHOTO_CAT_OTHER.to_string(),
-            remarks: String::new(),
-            auto_date_station: false,
-        });
-    }
-    CATEGORY_MAPPINGS.iter()
-        .find(|(pattern, _, _, _)| machine_type.contains(pattern))
-        .map(|(_, category, remarks, auto_date)| CategoryMatch {
-            category: category.to_string(),
-            remarks: remarks.to_string(),
-            auto_date_station: *auto_date,
-        })
-}
-
-/// detected_textから写真カテゴリ・備考を判定する
-///
-/// machine_typeが機械名（アスファルトフィニッシャー等）の場合、
-/// category_from_machine_typeでは判定できない。
-/// 黒板OCRに「重機始業前点検」等が含まれていれば判定する。
-pub(crate) fn category_from_detected_text(detected_text: &str) -> Option<CategoryMatch> {
-    if detected_text.is_empty() {
-        return None;
-    }
-    CATEGORY_MAPPINGS.iter()
-        .find(|(pattern, _, _, _)| detected_text.contains(pattern))
-        .map(|(_, category, remarks, auto_date)| CategoryMatch {
-            category: category.to_string(),
-            remarks: remarks.to_string(),
-            auto_date_station: *auto_date,
-        })
 }
 
 /// "2026-02-09 21:23:53" → "2月9日"
@@ -395,84 +315,6 @@ mod tests {
         assert_eq!(date_to_month_day("2026-02-09 21:23:53"), "2月9日");
         assert_eq!(date_to_month_day("2026-12-25 00:00:00"), "12月25日");
         assert_eq!(date_to_month_day(""), "");
-    }
-
-    /// テスト用: CategoryMatchから(category, remarks, auto_date)タプルに変換
-    fn cm_to_tuple(m: Option<CategoryMatch>) -> Option<(String, String, bool)> {
-        m.map(|m| (m.category, m.remarks, m.auto_date_station))
-    }
-
-    #[test]
-    fn test_category_from_machine_type() {
-        // 安全管理写真（auto_date=true）
-        assert_eq!(
-            cm_to_tuple(category_from_machine_type("朝礼")),
-            Some((PHOTO_CAT_SAFETY.to_string(), "安全朝礼実施状況".to_string(), true))
-        );
-        assert_eq!(
-            cm_to_tuple(category_from_machine_type("KY活動")),
-            Some((PHOTO_CAT_SAFETY.to_string(), "KY活動状況".to_string(), true))
-        );
-        assert_eq!(
-            cm_to_tuple(category_from_machine_type("始業前点検")),
-            Some((PHOTO_CAT_SAFETY.to_string(), "重機始業前点検".to_string(), true))
-        );
-        // パトロール → auto_date=true
-        assert_eq!(
-            cm_to_tuple(category_from_machine_type("パトロール")),
-            Some((PHOTO_CAT_SAFETY.to_string(), "安全パトロール実施状況".to_string(), true))
-        );
-        // 交通保安施設 → auto_date=false
-        assert_eq!(
-            cm_to_tuple(category_from_machine_type("交通保安施設")),
-            Some((PHOTO_CAT_SAFETY.to_string(), "交通保安施設設置状況".to_string(), false))
-        );
-        // トラックスケール → 品質管理写真, auto_date=false
-        assert_eq!(
-            cm_to_tuple(category_from_machine_type("トラックスケール")),
-            Some((PHOTO_CAT_QUALITY.to_string(), "トラックスケール計量状況".to_string(), false))
-        );
-        // 出荷指示 → 品質管理写真
-        assert_eq!(
-            cm_to_tuple(category_from_machine_type("出荷指示")),
-            Some((PHOTO_CAT_QUALITY.to_string(), "出荷指示確認".to_string(), false))
-        );
-        // 処分状況 → 施工状況写真
-        assert_eq!(
-            cm_to_tuple(category_from_machine_type("処分状況")),
-            Some((PHOTO_CAT_CONSTRUCTION.to_string(), "処分状況".to_string(), false))
-        );
-        // 使用機械 → その他、remarks空
-        assert_eq!(
-            cm_to_tuple(category_from_machine_type("使用機械")),
-            Some((PHOTO_CAT_OTHER.to_string(), String::new(), false))
-        );
-        // 施工機械はNone
-        assert!(category_from_machine_type("路面切削機").is_none());
-        assert!(category_from_machine_type("ダンプトラック").is_none());
-        assert!(category_from_machine_type("").is_none());
-    }
-
-    #[test]
-    fn test_category_from_detected_text() {
-        // 黒板に「重機始業前点検」と書いてある場合
-        assert_eq!(
-            cm_to_tuple(category_from_detected_text("工事名 テスト工事, 測点 2月13日, 重機始業前点検")),
-            Some((PHOTO_CAT_SAFETY.to_string(), "重機始業前点検".to_string(), true))
-        );
-        // 黒板に「安全パトロール」と書いてある場合
-        assert_eq!(
-            cm_to_tuple(category_from_detected_text("安全パトロール 実施状況")),
-            Some((PHOTO_CAT_SAFETY.to_string(), "安全パトロール実施状況".to_string(), true))
-        );
-        // 黒板に「トラックスケール」と書いてある場合
-        assert_eq!(
-            cm_to_tuple(category_from_detected_text("トラックスケール 計量")),
-            Some((PHOTO_CAT_QUALITY.to_string(), "トラックスケール計量状況".to_string(), false))
-        );
-        // 施工状況の黒板はNone
-        assert!(category_from_detected_text("工種:表層工, 路面切削状況").is_none());
-        assert!(category_from_detected_text("").is_none());
     }
 
     #[test]

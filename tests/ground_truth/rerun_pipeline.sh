@@ -2,12 +2,12 @@
 # Re-run photo-ai analyze on all source folders, saving output to a separate directory
 # Uses --use-cache to avoid re-calling Gemini (tests post-processing: master matching, normalization)
 
-set -e
+# set -e removed: ((var++)) returns 1 when var==0, killing the script
 
 BASE="H:/マイドライブ/〇市道 南千反畑町第１号線舗装補修工事/１５工事写真"
 OUT_DIR="/c/Users/yuuji/photo-ai-rust/tests/ground_truth/pipeline_output"
 PHOTO_AI="/c/Users/yuuji/photo-ai-rust"
-MASTER="$PHOTO_AI/master/construction_hierarchy.csv"
+# MASTER not used — auto-loads all by_work_type CSVs
 
 mkdir -p "$OUT_DIR"
 
@@ -18,6 +18,7 @@ FOLDERS=(
     "0209切削/施工状況"
     "0209切削/切削出来形"
     "0211切削/安全パトロール"
+    "0211切削/温度管理"
     "0211切削/施工状況"
     "0211切削/切削出来形"
     "0212切削/温度管理"
@@ -26,6 +27,7 @@ FOLDERS=(
     "0212切削/切削出来形 立会"
     "0212切削/切削出来形"
     "0213切削/施工状況"
+    "0213切削/温度管理"
     "0213切削/切削出来形"
     "0213切削/切削出来形/No.9"
     "Photomanager/20260209/交通保安施設配置確認"
@@ -59,7 +61,7 @@ for folder in "${FOLDERS[@]}"; do
 
     echo "Running: $folder ..."
     cd "$PHOTO_AI"
-    if cargo run --release -- analyze "$src" -o "$out_file" --use-cache -m "$MASTER" 2>&1 | tail -3; then
+    if cargo run -- analyze "$src" -o "$out_file" --use-cache 2>&1 | tail -3; then
         echo "  -> OK: $out_file"
         ((SUCCESS++))
     else

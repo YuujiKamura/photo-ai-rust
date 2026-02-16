@@ -14,4 +14,5 @@ pub mod ocr_parser;
 pub mod master_matcher;
 pub mod line_type_detector;
 pub mod analysis;
+pub mod folder_rules;
 pub mod commands;
