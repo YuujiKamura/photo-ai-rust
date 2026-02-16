@@ -320,11 +320,11 @@ fn format_left(values: &DekigataValues) -> String {
 }
 
 fn format_right(values: &DekigataValues) -> String {
-    // V3を右車線に含めるのは左車線(V1,V2)が空の場合のみ
-    // V1～V5全部ある場合、V3は左車線(V1～V3)に属する
-    let left_empty = values.v_design[0].is_none() && values.v_design[1].is_none()
-        && values.v_actual[0].is_none() && values.v_actual[1].is_none();
-    let has_v3 = left_empty && (values.v_design[2].is_some() || values.v_actual[2].is_some());
+    // V3を右車線に含めるかの判定:
+    // 実施値でV1,V2が空かつV3が存在 → 右車線はV3～V5
+    // （設計値は全V点に値があっても、実施値の空/非空が施工車線を示す）
+    let actual_v1v2_empty = values.v_actual[0].is_none() && values.v_actual[1].is_none();
+    let has_v3 = actual_v1v2_empty && values.v_actual[2].is_some();
     let (start, v_num) = if has_v3 { (2, 3) } else { (3, 4) };
     let v_design = format_v_values(&values.v_design[start..5], v_num);
     let v_actual = format_v_values(&values.v_actual[start..5], v_num);
@@ -370,12 +370,14 @@ pub fn is_dekigata_photo(result: &crate::analyzer::AnalysisResult) -> bool {
 }
 
 /// 出来形管理用紙のアップ写真（detectedTextに詳細値がある写真）を特定
+///
+/// 複数候補がある場合、最後の写真を優先する（撮影順: 全景→計測→接写）。
+/// 接写の方がOCR精度が高い。
 pub fn find_board_detail_photo(
     results: &[crate::analyzer::AnalysisResult],
     group_indices: &[usize],
 ) -> Option<usize> {
-    // focusTarget が "出来形管理図表" or "出来形管理" で、detectedTextにV値がある写真
-    group_indices.iter().copied().find(|&i| {
+    group_indices.iter().copied().rev().find(|&i| {
         let r = &results[i];
         r.detected_text.contains("切削高(設計)")
             || r.detected_text.contains("切削高（設計）")

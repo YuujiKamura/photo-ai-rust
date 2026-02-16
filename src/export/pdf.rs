@@ -706,13 +706,11 @@ fn add_info_field_ops(
 
             let field_center = field_bottom + field_height / 2.0;
 
-            // 測定値フィールド: ラベル表示 + 実測値は赤で描画
+            // 測定値フィールド: ラベル省略、セル幅フルで実測値を描画（赤色）
             let is_measurements = field.label == "測定値";
             if is_measurements && value_text != "-" {
-                let label_y = field_center - UNIFIED_FONT_SIZE * 0.3;
                 let text_y = wide_text_config.centered_first_line_y(&value_text, field_center, field_height);
-                add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
-                add_measurements_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, field_height, fonts, &wide_text_config);
+                add_measurements_text_ops(ops, &value_text, info_x_pt + 5.0, text_y, field_height, fonts, &wide_text_config);
             } else {
                 let is_remarks = field.label == "備考";
                 let cfg = if is_remarks { &remarks_text_config } else { &text_config };

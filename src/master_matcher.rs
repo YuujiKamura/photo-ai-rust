@@ -228,6 +228,16 @@ pub(crate) fn match_master_from_detected_texts(
     folder_name: &str,
     focus_target: Option<&str>,
 ) -> Option<HierarchyRow> {
+    // focusTarget（Gemini判定）でマスタのremarks列を直引き
+    if let Some(ft) = focus_target {
+        if !ft.is_empty() {
+            let direct = master.rows().iter().find(|r| r.remarks == ft);
+            if let Some(row) = direct {
+                return Some(row.clone());
+            }
+        }
+    }
+
     let (keywords, work_type_hint, variety_hint) = extract_match_keywords(master, detected_texts, folder_name);
 
     let scored = score_candidates(
@@ -251,6 +261,9 @@ const SAFETY_MAPPINGS: &[(&str, &str)] = &[
     ("安全ミーティング", "安全朝礼実施状況"),
     ("KY", "KY活動状況"),
     ("新規入場者教育", "新規入場者教育状況"),
+    ("パトロール", "安全パトロール実施状況"),
+    ("始業前点検", "重機始業前点検"),
+    ("安全訓練", "安全訓練実施状況"),
 ];
 
 /// taggerのmachine_typeから安全管理系の写真を判定し、remarksを返す

@@ -42,11 +42,6 @@ pub fn select_master_interactive() -> Option<MasterSelection> {
 
     if masters.is_empty() {
         println!("⚠ master/by_work_type/ にマスタファイルがありません");
-        println!("  デフォルトマスタ (master/construction_hierarchy.csv) を使用します");
-        let default = PathBuf::from("master/construction_hierarchy.csv");
-        if default.exists() {
-            return Some(MasterSelection { path: default, work_type: None, all_paths: None });
-        }
         return None;
     }
 
@@ -73,23 +68,13 @@ pub fn select_master_interactive() -> Option<MasterSelection> {
     // 空入力はデフォルト（全工種）
     if input.is_empty() {
         println!("→ 全工種マスタを使用（マージ読み込み）");
-        let all_paths = collect_all_master_paths();
-        return Some(MasterSelection {
-            path: PathBuf::from("master/construction_hierarchy.csv"),
-            work_type: None,
-            all_paths,
-        });
+        return make_all_master_selection();
     }
 
     match input.parse::<usize>() {
         Ok(0) => {
             println!("→ 全工種マスタを使用（マージ読み込み）");
-            let all_paths = collect_all_master_paths();
-            Some(MasterSelection {
-                path: PathBuf::from("master/construction_hierarchy.csv"),
-                work_type: None,
-                all_paths,
-            })
+            make_all_master_selection()
         }
         Ok(n) if n >= 1 && n <= masters.len() => {
             let (name, path) = &masters[n - 1];
@@ -102,17 +87,28 @@ pub fn select_master_interactive() -> Option<MasterSelection> {
         }
         _ => {
             println!("⚠ 無効な入力です。全工種マスタを使用します");
-            let all_paths = collect_all_master_paths();
-            Some(MasterSelection {
-                path: PathBuf::from("master/construction_hierarchy.csv"),
-                work_type: None,
-                all_paths,
-            })
+            make_all_master_selection()
         }
     }
 }
 
-/// 全工種用: by_work_type/*.csv + メインCSVのパス一覧を返す
+/// 全工種マージのMasterSelectionを作成
+fn make_all_master_selection() -> Option<MasterSelection> {
+    let all_paths = collect_all_master_paths();
+    match all_paths {
+        Some(paths) => {
+            let first = paths[0].clone();
+            Some(MasterSelection {
+                path: first,
+                work_type: None,
+                all_paths: Some(paths),
+            })
+        }
+        None => None,
+    }
+}
+
+/// 全工種用: by_work_type/*.csv のパス一覧を返す
 pub fn collect_all_master_paths() -> Option<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let by_work_type_dir = PathBuf::from("master/by_work_type");
@@ -125,11 +121,6 @@ pub fn collect_all_master_paths() -> Option<Vec<PathBuf>> {
                 }
             }
         }
-    }
-    // 共通マスタ（安全管理写真等）
-    let common = PathBuf::from("master/construction_hierarchy.csv");
-    if common.exists() {
-        paths.push(common);
     }
     if paths.is_empty() {
         None

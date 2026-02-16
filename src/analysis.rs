@@ -19,6 +19,23 @@ use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 
+/// detected_textから「出来形管理用紙 No.X」の測点を抽出
+fn extract_dekigata_station(text: &str) -> Option<String> {
+    let idx = text.find("出来形管理用紙")?;
+    let after = &text[idx + "出来形管理用紙".len()..];
+    // "No.9" or " No.9" を探す
+    let after = after.trim_start_matches(&[' ', '　', ','][..]).trim_start();
+    if after.starts_with("No.") || after.starts_with("NO.") || after.starts_with("no.") {
+        // No.の後の数字部分を取得
+        let num_start = 3; // "No." の長さ
+        let num_end = after[num_start..].find(|c: char| !c.is_ascii_digit()).unwrap_or(after.len() - num_start) + num_start;
+        if num_end > num_start {
+            return Some(after[..num_end].to_string());
+        }
+    }
+    None
+}
+
 /// スキャンと解析の設定
 pub struct ScanAnalysisConfig<'a> {
     pub folder: &'a Path,
@@ -91,10 +108,10 @@ fn load_master_from_config(config: &MasterConfig) -> Result<HierarchyMaster> {
         HierarchyMaster::from_csv(path)
             .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))
     } else {
-        // マスタパスなし: デフォルトマスタをフォールバック
-        let default = PathBuf::from("master/construction_hierarchy.csv");
-        if default.exists() {
-            HierarchyMaster::from_csv(&default)
+        // マスタパスなし: by_work_type全ファイルをマージ読み込み
+        let all_paths = crate::master_selector::collect_all_master_paths();
+        if let Some(paths) = all_paths {
+            HierarchyMaster::from_csv_files(&paths)
                 .map_err(|e| error::PhotoAiError::MasterLoad(e.to_string()))
         } else {
             Err(error::PhotoAiError::MasterLoad("マスタファイルが見つかりません".to_string()))
@@ -258,6 +275,12 @@ fn convert_groups_to_results(
             .find(|(k, _)| k == "場所" || k == "測点")
             .map(|(_, v)| v.clone())
             .unwrap_or_default();
+        // 出来形管理用紙からNo.Xを抽出（場所/測点キーがない場合）
+        let photo_station = if photo_station.is_empty() {
+            extract_dekigata_station(&rec.detected_text).unwrap_or_default()
+        } else {
+            photo_station
+        };
         result.station = normalize_station(&photo_station);
 
         // 安全管理系: taggerのmachine_typeから直接判定（黒板なし写真に対応）
@@ -265,21 +288,13 @@ fn convert_groups_to_results(
         if let Some(remarks) = safety_remarks {
             result.photo_category = PHOTO_CAT_SAFETY.to_string();
             result.remarks = remarks;
-            // 安全管理写真のstationに日付を設定（測点がない場合）
-            if result.station.is_empty() {
-                if let Some(d) = result.date.split(' ').next() {
-                    // "2026-02-11" → "2月11日"
-                    let parts: Vec<&str> = d.split('-').collect();
-                    if parts.len() == 3 {
-                        if let (Ok(m), Ok(day)) = (parts[1].parse::<u32>(), parts[2].parse::<u32>()) {
-                            result.station = format!("{}月{}日", m, day);
-                        }
-                    }
-                }
-            }
+            // 安全管理写真のstationは常に日付（「X月Y日」）を設定
+            // 黒板の「場所: 2/11」等が測点として抽出されるが、安全管理写真には測点は不適切
+            result.station = date_to_month_day(&result.date);
         } else {
             // 写真ごとにマスタ照合（混在フォルダ対応）
             // machine_typeもキーワードに追加して照合精度を向上
+            let ft = if rec.role.is_empty() { None } else { Some(rec.role.as_str()) };
             let photo_matched_row = if !rec.detected_text.is_empty() {
                 let combined = if !rec.machine_type.is_empty() {
                     format!("{}\n{}", rec.detected_text, rec.machine_type)
@@ -287,10 +302,10 @@ fn convert_groups_to_results(
                     rec.detected_text.clone()
                 };
                 let texts = vec![combined.as_str()];
-                let ft = if rec.role.is_empty() { None } else { Some(rec.role.as_str()) };
                 match_master_from_detected_texts(master, &texts, folder_name, ft)
             } else {
-                folder_fallback_row.clone()
+                // detected_text空でもfocusTargetがあれば直引き
+                match_master_from_detected_texts(master, &[], folder_name, ft)
             };
 
             // マスタ照合結果を適用
@@ -300,16 +315,8 @@ fn convert_groups_to_results(
                 result.variety = row.variety.clone();
                 result.subphase = row.subphase.clone();
                 result.remarks = row.remarks.clone();
-            } else {
-                // マスタ照合失敗: 工種キーワードだけ埋める
-                let extracted_wt = kvs.iter()
-                    .find(|(k, _)| k == "工種")
-                    .map(|(_, v)| v.clone());
-                if let Some(wt) = extracted_wt {
-                    result.work_type = wt;
-                }
-                result.remarks = folder_name.replace('_', " ");
             }
+            // マスタ照合失敗時は全フィールド空のまま（ゴミを埋めない）
         }
 
         result.reasoning = format!("photo-groups.json: {} / {}", rec.machine_type, rec.machine_id);

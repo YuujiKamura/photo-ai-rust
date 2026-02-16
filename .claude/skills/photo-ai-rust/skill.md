@@ -135,8 +135,11 @@ photo-taggerのmachine_type（グループ名）から安全管理系を判定:
 - 朝礼 / 安全ミーティング → photoCategory="安全管理写真", remarks="安全朝礼実施状況"
 - KY → "KY活動状況"
 - 新規入場者教育 → "新規入場者教育状況"
+- パトロール → "安全パトロール実施状況"
+- 始業前点検 → "重機始業前点検"
+- 安全訓練 → "安全訓練実施状況"
 - 黒板なし写真でもtagger情報で正しく分類できる
-- **station自動設定**: 安全管理写真でstationが空の場合、撮影日から「X月Y日」を自動設定
+- **station無条件上書き**: 安全管理写真はstationの値に関わらず撮影日から「X月Y日」に上書き（OCRで「場所: 2/11」等が入っても日付に統一）
 
 #### Step 1: detected_text正規化（ocr_parser.rs）
 photo-taggerが返すdetected_textは**3つの異なるフォーマット**で返ることがある:
@@ -306,6 +309,8 @@ PDF/Excelを出力したら、必ずReadツールで開いて目視確認する�
 - `master/by_work_type/` — 工種別CSV（舗装工, 区画線工, 仮設工, 道路付属施設工, etc.）
 - 全工種モード: 全by_work_typeファイル + 共通CSVをマージ読み込み（`HierarchyMaster::from_csv_files`）
 - CSV列: `費目, 写真区分, 工種, 種別, 細別, 備考, 検索パターン`
+- CSV備考欄の`\n`（リテラル2文字）は読み込み時に実改行に変換（csv_parser.rs `From<CsvRow>`）
+  - 例: `"アスファルト乳剤\n散布量試験"` → PDFで2行表示
 
 ## キャッシュ
 - 場所: `<photo_folder>/.photo-ai-cache.json`
@@ -401,6 +406,17 @@ photo-ai normalize result.json --lane right --dekigata-remarks "路面切削工�
 - **skip除外**: `export_results()`でskip=trueの写真を出力前にフィルタ
 - `AnalysisResult.skip: bool` — JSONには`skip: true`の場合のみシリアライズ（`skip_serializing_if`）
 - normalizeコマンドで自動適用（再分類→ソート→dedup→ダンプ台数の順）
+
+### 測定値（measurements）の読み取り原則
+- **写真のロッドや計器を目視で読み取ろうとするな。黒板/管理用紙に書かれた数値を使え**
+- 品質管理試験（散布量試験等）は黒板に計算式・結果が全て記載されている
+- detectedTextが空でも、同一グループの黒板写真に数値がある
+- 例: マット外寸 → 黒板⑤「0.25 × 0.40 = 0.10」から 25cm×40cm と読む
+- 各写真のmeasurementsには**その写真に映っているもの**を書く
+  - 温度計の接写 → 「タンク内温度: 66℃」
+  - 秤の接写 → 「散布前重量: 0.02kg」
+  - 結果記入済み黒板 → 「平均散布量: 1.04l/m²\n判定: 0.8l/m²以上散布 ○」
+  - 秤量作業の全景写真 → 測定値なし（作業状況であって数値確認写真ではない）
 
 ### 検証観点
 - detectedTextの数値とmeasurementsが一致すること
@@ -507,19 +523,30 @@ mv R0010519.JPG 20260213_213520_R0010519.JPG
 - タイムスタンプ部分を調整して任意の位置に挿入可能
 - 元のファイル名を末尾に残すとトレーサビリティが保てる
 
+### 写真帳の命名規則（derive_export_title）
+出力ファイル名: `{写真区分略称}_{活動名}_{MMDD}`
+- 写真区分略称: 安全管理写真→安全管理、施工状況写真→施工状況、品質管理写真→品質管理、出来形管理写真→出来形管理、その他→使用機械
+- 活動名: フォルダ名（区分略称と重複する場合は省略）
+- MMDD: result.json内の最古の撮影日から抽出
+- 実装: `derive_export_title()`, `shorten_photo_category()`, `most_common_category()`, `extract_mmdd_from_results()` in `src/commands.rs`
+
+### 使用機械のremarks形式
+- `使用機械（機種名 型番）` — 例: `使用機械（路面切削機 ER552F）`
+- photoCategory="その他", workType="舗装工", variety="", subphase=""
+
 ### まとめフォルダの構造
-写真帳PDFの集約先。命名規則: **写真区分を先頭に**
+写真帳PDFの集約先。命名規則は上記 `derive_export_title` に従う:
 ```
 写真帳まとめ/
 ├── 施工状況_0209.pdf
 ├── 施工状況_0211.pdf
 ├── 出来形管理_0209.pdf
-├── 安全管理_社外安全パトロール_0209.pdf
+├── 安全管理_安全パトロール_0211.pdf
 ├── 安全管理_重機始業前点検_0209.pdf
 ├── 品質管理_出荷指示確認_0211.pdf
-├── 品質管理_トラックスケール計量_0211.pdf
-├── 品質管理_温度管理_0209.pdf     ← 温度管理はここ
-├── 使用機械_0209.pdf
+├── 品質管理_散布量試験_0210.pdf
+├── 品質管理_温度管理_0209.pdf
+├── 使用機械_0212.pdf
 └── Excel/                          ← xlsx は Excel/ サブフォルダに分離
     ├── 施工状況_0209.xlsx
     └── ...
