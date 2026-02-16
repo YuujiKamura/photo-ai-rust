@@ -79,7 +79,7 @@ pub(crate) fn extract_kv_from_text(text: &str) -> Vec<(String, String)> {
         // 全角コロン `：` または半角コロン `:` で分割を試みる
         if let Some((k, v)) = line.split_once('：').or_else(|| line.split_once(':')) {
             let k = k.trim();
-            let v = v.trim();
+            let v = v.trim().trim_matches(',').trim();
             if !k.is_empty() {
                 // 場所/測点: 値中のスペース後に日本語キーワードが続く場合を分離
                 // "No.6 R 表層工 初期転圧状況" → 場所:"No.6 R", keywords: "表層工","初期転圧状況"
@@ -132,6 +132,16 @@ pub(crate) fn normalize_station(station: &str) -> String {
     if station.is_empty() {
         return String::new();
     }
+    // "2/11" → "2月11日" (日付フォーマット正規化)
+    if let Some((m, d)) = station.split_once('/') {
+        let m = m.trim();
+        let d = d.trim();
+        if let (Ok(mm), Ok(dd)) = (m.parse::<u32>(), d.parse::<u32>()) {
+            if (1..=12).contains(&mm) && (1..=31).contains(&dd) {
+                return format!("{}月{}日", mm, dd);
+            }
+        }
+    }
     // "No. 4" → "No.4" (normalize extra space after dot)
     let mut s = station.to_string();
     while s.contains(". ") {
@@ -159,6 +169,9 @@ mod tests {
         assert_eq!(normalize_station("No. 4 L"), "No.4 左車線");
         assert_eq!(normalize_station("ダイヤマーク"), "ダイヤマーク");
         assert_eq!(normalize_station(""), "");
+        // 日付フォーマット正規化
+        assert_eq!(normalize_station("2/11"), "2月11日");
+        assert_eq!(normalize_station("12/3"), "12月3日");
     }
 
     #[test]
