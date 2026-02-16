@@ -196,6 +196,11 @@ pub fn generate_pdf(
         for (slot, idx) in (start_idx..end_idx).enumerate() {
             let result = &results[idx];
 
+            // 空エントリー（スペーサー）: fileNameが空ならスロットを空白にする
+            if result.file_name.is_empty() {
+                continue;
+            }
+
             // Y座標計算（React版と同一）
             let row_y_pt = layout_core.row_y_pt(slot);
 

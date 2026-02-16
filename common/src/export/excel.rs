@@ -107,6 +107,12 @@ where
             let rows_per_block = layout.rows_per_block as u32;
             let photo_rows = layout.photo_rows as u32;
 
+            // 空エントリー（スペーサー）: file_pathが空ならスロットを空白にする
+            if photo.file_path().is_empty() {
+                current_row = start_row + rows_per_block;
+                continue;
+            }
+
             // 行高さ設定
             for r in start_row..(start_row + rows_per_block) {
                 worksheet.set_row_height_pixels(r, row_height_px)
