@@ -38,6 +38,7 @@ jobs:
           git clone --depth 1 https://github.com/YuujiKamura/pdf-analysis-embed.git ../pdf-analysis-embed
           git clone --depth 1 https://github.com/YuujiKamura/ai-code-review.git ../ai-code-review
           git clone --depth 1 https://github.com/YuujiKamura/photo-tagger.git ../photo-tagger
+          git clone --depth 1 https://github.com/YuujiKamura/cli-ai-analyzer.git ../cli-ai-analyzer
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -90,6 +91,7 @@ jobs:
           git clone --depth 1 https://github.com/YuujiKamura/pdf-analysis-embed.git ../pdf-analysis-embed
           git clone --depth 1 https://github.com/YuujiKamura/ai-code-review.git ../ai-code-review
           git clone --depth 1 https://github.com/YuujiKamura/photo-tagger.git ../photo-tagger
+          git clone --depth 1 https://github.com/YuujiKamura/cli-ai-analyzer.git ../cli-ai-analyzer
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
