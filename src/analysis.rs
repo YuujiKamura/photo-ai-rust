@@ -10,7 +10,7 @@ use crate::normalizer::{self, NormalizationOptions};
 use crate::ocr_parser::{extract_kv_from_text, normalize_station};
 use crate::master_matcher::{
     date_to_month_day, match_master_from_detected_texts, role_priority,
-    safety_remarks_from_machine_type, safety_remarks_from_detected_text,
+    category_from_machine_type, category_from_detected_text, CategoryMatch,
 };
 use crate::line_type_detector::detect_line_type;
 use photo_ai_common::{HierarchyMaster, LineTypeEntry};
@@ -283,15 +283,16 @@ fn convert_groups_to_results(
         };
         result.station = normalize_station(&photo_station);
 
-        // 安全管理系: taggerのmachine_type → detected_text の順で判定
-        let safety_remarks = safety_remarks_from_machine_type(&rec.machine_type)
-            .or_else(|| safety_remarks_from_detected_text(&rec.detected_text));
-        if let Some(remarks) = safety_remarks {
-            result.photo_category = PHOTO_CAT_SAFETY.to_string();
+        // カテゴリ判定: taggerのmachine_type → detected_text の順で判定
+        let category_match = category_from_machine_type(&rec.machine_type)
+            .or_else(|| category_from_detected_text(&rec.detected_text));
+        if let Some(CategoryMatch { category, remarks, auto_date_station }) = category_match {
+            result.photo_category = category;
             result.remarks = remarks;
-            // 安全管理写真のstationは常に日付（「X月Y日」）を設定
-            // 黒板の「場所: 2/11」等が測点として抽出されるが、安全管理写真には測点は不適切
-            result.station = date_to_month_day(&result.date);
+            // auto_date_stationがtrueのエントリのみ、撮影日から「X月Y日」をstationに設定
+            if auto_date_station {
+                result.station = date_to_month_day(&result.date);
+            }
         } else {
             // 写真ごとにマスタ照合（混在フォルダ対応）
             // machine_typeもキーワードに追加して照合精度を向上

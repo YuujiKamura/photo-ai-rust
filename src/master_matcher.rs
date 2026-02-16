@@ -19,6 +19,50 @@ const PARTIAL_MATCH_SCORE: usize = 50;
 const FOCUS_TARGET_BOOST_MULTIPLIER: usize = 3;
 const SEARCH_PATTERN_PRIORITY_SCORE: usize = 1000;
 
+/// OCRから抽出した工種名をマスタの工種名に正規化する
+///
+/// 黒板OCRが「舗装補修工事」を読み取ると「舗装補修工」になるが、
+/// マスタには「舗装工」しかないためフィルタが外れてしまう。
+/// OCR由来の揺れをマスタに合わせる。
+fn normalize_work_type(work_type: &str) -> String {
+    // 「〜補修工」→「〜工」に正規化（舗装補修工→舗装工 等）
+    if let Some(prefix) = work_type.strip_suffix("補修工") {
+        return format!("{}工", prefix);
+    }
+    work_type.to_string()
+}
+
+/// フォルダ名からマスタの種別（variety）を推定する
+///
+/// フォルダ名に種別の核心部分（「工」を除いた部分）が含まれていれば、その種別を返す。
+/// 含まれていない場合は、マスタの種別core（「工」除去）がフォルダ名を含むかもチェック。
+/// 最も長いマッチを優先する。
+fn extract_variety_from_folder(master: &HierarchyMaster, folder_name: &str) -> Option<String> {
+    let varieties: std::collections::HashSet<&str> = master.rows().iter()
+        .filter(|r| !r.variety.is_empty())
+        .map(|r| r.variety.as_str())
+        .collect();
+
+    let mut best: Option<(&str, usize)> = None;
+    for v in &varieties {
+        let core = v.strip_suffix('工').unwrap_or(v);
+        // 双方向の包含チェック
+        let overlap = if folder_name.contains(core) {
+            core.chars().count()
+        } else if core.contains(folder_name) {
+            folder_name.chars().count()
+        } else {
+            0
+        };
+        if overlap >= 2 {
+            if best.is_none() || overlap > best.unwrap().1 {
+                best = Some((v, overlap));
+            }
+        }
+    }
+    best.map(|(v, _)| v.to_string())
+}
+
 /// 全景を先頭にするためのロール優先度
 pub(crate) fn role_priority(role: &str) -> u8 {
     if role.contains("全景") { 0 }
@@ -76,7 +120,7 @@ fn extract_match_keywords(
     for text in detected_texts {
         for (key, value) in extract_kv_from_text(text) {
             match key.as_str() {
-                "工種" => { work_type = Some(value); }
+                "工種" => { work_type = Some(normalize_work_type(&value)); }
                 "工事名" | "車番" | "車両番号" => {} // 照合に不要
                 "場所" | "測点" => {} // 測点は別管理
                 "" => {
@@ -121,6 +165,12 @@ fn extract_match_keywords(
         if !t.is_empty() && !GENERIC_FOLDER_NAMES.contains(&t) {
             keywords.push(t.to_string());
         }
+    }
+
+    // フォルダ名からvariety_hintを部分一致で抽出（OCRにvariety名がない場合のフォールバック）
+    // 例: フォルダ「切削出来形」→ 「切削」が「路面切削工」に含まれる → variety_hint = "路面切削工"
+    if variety_hint.is_none() && !folder_name.is_empty() {
+        variety_hint = extract_variety_from_folder(master, folder_name);
     }
 
     (keywords, work_type, variety_hint)
@@ -253,41 +303,74 @@ pub(crate) fn match_master_from_detected_texts(
         .map(|(row, _)| row)
 }
 
-/// 安全管理写真の機械種別→備考マッピング
-/// photo-taggerのmachine_type(グループ名)から安全管理系の備考を直接判定する
-const SAFETY_MAPPINGS: &[(&str, &str)] = &[
-    // machine_type keyword → remarks
-    ("朝礼", "安全朝礼実施状況"),
-    ("安全ミーティング", "安全朝礼実施状況"),
-    ("KY", "KY活動状況"),
-    ("新規入場者教育", "新規入場者教育状況"),
-    ("パトロール", "安全パトロール実施状況"),
-    ("始業前点検", "重機始業前点検"),
-    ("安全訓練", "安全訓練実施状況"),
+/// 写真カテゴリマッピング
+/// photo-taggerのmachine_type(グループ名)やdetected_textから写真区分・備考を直接判定する
+/// (pattern, photoCategory, remarks, auto_date_station)
+/// auto_date_station: trueなら撮影日から「X月Y日」をstationに自動設定
+const CATEGORY_MAPPINGS: &[(&str, &str, &str, bool)] = &[
+    // 安全管理写真（朝礼・KY等は日付station）
+    ("朝礼", PHOTO_CAT_SAFETY, "安全朝礼実施状況", true),
+    ("安全ミーティング", PHOTO_CAT_SAFETY, "安全朝礼実施状況", true),
+    ("KY", PHOTO_CAT_SAFETY, "KY活動状況", true),
+    ("新規入場者教育", PHOTO_CAT_SAFETY, "新規入場者教育状況", true),
+    ("パトロール", PHOTO_CAT_SAFETY, "安全パトロール実施状況", true),
+    ("始業前点検", PHOTO_CAT_SAFETY, "重機始業前点検", true),
+    ("安全訓練", PHOTO_CAT_SAFETY, "安全訓練実施状況", true),
+    // 交通保安施設（測点は設置場所なので日付不要）
+    ("交通保安施設", PHOTO_CAT_SAFETY, "交通保安施設設置状況", false),
+    // 品質管理写真（測点は測定場所なので日付不要）
+    ("トラックスケール", PHOTO_CAT_QUALITY, "トラックスケール計量状況", false),
+    ("出荷指示", PHOTO_CAT_QUALITY, "出荷指示確認", false),
+    // 施工状況写真
+    ("処分状況", PHOTO_CAT_CONSTRUCTION, "処分状況", false),
 ];
 
-/// taggerのmachine_typeから安全管理系の写真を判定し、remarksを返す
+/// カテゴリ判定結果
+pub(crate) struct CategoryMatch {
+    pub category: String,
+    pub remarks: String,
+    pub auto_date_station: bool,
+}
+
+/// taggerのmachine_typeから写真カテゴリ・備考を判定する
 ///
 /// 朝礼・KY活動など黒板のない写真はdetected_textが空のためマスタ照合できない。
 /// taggerのグループ名（machine_type）から直接判定する。
-pub(crate) fn safety_remarks_from_machine_type(machine_type: &str) -> Option<String> {
-    SAFETY_MAPPINGS.iter()
-        .find(|(pattern, _)| machine_type.contains(pattern))
-        .map(|(_, remarks)| remarks.to_string())
+/// 「使用機械」は写真区分「その他」、remarks空（analysis.rs側で設定）。
+pub(crate) fn category_from_machine_type(machine_type: &str) -> Option<CategoryMatch> {
+    // 使用機械は特別扱い: 写真区分「その他」、remarks空
+    if machine_type.contains("使用機械") {
+        return Some(CategoryMatch {
+            category: PHOTO_CAT_OTHER.to_string(),
+            remarks: String::new(),
+            auto_date_station: false,
+        });
+    }
+    CATEGORY_MAPPINGS.iter()
+        .find(|(pattern, _, _, _)| machine_type.contains(pattern))
+        .map(|(_, category, remarks, auto_date)| CategoryMatch {
+            category: category.to_string(),
+            remarks: remarks.to_string(),
+            auto_date_station: *auto_date,
+        })
 }
 
-/// detected_textから安全管理系の写真を判定し、remarksを返す
+/// detected_textから写真カテゴリ・備考を判定する
 ///
 /// machine_typeが機械名（アスファルトフィニッシャー等）の場合、
-/// safety_remarks_from_machine_typeでは判定できない。
-/// 黒板OCRに「重機始業前点検」等が含まれていれば安全管理と判定する。
-pub(crate) fn safety_remarks_from_detected_text(detected_text: &str) -> Option<String> {
+/// category_from_machine_typeでは判定できない。
+/// 黒板OCRに「重機始業前点検」等が含まれていれば判定する。
+pub(crate) fn category_from_detected_text(detected_text: &str) -> Option<CategoryMatch> {
     if detected_text.is_empty() {
         return None;
     }
-    SAFETY_MAPPINGS.iter()
-        .find(|(pattern, _)| detected_text.contains(pattern))
-        .map(|(_, remarks)| remarks.to_string())
+    CATEGORY_MAPPINGS.iter()
+        .find(|(pattern, _, _, _)| detected_text.contains(pattern))
+        .map(|(_, category, remarks, auto_date)| CategoryMatch {
+            category: category.to_string(),
+            remarks: remarks.to_string(),
+            auto_date_station: *auto_date,
+        })
 }
 
 /// "2026-02-09 21:23:53" → "2月9日"
@@ -314,44 +397,116 @@ mod tests {
         assert_eq!(date_to_month_day(""), "");
     }
 
-    #[test]
-    fn test_safety_remarks_from_machine_type() {
-        assert_eq!(
-            safety_remarks_from_machine_type("朝礼"),
-            Some("安全朝礼実施状況".to_string())
-        );
-        assert_eq!(
-            safety_remarks_from_machine_type("KY活動"),
-            Some("KY活動状況".to_string())
-        );
-        assert_eq!(
-            safety_remarks_from_machine_type("新規入場者教育"),
-            Some("新規入場者教育状況".to_string())
-        );
-        // 施工機械はNone
-        assert_eq!(safety_remarks_from_machine_type("路面切削機"), None);
-        assert_eq!(safety_remarks_from_machine_type("ダンプトラック"), None);
-        assert_eq!(safety_remarks_from_machine_type(""), None);
+    /// テスト用: CategoryMatchから(category, remarks, auto_date)タプルに変換
+    fn cm_to_tuple(m: Option<CategoryMatch>) -> Option<(String, String, bool)> {
+        m.map(|m| (m.category, m.remarks, m.auto_date_station))
     }
 
     #[test]
-    fn test_safety_remarks_from_detected_text() {
+    fn test_category_from_machine_type() {
+        // 安全管理写真（auto_date=true）
+        assert_eq!(
+            cm_to_tuple(category_from_machine_type("朝礼")),
+            Some((PHOTO_CAT_SAFETY.to_string(), "安全朝礼実施状況".to_string(), true))
+        );
+        assert_eq!(
+            cm_to_tuple(category_from_machine_type("KY活動")),
+            Some((PHOTO_CAT_SAFETY.to_string(), "KY活動状況".to_string(), true))
+        );
+        assert_eq!(
+            cm_to_tuple(category_from_machine_type("始業前点検")),
+            Some((PHOTO_CAT_SAFETY.to_string(), "重機始業前点検".to_string(), true))
+        );
+        // パトロール → auto_date=true
+        assert_eq!(
+            cm_to_tuple(category_from_machine_type("パトロール")),
+            Some((PHOTO_CAT_SAFETY.to_string(), "安全パトロール実施状況".to_string(), true))
+        );
+        // 交通保安施設 → auto_date=false
+        assert_eq!(
+            cm_to_tuple(category_from_machine_type("交通保安施設")),
+            Some((PHOTO_CAT_SAFETY.to_string(), "交通保安施設設置状況".to_string(), false))
+        );
+        // トラックスケール → 品質管理写真, auto_date=false
+        assert_eq!(
+            cm_to_tuple(category_from_machine_type("トラックスケール")),
+            Some((PHOTO_CAT_QUALITY.to_string(), "トラックスケール計量状況".to_string(), false))
+        );
+        // 出荷指示 → 品質管理写真
+        assert_eq!(
+            cm_to_tuple(category_from_machine_type("出荷指示")),
+            Some((PHOTO_CAT_QUALITY.to_string(), "出荷指示確認".to_string(), false))
+        );
+        // 処分状況 → 施工状況写真
+        assert_eq!(
+            cm_to_tuple(category_from_machine_type("処分状況")),
+            Some((PHOTO_CAT_CONSTRUCTION.to_string(), "処分状況".to_string(), false))
+        );
+        // 使用機械 → その他、remarks空
+        assert_eq!(
+            cm_to_tuple(category_from_machine_type("使用機械")),
+            Some((PHOTO_CAT_OTHER.to_string(), String::new(), false))
+        );
+        // 施工機械はNone
+        assert!(category_from_machine_type("路面切削機").is_none());
+        assert!(category_from_machine_type("ダンプトラック").is_none());
+        assert!(category_from_machine_type("").is_none());
+    }
+
+    #[test]
+    fn test_category_from_detected_text() {
         // 黒板に「重機始業前点検」と書いてある場合
         assert_eq!(
-            safety_remarks_from_detected_text("工事名 テスト工事, 測点 2月13日, 重機始業前点検"),
-            Some("重機始業前点検".to_string())
+            cm_to_tuple(category_from_detected_text("工事名 テスト工事, 測点 2月13日, 重機始業前点検")),
+            Some((PHOTO_CAT_SAFETY.to_string(), "重機始業前点検".to_string(), true))
         );
         // 黒板に「安全パトロール」と書いてある場合
         assert_eq!(
-            safety_remarks_from_detected_text("安全パトロール 実施状況"),
-            Some("安全パトロール実施状況".to_string())
+            cm_to_tuple(category_from_detected_text("安全パトロール 実施状況")),
+            Some((PHOTO_CAT_SAFETY.to_string(), "安全パトロール実施状況".to_string(), true))
+        );
+        // 黒板に「トラックスケール」と書いてある場合
+        assert_eq!(
+            cm_to_tuple(category_from_detected_text("トラックスケール 計量")),
+            Some((PHOTO_CAT_QUALITY.to_string(), "トラックスケール計量状況".to_string(), false))
         );
         // 施工状況の黒板はNone
-        assert_eq!(
-            safety_remarks_from_detected_text("工種:表層工, 路面切削状況"),
-            None
-        );
-        assert_eq!(safety_remarks_from_detected_text(""), None);
+        assert!(category_from_detected_text("工種:表層工, 路面切削状況").is_none());
+        assert!(category_from_detected_text("").is_none());
+    }
+
+    #[test]
+    fn test_normalize_work_type() {
+        // 舗装補修工 → 舗装工
+        assert_eq!(normalize_work_type("舗装補修工"), "舗装工");
+        // そのまま通過するケース
+        assert_eq!(normalize_work_type("舗装工"), "舗装工");
+        assert_eq!(normalize_work_type("区画線工"), "区画線工");
+        assert_eq!(normalize_work_type("構造物撤去工"), "構造物撤去工");
+        // 空文字
+        assert_eq!(normalize_work_type(""), "");
+        // 他の「〜補修工」パターン
+        assert_eq!(normalize_work_type("道路補修工"), "道路工");
+    }
+
+    #[test]
+    fn test_work_type_normalization_in_matching() {
+        // OCRが「舗装補修工」を読み取った場合でもマスタの「舗装工」にマッチすること
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,施工状況写真,舗装工,舗装打換え工,表層工,舗設状況,
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,路面切削状況,
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+        // 黒板に「工種:舗装補修工」と書かれている
+        let text = "工種：舗装補修工\n表層工\n舗設状況";
+        let texts = vec![text];
+
+        let result = match_master_from_detected_texts(&master, &texts, "", None);
+        assert!(result.is_some(), "should match despite work_type being 舗装補修工");
+        let row = result.unwrap();
+        assert_eq!(row.work_type, "舗装工");
+        assert_eq!(row.remarks, "舗設状況");
     }
 
     #[test]
@@ -402,6 +557,71 @@ mod tests {
         // ft=到着温度 → 到着温度が勝つ
         let result = match_master_from_detected_texts(&master, &texts, "", Some("到着温度"));
         assert_eq!(result.as_ref().unwrap().remarks, "到着温度");
+    }
+
+    #[test]
+    fn test_dekigata_folder_切削出来形_matches_路面切削工() {
+        // フォルダ名「切削出来形」の写真が「路面切削工出来形測定」にマッチすべき
+        // （「不陸整正出来形・管理値」に誤マッチしない）
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,出来形管理写真,舗装工,舗装打換え工,上層路盤工,不陸整正出来形,路盤出来形|出来形検測|路盤|基準高下がり|基準高
+直接工事費,出来形管理写真,舗装工,舗装打換え工,上層路盤工,不陸整正出来形・管理値,
+直接工事費,出来形管理写真,舗装工,路面切削工,路面切削,路面切削工出来形測定,切削出来形|切削工出来形
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+
+        // detected_text: 出来形管理用紙（黒板に路面切削工と書いてないケース）
+        let text = "出来形管理用紙 No.9";
+        let texts = vec![text];
+
+        // フォルダ名「切削出来形」→ 検索パターン「切削出来形」で路面切削工出来形測定がマッチ
+        let result = match_master_from_detected_texts(&master, &texts, "切削出来形", None);
+        assert!(result.is_some(), "should match");
+        assert_eq!(result.unwrap().remarks, "路面切削工出来形測定");
+    }
+
+    #[test]
+    fn test_dekigata_folder_不陸整正_still_matches() {
+        // フォルダ名が「不陸整正出来形」の場合は不陸整正にマッチすべき
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,出来形管理写真,舗装工,舗装打換え工,上層路盤工,不陸整正出来形,路盤出来形|出来形検測|路盤|基準高下がり|基準高
+直接工事費,出来形管理写真,舗装工,舗装打換え工,上層路盤工,不陸整正出来形・管理値,
+直接工事費,出来形管理写真,舗装工,路面切削工,路面切削,路面切削工出来形測定,切削出来形|切削工出来形
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+
+        let text = "出来形管理用紙 No.3\n基準高";
+        let texts = vec![text];
+
+        // フォルダ名「不陸整正」→ 検索パターン「基準高」で不陸整正出来形がマッチ
+        let result = match_master_from_detected_texts(&master, &texts, "不陸整正", None);
+        assert!(result.is_some(), "should match");
+        assert_eq!(result.unwrap().remarks, "不陸整正出来形");
+    }
+
+    #[test]
+    fn test_extract_variety_from_folder() {
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,施工状況写真,舗装工,舗装打換え工,表層工,舗設状況,
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,路面切削状況,
+直接工事費,施工状況写真,舗装工,切削オーバーレイ工,表層工,舗設状況,
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+
+        // 完全一致ケース: "舗装打換え" → "舗装打換え工"
+        let result = extract_variety_from_folder(&master, "舗装打換え");
+        assert_eq!(result.as_deref(), Some("舗装打換え工"));
+
+        // 部分一致: "路面切削" → "路面切削工"（coreが完全にフォルダ名に含まれる）
+        let result = extract_variety_from_folder(&master, "路面切削出来形");
+        assert_eq!(result.as_deref(), Some("路面切削工"));
+
+        // マッチなし
+        let result = extract_variety_from_folder(&master, "温度管理");
+        assert!(result.is_none());
     }
 
     #[test]
