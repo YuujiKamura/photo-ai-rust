@@ -1,0 +1,1101 @@
+================================================================================
+PIPELINE ACCURACY REPORT
+================================================================================
+
+Folder                                               OK Diff Total    Acc
+----------------------------------------------------------------------
+0209切削_切削出来形                                          0   12    12   0.0% *
+0209切削_散布量試験                                          1    9    10  10.0% *
+0209切削_施工状況                                           4    7    11  36.4% *
+0209切削_温度管理                                           0   33    33   0.0% *
+0211切削_切削出来形                                          0    9     9   0.0% *
+0211切削_安全パトロール                                        0    4     4   0.0% *
+0211切削_施工状況                                           2   12    14  14.3% *
+0212切削_切削出来形 立会                                       6    0     6 100.0%
+0212切削_切削出来形                                          0    9     9   0.0% *
+0212切削_切削機                                            5    0     5 100.0%
+0212切削_施工状況                                           6    0     6 100.0%
+0212切削_温度管理                                           0   24    24   0.0% *
+0213切削_切削出来形                                          0    9     9   0.0% *
+0213切削_切削出来形_No.9                                     2    2     4  50.0% *
+0213切削_施工状況                                           0    8     8   0.0% *
+Photomanager_20260209_交通保安施設配置確認                     13    0    13 100.0%
+Photomanager_20260209_使用機械                            9    0     9 100.0%
+Photomanager_20260209_社外安全パトロール                       4    0     4 100.0%
+Photomanager_20260209_重機始業前点検                         5    0     5 100.0%
+Photomanager_20260211_トラックスケール_計量状況                   0    3     3   0.0% *
+Photomanager_20260211_交通保安施設_設置状況                     6    0     6 100.0%
+Photomanager_20260211_処分状況_社内検査                       6    0     6 100.0%
+Photomanager_20260211_出荷指示確認                          0    6     6   0.0% *
+Photomanager_20260212_交通保安施設                         13    0    13 100.0%
+Photomanager_20260212_安全パトロール                         6    0     6 100.0%
+Photomanager_20260213_交通保安施設                         12    0    12 100.0%
+Photomanager_20260213_始業前点検                           4    0     4 100.0%
+----------------------------------------------------------------------
+TOTAL                                               104  147   251  41.4%
+
+FIELD-LEVEL ACCURACY:
+  Field                Errors  Total     Acc
+  ------------------------------------------
+  photoCategory             8    251   96.8%
+  remarks                  31    251   87.6%
+  station                  86    251   65.7%
+  workType                 44    251   82.5%
+  variety                  77    251   69.3%
+  subphase                 27    251   89.2%
+  measurements             87    251   65.3%
+  focusTarget              16    251   93.6%
+
+DETAILED DIFFS:
+--------------------------------------------------------------------------------
+
+[0209切削_切削出来形]
+  R0010311.JPG:
+    station: expected=No.1
+             got    =(empty)
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=9.819 V2=9.842 V3=9.861
+実施: V1=9.815 V
+                  got    =(empty)
+  R0010312.JPG:
+    station: expected=No.1
+             got    =(empty)
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=9.819 V2=9.842 V3=9.861
+実施: V1=9.815 V
+                  got    =(empty)
+  R0010313.JPG:
+    station: expected=No.1
+             got    =(empty)
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=9.819 V2=9.842 V3=9.861
+実施: V1=9.815 V
+                  got    =(empty)
+  R0010314.JPG:
+    station: expected=No.3
+             got    =(empty)
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=9.988 V2=9.995 V3=10.005
+実施: V1=9.985 
+                  got    =(empty)
+  R0010315.JPG:
+    station: expected=No.3
+             got    =(empty)
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=9.988 V2=9.995 V3=10.005
+実施: V1=9.985 
+                  got    =(empty)
+    focusTarget: expected=出来形管理
+                 got    =点検状況
+  R0010316.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=9.988 V2=9.995 V3=10.005
+実施: V1=9.985 
+                  got    =左車線　切削基準高 幅員W1
+設計: 
+実施: V1=9.985 V2=9.990 V3=10.002
+  R0010317.JPG:
+    station: expected=No.5
+             got    =(empty)
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=9.969 V2=9.999 V3=10.047
+実施: V1=9.965 
+                  got    =(empty)
+  R0010318.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=9.969 V2=9.999 V3=10.047
+実施: V1=9.965 
+                  got    =左車線　切削基準高 幅員W1
+設計: 
+実施: V1=9.965 V2=9.997 V3=10.045
+  R0010319.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=9.969 V2=9.999 V3=10.047
+実施: V1=9.965 
+                  got    =左車線　切削基準高 幅員W1
+設計: 
+実施: V1=9.965 V2=9.997 V3=10.045
+  R0010320.JPG:
+    station: expected=No.7
+             got    =(empty)
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=10.090 V2=10.109 V3=10.143
+実施: V1=10.0
+                  got    =(empty)
+  R0010321.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=10.090 V2=10.109 V3=10.143
+実施: V1=10.0
+                  got    =(empty)
+  R0010322.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=10.090 V2=10.109 V3=10.143
+実施: V1=10.0
+                  got    =(empty)
+
+[0209切削_散布量試験]
+  R0010324.JPG:
+    measurements: expected=タンク内温度: 66℃
+                  got    =(empty)
+  R0010325.JPG:
+    photoCategory: expected=品質管理写真
+                   got    =安全管理写真
+    remarks: expected=アスファルト乳剤
+散布量試験
+             got    =重機始業前点検
+    workType: expected=舗装工
+              got    =(empty)
+    variety: expected=切削オーバーレイ工
+             got    =(empty)
+    subphase: expected=表層工
+              got    =(empty)
+    measurements: expected=乳剤温度: 70℃
+比重: 1.010
+マット重量: 20g×3枚
+                  got    =(empty)
+  R0010326.JPG:
+    measurements: expected=マット外寸: 25cm×40cm
+                  got    =(empty)
+  R0010327.JPG:
+    measurements: expected=散布前重量: 0.02kg
+                  got    =(empty)
+  R0010330.JPG:
+    photoCategory: expected=品質管理写真
+                   got    =安全管理写真
+    remarks: expected=アスファルト乳剤
+散布量試験
+             got    =KY活動状況
+    station: expected=No.0
+             got    =No.0,
+    workType: expected=舗装工
+              got    =(empty)
+    variety: expected=切削オーバーレイ工
+             got    =(empty)
+    subphase: expected=表層工
+              got    =(empty)
+  R0010331.JPG:
+    photoCategory: expected=品質管理写真
+                   got    =安全管理写真
+    remarks: expected=アスファルト乳剤
+散布量試験
+             got    =KY活動状況
+    station: expected=No.0
+             got    =No.0,
+    workType: expected=舗装工
+              got    =(empty)
+    variety: expected=切削オーバーレイ工
+             got    =(empty)
+    subphase: expected=表層工
+              got    =(empty)
+  R0010335.JPG:
+    photoCategory: expected=品質管理写真
+                   got    =安全管理写真
+    remarks: expected=アスファルト乳剤
+散布量試験
+             got    =社外安全パトロール
+    workType: expected=舗装工
+              got    =(empty)
+    variety: expected=切削オーバーレイ工
+             got    =(empty)
+    subphase: expected=表層工
+              got    =(empty)
+  R0010336.JPG:
+    measurements: expected=散布後重量: 0.13kg
+                  got    =(empty)
+  R0010337.JPG:
+    photoCategory: expected=品質管理写真
+                   got    =安全管理写真
+    remarks: expected=アスファルト乳剤
+散布量試験
+             got    =社外安全パトロール
+    workType: expected=舗装工
+              got    =(empty)
+    variety: expected=切削オーバーレイ工
+             got    =(empty)
+    subphase: expected=表層工
+              got    =(empty)
+    measurements: expected=平均散布量: 1.04l/m²
+判定: 0.8l/m²以上散布 ○
+                  got    =(empty)
+
+[0209切削_施工状況]
+  R0010305.JPG:
+    remarks: expected=路面切削状況
+             got    =切削殻積込状況
+  R0010323.JPG:
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+  R0010359.JPG:
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+  R0010360.JPG:
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+  R0010371.JPG:
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+  R0010372.JPG:
+    station: expected=ダイヤモンド標示
+             got    =(empty)
+  R0010373.JPG:
+    station: expected=横断歩道線
+             got    =(empty)
+
+[0209切削_温度管理]
+  R0010338.JPG:
+    remarks: expected=開放温度
+             got    =舗装日外気温測定
+    station: expected=2月10日
+             got    =(empty)
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+    measurements: expected=(empty)
+                  got    =1℃
+  R0010339.JPG:
+    remarks: expected=開放温度
+             got    =舗装日外気温測定
+    station: expected=2月10日
+             got    =(empty)
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+    measurements: expected=(empty)
+                  got    =1℃
+  R0010340.JPG:
+    photoCategory: expected=品質管理写真
+                   got    =出来形管理写真
+    remarks: expected=開放温度
+             got    =舗装厚測定・管理値
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+  R0010341.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =159.7℃
+  R0010342.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =159.7℃
+  R0010343.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =159.7℃
+  R0010344.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =154.8℃
+  R0010345.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =154.8℃
+  R0010346.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =154.8℃
+  R0010347.JPG:
+    remarks: expected=到着温度
+             got    =初期締固め前温度測定
+    station: expected=2月10日
+             got    =(empty)
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+    measurements: expected=(empty)
+                  got    =148.1℃
+  R0010348.JPG:
+    remarks: expected=到着温度
+             got    =初期締固め前温度測定
+    station: expected=2月10日
+             got    =(empty)
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+    measurements: expected=(empty)
+                  got    =148.1℃
+  R0010349.JPG:
+    remarks: expected=初期締固め前温度
+             got    =初期締固め前温度測定
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =148.1℃
+  R0010350.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =160.6℃
+  R0010351.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =160.6℃
+  R0010352.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =160.6℃
+  R0010353.JPG:
+    remarks: expected=到着温度
+             got    =敷均し温度
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =154.5℃
+  R0010354.JPG:
+    remarks: expected=到着温度
+             got    =敷均し温度
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =154.5℃
+  R0010355.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =154.5℃
+  R0010356.JPG:
+    remarks: expected=到着温度
+             got    =初期締固め前温度測定
+    station: expected=2月10日
+             got    =(empty)
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+    measurements: expected=(empty)
+                  got    =147.8℃
+  R0010357.JPG:
+    remarks: expected=到着温度
+             got    =初期締固め前温度測定
+    station: expected=2月10日
+             got    =(empty)
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+    measurements: expected=(empty)
+                  got    =147.8℃
+  R0010358.JPG:
+    remarks: expected=初期締固め前温度
+             got    =初期締固め前温度測定
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =147.8℃
+  R0010362.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =159.5℃
+  R0010363.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =159.5℃
+  R0010364.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =159.5℃
+  R0010365.JPG:
+    remarks: expected=到着温度
+             got    =敷均し温度
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =153.8℃
+  R0010366.JPG:
+    remarks: expected=到着温度
+             got    =敷均し温度
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =153.8℃
+  R0010367.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =153.8℃
+  R0010368.JPG:
+    remarks: expected=到着温度
+             got    =敷均し温度
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =153.8℃
+  R0010369.JPG:
+    remarks: expected=到着温度
+             got    =敷均し温度
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =153.8℃
+  R0010370.JPG:
+    photoCategory: expected=品質管理写真
+                   got    =出来形管理写真
+    remarks: expected=開放温度
+             got    =舗装厚測定・管理値
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+  R0010374.JPG:
+    remarks: expected=開放温度
+             got    =開放温度測定
+    station: expected=2月10日
+             got    =(empty)
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+    measurements: expected=(empty)
+                  got    =33.9℃
+  R0010375.JPG:
+    remarks: expected=開放温度
+             got    =開放温度測定
+    station: expected=2月10日
+             got    =(empty)
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+    measurements: expected=(empty)
+                  got    =33.9℃
+  R0010376.JPG:
+    station: expected=2月10日
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=舗装打換え工
+             got    =アスファルト舗装補修工
+    measurements: expected=(empty)
+                  got    =33.9℃
+
+[0211切削_切削出来形]
+  R0010404.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V4=9.826 V5=9.785
+実施: V4=9.825 V5=9.780
+幅
+                  got    =(empty)
+  R0010405.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V4=9.826 V5=9.785
+実施: V4=9.825 V5=9.780
+幅
+                  got    =(empty)
+  R0010406.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V4=9.826 V5=9.785
+実施: V4=9.825 V5=9.780
+幅
+                  got    =(empty)
+  R0010407.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V4=9.955 V5=9.906
+実施: V4=9.996 V5=9.902
+幅
+                  got    =(empty)
+  R0010408.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V4=9.955 V5=9.906
+実施: V4=9.996 V5=9.902
+幅
+                  got    =(empty)
+  R0010409.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V4=9.955 V5=9.906
+実施: V4=9.996 V5=9.902
+幅
+                  got    =(empty)
+  R0010410.JPG:
+    station: expected=No.5
+             got    =(empty)
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V4=10.001 V5=9.974
+実施: V4=10.000 V5=9.970
+                  got    =(empty)
+  R0010411.JPG:
+    station: expected=No.5
+             got    =(empty)
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V4=10.001 V5=9.974
+実施: V4=10.000 V5=9.970
+                  got    =(empty)
+  R0010412.JPG:
+    subphase: expected=(empty)
+              got    =路面切削
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V4=10.001 V5=9.974
+実施: V4=10.000 V5=9.970
+                  got    =(empty)
+
+[0211切削_安全パトロール]
+  R0010382.JPG:
+    remarks: expected=安全パトロール実施状況
+             got    =安全パトロール
+    station: expected=2月11日
+             got    =2/11
+  R0010383.JPG:
+    remarks: expected=安全パトロール実施状況
+             got    =安全パトロール
+    station: expected=2月11日
+             got    =2/11
+  R0010385.JPG:
+    remarks: expected=安全パトロール実施状況
+             got    =安全パトロール
+    station: expected=2月11日
+             got    =2/11
+  R0010386.JPG:
+    remarks: expected=安全パトロール実施状況
+             got    =安全パトロール
+    station: expected=2月11日
+             got    =2/11
+
+[0211切削_施工状況]
+  R0010377.JPG:
+    focusTarget: expected=安全活動
+                 got    =朝礼
+  R0010378.JPG:
+    station: expected=No.0 右車線
+             got    =No.0R
+    focusTarget: expected=作業状況
+                 got    =切断・清掃状況
+  R0010379.JPG:
+    station: expected=No.0 右車線
+             got    =(empty)
+    focusTarget: expected=作業状況
+                 got    =汚泥吸排状況
+  R0010387.JPG:
+    station: expected=No.6 右車線
+             got    =No.6R
+    focusTarget: expected=作業状況
+                 got    =路面切削状況
+  R0010388.JPG:
+    remarks: expected=切削殻積込状況
+             got    =路面切削状況
+    station: expected=No.6 右車線
+             got    =No.6R
+    focusTarget: expected=作業状況
+                 got    =路面切削状況
+  R0010402.JPG:
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+    focusTarget: expected=乳剤端部塗布状況
+                 got    =端部乳剤塗布状況
+  R0010403.JPG:
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+    focusTarget: expected=乳剤端部塗布状況
+                 got    =端部乳剤塗布状況
+  R0010413.JPG:
+    focusTarget: expected=乳剤散布状況
+                 got    =タックコート乳剤散布状況
+  R0010414.JPG:
+    focusTarget: expected=作業状況
+                 got    =タックコート乳剤散布状況
+  R0010437.JPG:
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+    focusTarget: expected=作業状況
+                 got    =舗設状況
+  R0010438.JPG:
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+    focusTarget: expected=作業状況
+                 got    =初期転圧状況
+  R0010448.JPG:
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+    focusTarget: expected=作業状況
+                 got    =2次転圧状況
+
+[0212切削_切削出来形]
+  R0010468.JPG:
+    station: expected=No.7
+             got    =(empty)
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V3=10.143 V4=10.111 V5=10.092
+実施: V3=10.1
+                  got    =(empty)
+  R0010469.JPG:
+    station: expected=No.7
+             got    =(empty)
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V3=10.143 V4=10.111 V5=10.092
+実施: V3=10.1
+                  got    =(empty)
+  R0010470.JPG:
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V3=10.143 V4=10.111 V5=10.092
+実施: V3=10.1
+                  got    =(empty)
+  R0010471.JPG:
+    station: expected=No.9
+             got    =(empty)
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V3=10.376 V4=10.328 V5=10.298
+実施: V3=10.3
+                  got    =(empty)
+  R0010472.JPG:
+    station: expected=No.9
+             got    =(empty)
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V3=10.376 V4=10.328 V5=10.298
+実施: V3=10.3
+                  got    =(empty)
+  R0010473.JPG:
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V3=10.376 V4=10.328 V5=10.298
+実施: V3=10.3
+                  got    =右車線　切削基準高 幅員W2
+設計: 
+実施:
+  R0010474.JPG:
+    station: expected=No.11
+             got    =(empty)
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V3=10.624 V4=10.590 V5=10.569
+実施: V3=10.6
+                  got    =(empty)
+  R0010475.JPG:
+    station: expected=No.11
+             got    =(empty)
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V3=10.624 V4=10.590 V5=10.569
+実施: V3=10.6
+                  got    =(empty)
+  R0010476.JPG:
+    measurements: expected=右車線　切削基準高 幅員W2
+設計: V3=10.624 V4=10.590 V5=10.569
+実施: V3=10.6
+                  got    =右車線　切削基準高 幅員W2
+設計: 
+実施:
+
+[0212切削_温度管理]
+  R0010480.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010481.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010482.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010483.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010484.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010485.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010486.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010487.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010488.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010489.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010490.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010491.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010492.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010493.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010494.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010495.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010496.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010497.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010498.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010499.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010500.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010505.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010507.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+  R0010508.JPG:
+    variety: expected=舗装打換え工
+             got    =切削オーバーレイ工
+
+[0213切削_切削出来形]
+  R0010514.JPG:
+    station: expected=No.11
+             got    =(empty)
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=10.557 V2=10.582 V3=10.624
+実施: V1=10.5
+                  got    =(empty)
+  R0010515.JPG:
+    station: expected=No.11
+             got    =(empty)
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=10.557 V2=10.582 V3=10.624
+実施: V1=10.5
+                  got    =(empty)
+  R0010516.JPG:
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=10.557 V2=10.582 V3=10.624
+実施: V1=10.5
+                  got    =(empty)
+  R0010517.JPG:
+    station: expected=No.11
+             got    =(empty)
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=10.557 V2=10.582 V3=10.624
+実施: V1=10.5
+                  got    =(empty)
+  R0010518.JPG:
+    measurements: expected=左車線　切削基準高 幅員W1
+設計: V1=10.557 V2=10.582 V3=10.624
+実施: V1=10.5
+                  got    =(empty)
+  R0010521.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+    measurements: expected=設計: V1=10.559 V2=10.590 V3=10.619
+実施: V1=10.552 V2=10.584 V3
+                  got    =(empty)
+  R0010522.JPG:
+    station: expected=取付道路 No.1
+             got    =No.1
+    measurements: expected=設計: V1=10.559 V2=10.590 V3=10.619
+実施: V1=10.552 V2=10.584 V3
+                  got    =左車線　切削基準高 幅員W1
+設計: V1=10.559 V2=10.590 V3=10.619
+実施: V1=10.5
+  R0010523.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+    measurements: expected=設計: V1=10.559 V2=10.590 V3=10.619
+実施: V1=10.552 V2=10.584 V3
+                  got    =(empty)
+  R0010524.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+    measurements: expected=設計: V1=10.559 V2=10.590 V3=10.619
+実施: V1=10.552 V2=10.584 V3
+                  got    =(empty)
+
+[0213切削_切削出来形_No.9]
+  20260213_213517.jpg:
+    station: expected=(empty)
+             got    =No.9
+    measurements: expected=(empty)
+                  got    =左車線　切削基準高 幅員W1
+設計: V1=10.385 V2=10.388 V3=10.426
+実施: V1=10.3
+  20260213_213520_R0010519.JPG:
+    station: expected=(empty)
+             got    =No.9
+    measurements: expected=(empty)
+                  got    =左車線　切削基準高 幅員W1
+設計: V1=10.385 V2=10.388 V3=10.426
+実施: V1=10.3
+
+[0213切削_施工状況]
+  R0010510.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+  R0010511.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+  R0010513.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+  R0010520.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+  R0010541.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+  R0010543.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+  R0010547.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+  R0010549.JPG:
+    station: expected=取付道路 No.1
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+
+[Photomanager_20260211_トラックスケール_計量状況]
+  20260211_222455.jpg:
+    station: expected=2月11日（黒板日付訂正）
+             got    =(empty)
+    measurements: expected=前2,840kg＋後3,500kg
+−車両重量4,050kg
+＝積載量2.29ｔ
+                  got    =(empty)
+    focusTarget: expected=計量値
+                 got    =トラックスケール積載量確認
+  20260211_222606.jpg:
+    station: expected=2月11日（黒板日付訂正）
+             got    =(empty)
+    measurements: expected=前2,840kg＋後3,500kg
+−車両重量4,050kg
+＝積載量2.29ｔ
+                  got    =(empty)
+    focusTarget: expected=計量状況
+                 got    =トラックスケール積載量確認
+  20260211_222622.jpg:
+    station: expected=2月11日（黒板日付訂正）
+             got    =(empty)
+    measurements: expected=前2,840kg＋後3,500kg
+−車両重量4,050kg
+＝積載量2.29ｔ
+                  got    =(empty)
+    focusTarget: expected=計量値
+                 got    =トラックスケール積載量確認
+
+[Photomanager_20260211_出荷指示確認]
+  20260212_002116.jpg:
+    station: expected=大林道路㈱熊本As混合所
+             got    =(empty)
+    measurements: expected=出荷温度：163℃
+積載量：3.5ｔ
+保温シート確認
+                  got    =(empty)
+  20260212_002131.jpg:
+    photoCategory: expected=品質管理写真
+                   got    =施工状況写真
+    remarks: expected=出荷指示確認
+             got    =As殻処分状況　社内検査
+    station: expected=大林道路㈱熊本As混合所
+             got    =(empty)
+    variety: expected=切削オーバーレイ工
+             got    =路面切削工
+    subphase: expected=表層工
+              got    =殻処分
+    measurements: expected=出荷温度：163℃
+積載量：3.5ｔ
+保温シート確認
+                  got    =(empty)
+  20260212_002138.jpg:
+    remarks: expected=出荷指示確認
+             got    =到着温度
+    station: expected=大林道路㈱熊本As混合所
+             got    =(empty)
+    workType: expected=舗装工
+              got    =舗装補修工
+    variety: expected=切削オーバーレイ工
+             got    =アスファルト舗装補修工
+    measurements: expected=出荷温度：163℃
+積載量：3.5ｔ
+保温シート確認
+                  got    =(empty)
+  20260212_002207.jpg:
+    station: expected=大林道路㈱熊本As混合所
+             got    =(empty)
+    measurements: expected=出荷温度：163℃
+積載量：3.5ｔ
+保温シート確認
+                  got    =(empty)
+  20260212_005050.jpg:
+    station: expected=No.0右車線
+             got    =(empty)
+    measurements: expected=出荷温度：163℃
+積載量：3.5ｔ
+到着時外観検査
+                  got    =(empty)
+  20260212_005114.jpg:
+    station: expected=No.0右車線
+             got    =(empty)
+    measurements: expected=出荷温度：163℃
+積載量：3.5ｔ
+到着時外観検査
+                  got    =(empty)
+
+JSON report saved to: tests\ground_truth\pipeline_output\accuracy_report.json

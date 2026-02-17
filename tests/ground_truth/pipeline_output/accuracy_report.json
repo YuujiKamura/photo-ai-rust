@@ -1,0 +1,282 @@
+{
+  "total_photos": 296,
+  "total_ok": 296,
+  "total_diff": 0,
+  "overall_accuracy": 100.0,
+  "field_accuracy": {
+    "photoCategory": {
+      "errors": 0,
+      "total": 296,
+      "accuracy": 100.0
+    },
+    "remarks": {
+      "errors": 0,
+      "total": 296,
+      "accuracy": 100.0
+    },
+    "station": {
+      "errors": 0,
+      "total": 296,
+      "accuracy": 100.0
+    },
+    "workType": {
+      "errors": 0,
+      "total": 296,
+      "accuracy": 100.0
+    },
+    "variety": {
+      "errors": 0,
+      "total": 296,
+      "accuracy": 100.0
+    },
+    "subphase": {
+      "errors": 0,
+      "total": 296,
+      "accuracy": 100.0
+    },
+    "measurements": {
+      "errors": 0,
+      "total": 296,
+      "accuracy": 100.0
+    },
+    "focusTarget": {
+      "errors": 0,
+      "total": 296,
+      "accuracy": 100.0
+    }
+  },
+  "folders": [
+    {
+      "folder": "0209切削_切削出来形",
+      "total": 12,
+      "ok": 12,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0209切削_散布量試験",
+      "total": 10,
+      "ok": 10,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0209切削_施工状況",
+      "total": 11,
+      "ok": 11,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0209切削_温度管理",
+      "total": 33,
+      "ok": 33,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0211切削_切削出来形",
+      "total": 9,
+      "ok": 9,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0211切削_安全パトロール",
+      "total": 4,
+      "ok": 4,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0211切削_施工状況",
+      "total": 14,
+      "ok": 14,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0211切削_温度管理",
+      "total": 31,
+      "ok": 31,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0212切削_切削出来形 立会",
+      "total": 6,
+      "ok": 6,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0212切削_切削出来形",
+      "total": 9,
+      "ok": 9,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0212切削_切削機",
+      "total": 5,
+      "ok": 5,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0212切削_施工状況",
+      "total": 6,
+      "ok": 6,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0212切削_温度管理",
+      "total": 24,
+      "ok": 24,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0213切削_切削出来形",
+      "total": 9,
+      "ok": 9,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0213切削_切削出来形_No.9",
+      "total": 4,
+      "ok": 4,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0213切削_施工状況",
+      "total": 8,
+      "ok": 8,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "0213切削_温度管理",
+      "total": 14,
+      "ok": 14,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260209_交通保安施設配置確認",
+      "total": 13,
+      "ok": 13,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260209_使用機械",
+      "total": 9,
+      "ok": 9,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260209_社外安全パトロール",
+      "total": 4,
+      "ok": 4,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260209_重機始業前点検",
+      "total": 5,
+      "ok": 5,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260211_トラックスケール_計量状況",
+      "total": 3,
+      "ok": 3,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260211_交通保安施設_設置状況",
+      "total": 6,
+      "ok": 6,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260211_処分状況_社内検査",
+      "total": 6,
+      "ok": 6,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260211_出荷指示確認",
+      "total": 6,
+      "ok": 6,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260212_交通保安施設",
+      "total": 13,
+      "ok": 13,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260212_安全パトロール",
+      "total": 6,
+      "ok": 6,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260213_交通保安施設",
+      "total": 12,
+      "ok": 12,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    },
+    {
+      "folder": "Photomanager_20260213_始業前点検",
+      "total": 4,
+      "ok": 4,
+      "diff": 0,
+      "missing": 0,
+      "details": []
+    }
+  ]
+}
