@@ -25,7 +25,7 @@
     "variety": "路面切削工",
     "subphase": "路面切削",
     "station": "No.10R",
-    "remarks": "切削殻積込状況",
+    "remarks": "路面切削状況",
     "remarksCandidates": [],
     "description": "路面切削機を用いて既存の舗装面を削り取り、切削屑をダンプトラックへ積み込んでいる作業状況。",
     "hasBoard": true,

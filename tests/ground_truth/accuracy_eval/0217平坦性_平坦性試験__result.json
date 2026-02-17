@@ -1,0 +1,40 @@
+[
+  {
+    "fileName": "20260217_035744.jpg",
+    "filePath": "H:/マイドライブ/〇市道 南千反畑町第１号線舗装補修工事/１５工事写真/0217平坦性\\20260217_035744.jpg",
+    "date": "2026-02-17 03:57:44",
+    "workType": "舗装工",
+    "variety": "舗装打換え工",
+    "subphase": "表層工",
+    "station": "左車線",
+    "remarks": "平坦性試験実施状況",
+    "remarksCandidates": [],
+    "description": "左車線において平坦性試験を実施している状況。",
+    "hasBoard": true,
+    "detectedText": "工事名:市道 南千反畑町第1号線舗装補修工事, 工種:舗装工, 測点:左車線, 平坦性試験",
+    "measurements": "",
+    "photoCategory": "出来形管理写真",
+    "reasoning": "photo-groups.json: 平坦性試験 / 市道 南千反畑町第1号線",
+    "focusTarget": "平坦性試験実施状況",
+    "group": 1
+  },
+  {
+    "fileName": "20260217_035849.jpg",
+    "filePath": "H:/マイドライブ/〇市道 南千反畑町第１号線舗装補修工事/１５工事写真/0217平坦性\\20260217_035849.jpg",
+    "date": "2026-02-17 03:58:49",
+    "workType": "舗装工",
+    "variety": "舗装打換え工",
+    "subphase": "表層工",
+    "station": "右車線",
+    "remarks": "平坦性試験実施状況",
+    "remarksCandidates": [],
+    "description": "右車線において平坦性試験を実施している状況。",
+    "hasBoard": true,
+    "detectedText": "工事名:市道 南千反畑町第1号線舗装補修工事, 工種:舗装工, 測点:右車線, 平坦性試験",
+    "measurements": "",
+    "photoCategory": "出来形管理写真",
+    "reasoning": "photo-groups.json: 平坦性試験 / 市道 南千反畑町第1号線",
+    "focusTarget": "平坦性試験実施状況",
+    "group": 1
+  }
+]

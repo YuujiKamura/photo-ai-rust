@@ -144,6 +144,24 @@
     "focusTarget": "敷均し温度測定"
   },
   {
+    "fileName": "",
+    "filePath": "",
+    "date": "",
+    "workType": "",
+    "variety": "",
+    "subphase": "",
+    "station": "",
+    "remarks": "",
+    "remarksCandidates": [],
+    "description": "",
+    "hasBoard": false,
+    "detectedText": "",
+    "measurements": "",
+    "photoCategory": "",
+    "reasoning": "",
+    "focusTarget": ""
+  },
+  {
     "fileName": "R0010425.JPG",
     "filePath": "H:/マイドライブ/〇市道 南千反畑町第１号線舗装補修工事/１５工事写真/0211切削/温度管理\\R0010425.JPG",
     "date": "2026-02-12 01:07:44",
@@ -450,6 +468,24 @@
     "focusTarget": "敷均し温度測定"
   },
   {
+    "fileName": "",
+    "filePath": "",
+    "date": "",
+    "workType": "",
+    "variety": "",
+    "subphase": "",
+    "station": "",
+    "remarks": "",
+    "remarksCandidates": [],
+    "description": "",
+    "hasBoard": false,
+    "detectedText": "",
+    "measurements": "",
+    "photoCategory": "",
+    "reasoning": "",
+    "focusTarget": ""
+  },
+  {
     "fileName": "R0010445.JPG",
     "filePath": "H:/マイドライブ/〇市道 南千反畑町第１号線舗装補修工事/１５工事写真/0211切削/温度管理\\R0010445.JPG",
     "date": "2026-02-12 02:55:41",
@@ -465,7 +501,7 @@
     "measurements": "148.8℃",
     "photoCategory": "品質管理写真",
     "reasoning": "photo-groups.json: マカダムローラー / さ 500",
-    "focusTarget": "初期転圧前温度測定"
+    "focusTarget": "初期締固め前温度測定"
   },
   {
     "fileName": "R0010446.JPG",
@@ -537,7 +573,7 @@
     "measurements": "4℃",
     "photoCategory": "品質管理写真",
     "reasoning": "photo-groups.json: 舗装工事 / 南千反畑第1号線",
-    "focusTarget": "舗装日外気温測定"
+    "focusTarget": "開放温度測定"
   },
   {
     "fileName": "R0010451.JPG",
@@ -555,6 +591,6 @@
     "measurements": "4℃",
     "photoCategory": "品質管理写真",
     "reasoning": "photo-groups.json: 舗装工事 / 南千反畑第1号線",
-    "focusTarget": "舗装日外気温測定"
+    "focusTarget": "開放温度測定"
   }
 ]

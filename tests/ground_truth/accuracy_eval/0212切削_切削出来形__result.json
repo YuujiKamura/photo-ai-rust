@@ -12,7 +12,7 @@
     "description": "夜間におけるNo.7地点の路面切削工出来形測定の全景。",
     "hasBoard": true,
     "detectedText": "No.7 出来形管理用紙",
-    "measurements": "右車線\u3000切削基準高 幅員W2\n設計: V3=10.143 V4=10.111 V5=10.092\n実施: V3=10.143 V4=10.108 V5=10.090\n幅員W2 設計: 3.19 実測: 3.19",
+    "measurements": "右車線　切削基準高 幅員W2\n設計: V3=10.143 V4=10.111 V5=10.092\n実施: V3=10.143 V4=10.108 V5=10.090\n幅員W2 設計: 3.19 実測: 3.19",
     "photoCategory": "出来形管理写真",
     "reasoning": "photo-groups.json: 路面切削工 / No.7",
     "focusTarget": "路面切削工出来形測定"
@@ -30,7 +30,7 @@
     "description": "No.7地点の路面切削工出来形測定における黒板と測定箇所の接写。",
     "hasBoard": true,
     "detectedText": "No.7 出来形管理用紙 実測 3.18 3.19",
-    "measurements": "右車線\u3000切削基準高 幅員W2\n設計: V3=10.143 V4=10.111 V5=10.092\n実施: V3=10.143 V4=10.108 V5=10.090\n幅員W2 設計: 3.19 実測: 3.19",
+    "measurements": "右車線　切削基準高 幅員W2\n設計: V3=10.143 V4=10.111 V5=10.092\n実施: V3=10.143 V4=10.108 V5=10.090\n幅員W2 設計: 3.19 実測: 3.19",
     "photoCategory": "出来形管理写真",
     "reasoning": "photo-groups.json: 路面切削工 / No.7",
     "focusTarget": "路面切削工出来形測定"
@@ -48,7 +48,7 @@
     "description": "No.7地点の路面切削工出来形管理用紙の接写。",
     "hasBoard": true,
     "detectedText": "出来形管理用紙 No.7 GH=10.192 FH=10.193",
-    "measurements": "右車線\u3000切削基準高 幅員W2\n設計: V3=10.143 V4=10.111 V5=10.092\n実施: V3=10.143 V4=10.108 V5=10.090\n幅員W2 設計: 3.19 実測: 3.19",
+    "measurements": "右車線　切削基準高 幅員W2\n設計: V3=10.143 V4=10.111 V5=10.092\n実施: V3=10.143 V4=10.108 V5=10.090\n幅員W2 設計: 3.19 実測: 3.19",
     "photoCategory": "出来形管理写真",
     "reasoning": "photo-groups.json: 路面切削工 / No.7",
     "focusTarget": "路面切削工出来形測定"
@@ -66,7 +66,7 @@
     "description": "夜間におけるNo.9地点の路面切削工出来形測定の全景。",
     "hasBoard": true,
     "detectedText": "No.9 出来形管理用紙",
-    "measurements": "右車線\u3000切削基準高 幅員W2\n設計: V3=10.376 V4=10.328 V5=10.298\n実施: V3=10.375 V4=10.328 V5=10.292\n幅員W2 設計: 3.20 実測: 3.20",
+    "measurements": "右車線　切削基準高 幅員W2\n設計: V3=10.376 V4=10.328 V5=10.298\n実施: V3=10.375 V4=10.328 V5=10.292\n幅員W2 設計: 3.20 実測: 3.20",
     "photoCategory": "出来形管理写真",
     "reasoning": "photo-groups.json: 路面切削工 / No.9",
     "focusTarget": "路面切削工出来形測定"
@@ -84,7 +84,7 @@
     "description": "No.9地点の路面切削工出来形測定における黒板と測定箇所の接写。",
     "hasBoard": true,
     "detectedText": "No.9 出来形管理用紙 実測 3.22 3.20",
-    "measurements": "右車線\u3000切削基準高 幅員W2\n設計: V3=10.376 V4=10.328 V5=10.298\n実施: V3=10.375 V4=10.328 V5=10.292\n幅員W2 設計: 3.20 実測: 3.20",
+    "measurements": "右車線　切削基準高 幅員W2\n設計: V3=10.376 V4=10.328 V5=10.298\n実施: V3=10.375 V4=10.328 V5=10.292\n幅員W2 設計: 3.20 実測: 3.20",
     "photoCategory": "出来形管理写真",
     "reasoning": "photo-groups.json: 路面切削工 / No.9",
     "focusTarget": "路面切削工出来形測定"
@@ -102,7 +102,7 @@
     "description": "No.9地点における路面切削工の出来形管理用紙の接写。",
     "hasBoard": true,
     "detectedText": "出来形管理用紙 No.9 GH=10.414 FH=10.426 切削高(実施) 10.375 10.328 10.292 右幅員 実測 3.20",
-    "measurements": "右車線\u3000切削基準高 幅員W2\n設計: V3=10.376 V4=10.328 V5=10.298\n実施: V3=10.375 V4=10.328 V5=10.292\n幅員W2 設計: 3.20 実測: 3.20",
+    "measurements": "右車線　切削基準高 幅員W2\n設計: V3=10.376 V4=10.328 V5=10.298\n実施: V3=10.375 V4=10.328 V5=10.292\n幅員W2 設計: 3.20 実測: 3.20",
     "photoCategory": "出来形管理写真",
     "reasoning": "photo-groups.json: 路面切削工 / No.9",
     "focusTarget": "路面切削工出来形測定"
@@ -120,7 +120,7 @@
     "description": "No.11地点における路面切削工の出来形測定状況の全景。",
     "hasBoard": true,
     "detectedText": "No.11 出来形管理用紙",
-    "measurements": "右車線\u3000切削基準高 幅員W2\n設計: V3=10.624 V4=10.590 V5=10.569\n実施: V3=10.621 V4=10.585 V5=10.568\n幅員W2 設計: 3.20 実測: 3.20",
+    "measurements": "右車線　切削基準高 幅員W2\n設計: V3=10.624 V4=10.590 V5=10.569\n実施: V3=10.621 V4=10.585 V5=10.568\n幅員W2 設計: 3.20 実測: 3.20",
     "photoCategory": "出来形管理写真",
     "reasoning": "photo-groups.json: 路面切削工 / No.11",
     "focusTarget": "路面切削工出来形測定"
@@ -138,7 +138,7 @@
     "description": "No.11地点における路面切削工の幅員測定状況と出来形管理用紙の接写。",
     "hasBoard": true,
     "detectedText": "No.11 出来形管理用紙",
-    "measurements": "右車線\u3000切削基準高 幅員W2\n設計: V3=10.624 V4=10.590 V5=10.569\n実施: V3=10.621 V4=10.585 V5=10.568\n幅員W2 設計: 3.20 実測: 3.20",
+    "measurements": "右車線　切削基準高 幅員W2\n設計: V3=10.624 V4=10.590 V5=10.569\n実施: V3=10.621 V4=10.585 V5=10.568\n幅員W2 設計: 3.20 実測: 3.20",
     "photoCategory": "出来形管理写真",
     "reasoning": "photo-groups.json: 路面切削工 / No.11",
     "focusTarget": "路面切削工出来形測定"
@@ -156,7 +156,7 @@
     "description": "No.11地点における路面切削工の出来形管理用紙の接写。",
     "hasBoard": true,
     "detectedText": "出来形管理用紙 No.11 GH=10.669 FH=10.674 切削高(実施) 10.621 10.585 10.568 右幅員 実測 3.20",
-    "measurements": "右車線\u3000切削基準高 幅員W2\n設計: V3=10.624 V4=10.590 V5=10.569\n実施: V3=10.621 V4=10.585 V5=10.568\n幅員W2 設計: 3.20 実測: 3.20",
+    "measurements": "右車線　切削基準高 幅員W2\n設計: V3=10.624 V4=10.590 V5=10.569\n実施: V3=10.621 V4=10.585 V5=10.568\n幅員W2 設計: 3.20 実測: 3.20",
     "photoCategory": "出来形管理写真",
     "reasoning": "photo-groups.json: 路面切削工 / No.11",
     "focusTarget": "路面切削工出来形測定"
