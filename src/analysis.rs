@@ -331,6 +331,14 @@ fn convert_groups_to_results(
             result.subphase = row.subphase.clone();
             result.remarks = row.remarks.clone();
 
+            // 舗装補修工CSVにマッチした場合の正規化
+            if result.work_type == "舗装補修工" {
+                result.work_type = "舗装工".to_string();
+                if result.variety == "アスファルト舗装補修工" {
+                    result.variety = VARIETY_PAVEMENT_REPLACE.to_string();
+                }
+            }
+
             // 「切削機」フォルダの使用機械は、機械名を備考へ埋め込む。
             if result.remarks == "使用機械"
                 && folder_name.contains("切削機")
@@ -421,7 +429,10 @@ fn convert_groups_to_results(
     results.sort_by(|a, b| {
         a.2.date.cmp(&b.2.date).then(a.2.file_name.cmp(&b.2.file_name))
     });
-    let mut final_results: Vec<analyzer::AnalysisResult> = results.into_iter().map(|(_, _, r)| r).collect();
+    let mut final_results: Vec<analyzer::AnalysisResult> = results.into_iter().map(|(group, _, mut r)| {
+        r.group = group;
+        r
+    }).collect();
 
     if folder_name.contains("処分状況_車番調査") {
         let mut shared_measurement: Option<String> = None;
@@ -442,8 +453,56 @@ fn convert_groups_to_results(
 
     apply_domain_corrections(&mut final_results, line_types);
     apply_folder_specific_corrections(&mut final_results, folder_context);
+    propagate_master_match_within_groups(&mut final_results);
 
     final_results
+}
+
+/// グループ内でマスタ照合結果を伝搬する
+///
+/// photo-taggerのmachine_id由来グループ番号を利用して、
+/// マスタ照合に成功した写真(リーダー)の結果を、同一グループ内の
+/// マスタ照合失敗写真(remarks空)に伝搬する。
+///
+/// ゲート: グループサイズ2〜6のみ対象（machine_id=""の巨大グループを除外）
+fn propagate_master_match_within_groups(results: &mut [analyzer::AnalysisResult]) {
+    use std::collections::HashMap;
+    let mut groups: HashMap<u32, Vec<usize>> = HashMap::new();
+    for (i, r) in results.iter().enumerate() {
+        if r.group > 0 {
+            groups.entry(r.group).or_default().push(i);
+        }
+    }
+    for indices in groups.values() {
+        if indices.len() < 2 || indices.len() > 6 {
+            continue;
+        }
+        // リーダー: remarks非空 & detected_text最長
+        let leader = indices
+            .iter()
+            .filter(|&&i| !results[i].remarks.is_empty())
+            .max_by_key(|&&i| results[i].detected_text.len())
+            .copied();
+        let Some(leader) = leader else { continue };
+        let snap_work_type = results[leader].work_type.clone();
+        let snap_variety = results[leader].variety.clone();
+        let snap_subphase = results[leader].subphase.clone();
+        let snap_photo_category = results[leader].photo_category.clone();
+        let snap_remarks = results[leader].remarks.clone();
+        // マッチ失敗写真（remarks空 & photo_category空）にリーダーの結果を伝搬
+        for &idx in indices {
+            if idx == leader {
+                continue;
+            }
+            if results[idx].remarks.is_empty() && results[idx].photo_category.is_empty() {
+                results[idx].work_type = snap_work_type.clone();
+                results[idx].variety = snap_variety.clone();
+                results[idx].subphase = snap_subphase.clone();
+                results[idx].photo_category = snap_photo_category.clone();
+                results[idx].remarks = snap_remarks.clone();
+            }
+        }
+    }
 }
 
 /// フォルダ内の文脈でドメイン固有の種別補正を適用
@@ -589,7 +648,8 @@ mod tests {
     }
 
     #[test]
-    fn test_temperature_folder_postprocess_fills_station_and_strips_measurement_suffix() {
+    fn test_temperature_unified_station_from_folder_context() {
+        // フォルダ名 "0209切削" → 2月9日（EXIF日付 2月10日ではなくフォルダの施工日を使う）
         let mut result = analyzer::AnalysisResult {
             file_name: "T1.JPG".to_string(),
             photo_category: PHOTO_CAT_QUALITY.to_string(),
@@ -610,13 +670,14 @@ mod tests {
 
         assert_eq!(result.work_type, "舗装工");
         assert_eq!(result.variety, VARIETY_PAVEMENT_REPLACE);
-        assert_eq!(result.station, "2月10日");
-        assert_eq!(result.remarks, "到着温度");
-        assert_eq!(result.measurements, "");
+        assert_eq!(result.station, "2月9日");           // folder_contextから（EXIF 2月10日ではない）
+        assert_eq!(result.remarks, "到着温度測定");      // 「測定」suffix付き（統一）
+        assert_eq!(result.measurements, "159.7℃");      // 保持（クリアしない）
     }
 
     #[test]
-    fn test_temperature_folder_postprocess_keeps_modern_format() {
+    fn test_temperature_unified_station_from_folder_0212() {
+        // フォルダ名 "0212切削" → 2月12日
         let mut result = analyzer::AnalysisResult {
             file_name: "T2.JPG".to_string(),
             photo_category: PHOTO_CAT_QUALITY.to_string(),
@@ -637,9 +698,9 @@ mod tests {
 
         assert_eq!(result.work_type, "舗装工");
         assert_eq!(result.variety, VARIETY_PAVEMENT_REPLACE);
-        assert_eq!(result.station, "");
-        assert_eq!(result.remarks, "到着温度測定");
-        assert_eq!(result.measurements, "160.1℃");
+        assert_eq!(result.station, "2月12日");           // folder_contextから
+        assert_eq!(result.remarks, "到着温度測定");      // 「測定」suffix付き
+        assert_eq!(result.measurements, "160.1℃");      // 保持
     }
 }
 
@@ -659,31 +720,12 @@ fn apply_temperature_folder_postprocess(result: &mut analyzer::AnalysisResult, f
     result.subphase = SUBPHASE_SURFACE.to_string();
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TemperatureMode {
-    Legacy0209,
-    Overlay0211Or0213,
-    Standard0212,
-    Other,
-}
-
-fn detect_temperature_mode(folder_context: &str) -> TemperatureMode {
-    if folder_context.contains("0209切削") {
-        TemperatureMode::Legacy0209
-    } else if folder_context.contains("0211切削") || folder_context.contains("0213切削") {
-        TemperatureMode::Overlay0211Or0213
-    } else if folder_context.contains("0212切削") {
-        TemperatureMode::Standard0212
-    } else {
-        TemperatureMode::Other
-    }
-}
-
+/// detectedText・focusTargetから温度測定種別を分類する。
+/// 常に「測定」suffix付きの正規化名を返す。
 fn classify_temperature_remarks(
     remarks: &str,
     detected_text: &str,
     focus_target: &str,
-    mode: TemperatureMode,
 ) -> String {
     let text = format!("{} {}", detected_text, focus_target);
     let has_open = text.contains("開放温度") || text.contains("解放温度");
@@ -711,21 +753,12 @@ fn classify_temperature_remarks(
         remarks.to_string()
     };
 
-    match mode {
-        TemperatureMode::Legacy0209 => {
-            mapped = mapped.trim_end_matches("測定").to_string();
-            if mapped == "舗装日外気温" || mapped == "舗装厚測定・管理値" {
-                mapped = "開放温度".to_string();
-            }
-        }
-        _ => {
-            if matches!(
-                mapped.as_str(),
-                "到着温度" | "敷均し温度" | "初期締固め前温度" | "開放温度" | "舗装日外気温"
-            ) {
-                mapped.push_str("測定");
-            }
-        }
+    // 温度種別が判定できたが「測定」suffixがない場合は付与
+    if matches!(
+        mapped.as_str(),
+        "到着温度" | "敷均し温度" | "初期締固め前温度" | "開放温度" | "舗装日外気温"
+    ) {
+        mapped.push_str("測定");
     }
     mapped
 }
@@ -778,6 +811,8 @@ fn extract_dump_number_from_station(station: &str) -> Option<String> {
 }
 
 fn fill_missing_dump_numbers(results: &mut [analyzer::AnalysisResult]) {
+    // ±1隣接ウィンドウで台目を推定（全写真共通）
+    // group内検索は台目が撮影イベント単位ではなくダンプ1台分（=station）単位なので不要
     for i in 0..results.len() {
         if results[i].station.contains("台目") || !is_temperature_photo(&results[i].remarks) {
             continue;
@@ -788,14 +823,16 @@ fn fill_missing_dump_numbers(results: &mut [analyzer::AnalysisResult]) {
         let mut inferred_dump = None;
         if i > 0
             && results[i - 1].remarks == results[i].remarks
-            && extract_month_day_from_text(&results[i - 1].station).as_deref() == Some(base_day.as_str())
+            && extract_month_day_from_text(&results[i - 1].station).as_deref()
+                == Some(base_day.as_str())
         {
             inferred_dump = extract_dump_number_from_station(&results[i - 1].station);
         }
         if inferred_dump.is_none()
             && i + 1 < results.len()
             && results[i + 1].remarks == results[i].remarks
-            && extract_month_day_from_text(&results[i + 1].station).as_deref() == Some(base_day.as_str())
+            && extract_month_day_from_text(&results[i + 1].station).as_deref()
+                == Some(base_day.as_str())
         {
             inferred_dump = extract_dump_number_from_station(&results[i + 1].station);
         }
@@ -809,6 +846,7 @@ fn rebalance_initial_temperature_labels(results: &mut [analyzer::AnalysisResult]
     use std::collections::BTreeMap;
     let initial = "初期締固め前温度測定";
     let spread = "敷均し温度測定";
+    // stationのみでキー化（ダンプ1台分=station単位のリバランス。groupは撮影イベント単位なので不使用）
     let mut by_station: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (idx, r) in results.iter().enumerate() {
         if r.station.contains("台目") {
@@ -840,6 +878,8 @@ fn rebalance_initial_temperature_labels(results: &mut [analyzer::AnalysisResult]
 }
 
 fn repair_orphan_temperature_entries(results: &mut [analyzer::AnalysisResult]) {
+    // 2ステップ後退ウィンドウで孤立温度エントリを修復（全写真共通）
+    // 台目はダンプ1台分（=station）単位なのでgroupではなく隣接で検索
     for i in 2..results.len() {
         if results[i].station.contains("台目") || !is_temperature_photo(&results[i].remarks) {
             continue;
@@ -891,15 +931,21 @@ fn propagate_temperature_measurements(results: &mut [analyzer::AnalysisResult]) 
         }
     }
 
+    // (station, remarks) でグループ化（ダンプ1台分=station単位での値統一）
     let mut groups: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
     for (idx, r) in results.iter().enumerate() {
         if valid.contains(&r.remarks.as_str()) {
-            groups.entry((r.station.clone(), r.remarks.clone())).or_default().push(idx);
+            groups
+                .entry((r.station.clone(), r.remarks.clone()))
+                .or_default()
+                .push(idx);
         }
     }
 
     for idxs in groups.values() {
-        let Some(first_idx) = idxs.first().copied() else { continue; };
+        let Some(first_idx) = idxs.first().copied() else {
+            continue;
+        };
         let group_remarks = results[first_idx].remarks.clone();
         let mut value_counts: BTreeMap<String, usize> = BTreeMap::new();
         for &i in idxs {
@@ -931,6 +977,14 @@ fn propagate_temperature_measurements(results: &mut [analyzer::AnalysisResult]) 
     }
 }
 
+/// 温度管理フォルダ専用の最終調整。
+///
+/// フォルダ名に依存せず、detectedText（黒板OCR）を正とする統一ロジック。
+/// - station: 黒板の日付 → フォルダ名の日付 → EXIF日付（最終手段）
+/// - 台目: blackboard → 既存station
+/// - remarks: classify_temperature_remarks() で正規化
+/// - measurements: detectedTextから抽出→グループ内伝搬
+/// - variety: この関数では設定しない（apply_temperature_folder_postprocessの値を維持）
 fn apply_temperature_folder_final_adjustments(
     results: &mut [analyzer::AnalysisResult],
     folder_context: &str,
@@ -939,69 +993,38 @@ fn apply_temperature_folder_final_adjustments(
         return;
     }
 
-    let mode = detect_temperature_mode(folder_context);
     for result in results.iter_mut() {
-        if mode == TemperatureMode::Legacy0209 {
-            if result.station.is_empty() {
-                result.station = date_to_month_day(&result.date);
-            }
-            result.measurements.clear();
-            let mut normalized = result.remarks.trim_end_matches("測定").to_string();
-            if normalized == "舗装日外気温" || normalized == "舗装厚測定・管理値" {
-                normalized = "開放温度".to_string();
-            }
-            let has_arrival = result.detected_text.contains("到着温度");
-            let has_spread = result.detected_text.contains("敷均し温度");
-            let has_initial = result.detected_text.contains("初期転圧前温度")
-                || result.detected_text.contains("初期締固め前温度");
-            if has_arrival && (has_spread || has_initial) {
-                normalized = "到着温度".to_string();
-            }
-            result.remarks = normalized;
-        } else if mode == TemperatureMode::Standard0212
-            && result.station.contains('月')
-            && result.station.contains('日')
-        {
-            result.station.clear();
-            result.remarks = classify_temperature_remarks(
-                &result.remarks,
-                &result.detected_text,
-                &result.focus_target,
-                mode,
-            );
-            let has_arrival = result.detected_text.contains("到着温度");
-            let has_spread = result.detected_text.contains("敷均し温度");
-            if has_arrival && has_spread && result.remarks == "敷均し温度測定" {
-                result.remarks = "到着温度測定".to_string();
-            }
-        }
+        // station: 黒板日付 → フォルダ名日付 → 既存station日付 → EXIF日付
+        let base_day = extract_month_day_from_text(&result.detected_text)
+            .or_else(|| extract_month_day_from_folder_context(folder_context))
+            .or_else(|| extract_month_day_from_text(&result.station))
+            .unwrap_or_else(|| date_to_month_day(&result.date));
+        let dump = extract_dump_number(&result.detected_text)
+            .or_else(|| extract_dump_number_from_station(&result.station));
+        result.station = match dump {
+            Some(d) => format!("{} {}", base_day, d),
+            None => base_day,
+        };
 
-        if mode == TemperatureMode::Overlay0211Or0213 {
-            result.variety = VARIETY_CUTTING_OVERLAY.to_string();
-            let base_day = extract_month_day_from_text(&result.detected_text)
-                .or_else(|| extract_month_day_from_folder_context(folder_context))
-                .or_else(|| extract_month_day_from_text(&result.station))
-                .unwrap_or_else(|| date_to_month_day(&result.date));
-            let dump = extract_dump_number(&result.detected_text)
-                .or_else(|| extract_dump_number_from_station(&result.station));
-            result.station = match dump {
-                Some(d) => format!("{} {}", base_day, d),
-                None => base_day,
-            };
-            result.remarks = classify_temperature_remarks(
-                &result.remarks,
-                &result.detected_text,
-                &result.focus_target,
-                mode,
-            );
+        // remarks: detectedText + focusTarget から温度種別を分類
+        result.remarks = classify_temperature_remarks(
+            &result.remarks,
+            &result.detected_text,
+            &result.focus_target,
+        );
+
+        // 黒板に複数温度並記時の到着温度優先ルール
+        let has_arrival = result.detected_text.contains("到着温度");
+        let has_spread = result.detected_text.contains("敷均し温度");
+        if has_arrival && has_spread && result.remarks == "敷均し温度測定" {
+            result.remarks = "到着温度測定".to_string();
         }
     }
 
-    if mode == TemperatureMode::Overlay0211Or0213 {
-        normalizer::append_dump_number_to_station(results);
-        fill_missing_dump_numbers(results);
-        repair_orphan_temperature_entries(results);
-        rebalance_initial_temperature_labels(results);
-        propagate_temperature_measurements(results);
-    }
+    // 後処理: 全温度管理フォルダ共通
+    normalizer::append_dump_number_to_station(results);
+    fill_missing_dump_numbers(results);
+    repair_orphan_temperature_entries(results);
+    rebalance_initial_temperature_labels(results);
+    propagate_temperature_measurements(results);
 }
