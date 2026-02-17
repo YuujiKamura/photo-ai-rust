@@ -44,6 +44,7 @@ pub struct NormalizationCorrection {
 pub enum CorrectionField {
     Measurements,
     Remarks,
+    Station,
 }
 
 impl std::fmt::Display for CorrectionField {
@@ -51,6 +52,7 @@ impl std::fmt::Display for CorrectionField {
         match self {
             CorrectionField::Measurements => write!(f, "計測値"),
             CorrectionField::Remarks => write!(f, "備考"),
+            CorrectionField::Station => write!(f, "測点"),
         }
     }
 }
@@ -176,6 +178,19 @@ pub fn normalize_results(
         }
     }
 
+    // Step 5: グループ単位でのステーション統一
+    {
+        let mut working = results.to_vec();
+        apply_corrections(&mut working, &corrections);
+        let station_corrections = unify_station_by_group(&working);
+        for correction in station_corrections {
+            if !corrections.iter().any(|c| c.file_name == correction.file_name && c.field == CorrectionField::Station) {
+                stats.corrected_records += 1;
+                corrections.push(correction);
+            }
+        }
+    }
+
     NormalizationResult { corrections, stats }
 }
 
@@ -284,40 +299,38 @@ fn fix_misclassified_temperature(results: &[AnalysisResult]) -> Vec<Normalizatio
     corrections
 }
 
-/// 3枚セット内で黒板アップの計測値に統一する
+/// ボードアップ写真かどうかを判定する
 ///
-/// 連続する同一remarks（温度種別）の写真をグループ化し、
-/// focusTarget="黒板アップ"の値を他の写真に適用する
+/// ボードアップ = 黒板・管理用紙等の計測データをクローズアップした写真。
+/// 温度管理なら"黒板アップ"、出来形なら"管理値"を含むfocus_target。
+fn is_board_up_photo(focus_target: &str) -> bool {
+    focus_target == "黒板アップ" || focus_target.contains("管理値")
+}
+
+/// グループ内でボードアップ写真の計測値に統一する
+///
+/// Phase 1: real group番号(photo-tagger)によるグループ化 → 全写真対象
+/// Phase 2: group=0の温度写真は連続同一remarksでグループ化（後方互換）
+///
+/// ボードアップ写真がなければ伝播しない（値なし）。
 fn unify_measurements_by_group(results: &[AnalysisResult]) -> Vec<NormalizationCorrection> {
     let mut corrections = Vec::new();
-
-    // グループ化: real group番号があればそれを使い、なければ連続同一remarksでグループ化
     let mut groups: Vec<Vec<usize>> = Vec::new();
 
-    // Phase 1: real group番号によるグループ化
-    let mut real_groups: std::collections::HashMap<(u32, String), Vec<usize>> =
+    // Phase 1: real group番号によるグループ化（全写真対象）
+    let mut real_groups: std::collections::HashMap<u32, Vec<usize>> =
         std::collections::HashMap::new();
-    let mut ungrouped: Vec<usize> = Vec::new();
+    let mut ungrouped_temp: Vec<usize> = Vec::new();
 
     for (i, result) in results.iter().enumerate() {
-        let remarks_is_temp = measurements::is_temperature_photo(&result.remarks);
-        let is_temp = remarks_is_temp
-            || (result.photo_category == "品質管理写真"
-                && measurements::is_temperature_photo(&result.detected_text));
-        if !is_temp {
-            continue;
-        }
-        // real groupによるグループ化はremarksが温度系の場合のみ
-        // (detected_text経由での温度判定は散布量試験等が誤ヒットする)
-        if result.group > 0 && remarks_is_temp {
+        if result.group > 0 {
             real_groups
-                .entry((result.group, result.remarks.clone()))
+                .entry(result.group)
                 .or_default()
                 .push(i);
-        } else if remarks_is_temp {
-            ungrouped.push(i);
+        } else if measurements::is_temperature_photo(&result.remarks) {
+            ungrouped_temp.push(i);
         }
-        // remarks自体が温度系でない場合（散布量試験等）は統一対象外
     }
 
     for indices in real_groups.values() {
@@ -326,10 +339,10 @@ fn unify_measurements_by_group(results: &[AnalysisResult]) -> Vec<NormalizationC
         }
     }
 
-    // Phase 2: group=0 の写真は既存の連続同一remarksロジックでグループ化
+    // Phase 2: group=0 の温度写真は既存の連続同一remarksロジックでグループ化（後方互換）
     let mut current_group: Vec<usize> = Vec::new();
     let mut current_remarks: Option<&str> = None;
-    for &i in &ungrouped {
+    for &i in &ungrouped_temp {
         let remarks = results[i].remarks.as_str();
         if current_remarks == Some(remarks) {
             current_group.push(i);
@@ -345,23 +358,22 @@ fn unify_measurements_by_group(results: &[AnalysisResult]) -> Vec<NormalizationC
         groups.push(current_group);
     }
 
-    // 各グループでソース写真の値に統一
+    // 各グループでボードアップ写真の値に統一
     for group in groups {
-        // 黒板アップを優先、なければmeasurementsを持つ任意の写真をソースにする
+        // ボードアップ写真を優先ソースとする。なければ伝播しない
         let source_idx = group.iter().find(|&&i| {
-            results[i].focus_target == "黒板アップ" && !results[i].measurements.is_empty()
+            is_board_up_photo(&results[i].focus_target) && !results[i].measurements.is_empty()
         }).or_else(|| {
+            // 後方互換: ボードアップがなくてもmeasurementsを持つ写真があればソースに
+            // （温度管理では黒板アップ以外にも温度計アップ等が値を持つ）
             group.iter().find(|&&i| !results[i].measurements.is_empty())
         });
 
         if let Some(&src_idx) = source_idx {
             let source_value = results[src_idx].measurements.clone();
 
-            // 他の写真の値を統一（空のものにも適用）
             for &idx in &group {
-                if idx == src_idx {
-                    continue;
-                }
+                if idx == src_idx { continue; }
                 let target = &results[idx];
                 if target.measurements != source_value {
                     corrections.push(NormalizationCorrection {
@@ -373,6 +385,66 @@ fn unify_measurements_by_group(results: &[AnalysisResult]) -> Vec<NormalizationC
                             "グループ内統一({})",
                             results[src_idx].file_name
                         ),
+                    });
+                }
+            }
+        }
+    }
+
+    corrections
+}
+
+/// グループ内でステーションを統一する
+///
+/// photo-taggerのグループ内で、ボードアップ写真またはhas_board=trueの写真の
+/// stationを代表値として全写真に適用する。
+fn unify_station_by_group(results: &[AnalysisResult]) -> Vec<NormalizationCorrection> {
+    let mut corrections = Vec::new();
+
+    // real group番号によるグループ化（全写真対象）
+    let mut real_groups: std::collections::HashMap<u32, Vec<usize>> =
+        std::collections::HashMap::new();
+
+    for (i, result) in results.iter().enumerate() {
+        if result.group > 0 {
+            real_groups.entry(result.group).or_default().push(i);
+        }
+    }
+
+    for indices in real_groups.values() {
+        if indices.len() < 2 { continue; }
+
+        // ステーション代表値の選定:
+        // 1. ボードアップ写真で非空station
+        // 2. has_board=trueの写真で非空station（最長値＝最も詳細）
+        // 3. 任意の非空station（最長値）
+        let representative_station = indices.iter()
+            .filter(|&&i| is_board_up_photo(&results[i].focus_target) && !results[i].station.is_empty())
+            .map(|&i| results[i].station.as_str())
+            .next()
+            .or_else(|| {
+                indices.iter()
+                    .filter(|&&i| results[i].has_board && !results[i].station.is_empty())
+                    .map(|&i| results[i].station.as_str())
+                    .max_by_key(|s| s.len())
+            })
+            .or_else(|| {
+                indices.iter()
+                    .filter(|&&i| !results[i].station.is_empty())
+                    .map(|&i| results[i].station.as_str())
+                    .max_by_key(|s| s.len())
+            });
+
+        if let Some(station) = representative_station {
+            let station_owned = station.to_string();
+            for &idx in indices {
+                if results[idx].station != station_owned {
+                    corrections.push(NormalizationCorrection {
+                        file_name: results[idx].file_name.clone(),
+                        field: CorrectionField::Station,
+                        original: results[idx].station.clone(),
+                        corrected: station_owned.clone(),
+                        reason: "グループ内ステーション統一".to_string(),
                     });
                 }
             }
@@ -535,6 +607,7 @@ pub fn apply_corrections(
             match correction.field {
                 CorrectionField::Measurements => result.measurements = correction.corrected.clone(),
                 CorrectionField::Remarks => result.remarks = correction.corrected.clone(),
+                CorrectionField::Station => result.station = correction.corrected.clone(),
             }
         }
     }
@@ -671,6 +744,94 @@ mod tests {
         assert_eq!(corrections[0].file_name, "RIMG0188.JPG");
         assert_eq!(corrections[0].original, "147.6℃");
         assert_eq!(corrections[0].corrected, "149.6℃");
+    }
+
+    #[test]
+    fn test_unify_measurements_general_group_core() {
+        // コアー測定グループ: group=2, ボードアップ(管理値)の値がグループ全体に伝播
+        let results = vec![
+            AnalysisResult {
+                file_name: "R0010584.JPG".to_string(),
+                remarks: "舗装厚測定".to_string(),
+                measurements: "".to_string(),
+                focus_target: "舗装厚測定".to_string(),
+                has_board: true,
+                station: "No.1".to_string(),
+                group: 2,
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "R0010585.JPG".to_string(),
+                remarks: "舗装厚測定".to_string(),
+                measurements: "".to_string(),
+                focus_target: "舗装厚測定・接写".to_string(),
+                has_board: false,
+                station: "".to_string(),
+                group: 2,
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "R0010586.JPG".to_string(),
+                remarks: "舗装厚測定".to_string(),
+                measurements: "設計厚 t=50mm, 実測平均 52.50mm".to_string(),
+                focus_target: "舗装厚測定・管理値".to_string(),
+                has_board: true,
+                station: "No.1".to_string(),
+                group: 2,
+                ..Default::default()
+            },
+        ];
+
+        let corrections = unify_measurements_by_group(&results);
+
+        // R0010584とR0010585が管理値写真の値に統一される
+        assert_eq!(corrections.len(), 2, "corrections: {:?}", corrections);
+        assert!(corrections.iter().any(|c|
+            c.file_name == "R0010584.JPG"
+            && c.corrected == "設計厚 t=50mm, 実測平均 52.50mm"
+        ));
+        assert!(corrections.iter().any(|c|
+            c.file_name == "R0010585.JPG"
+            && c.corrected == "設計厚 t=50mm, 実測平均 52.50mm"
+        ));
+    }
+
+    #[test]
+    fn test_unify_station_by_group() {
+        // コアー写真グループ: has_board=trueの写真のstationをグループ全体に伝播
+        let results = vec![
+            AnalysisResult {
+                file_name: "R0010582.JPG".to_string(),
+                station: "No.1 右車線".to_string(),
+                has_board: true,
+                focus_target: "コアー採取前".to_string(),
+                group: 2,
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "R0010583.JPG".to_string(),
+                station: "No.1 右車線".to_string(),
+                has_board: true,
+                focus_target: "コアー採取状況".to_string(),
+                group: 2,
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "R0010585.JPG".to_string(),
+                station: "".to_string(),
+                has_board: false,
+                focus_target: "舗装厚測定・接写".to_string(),
+                group: 2,
+                ..Default::default()
+            },
+        ];
+
+        let corrections = unify_station_by_group(&results);
+
+        // 接写写真(station空)にstationが伝播
+        assert_eq!(corrections.len(), 1);
+        assert_eq!(corrections[0].file_name, "R0010585.JPG");
+        assert_eq!(corrections[0].corrected, "No.1 右車線");
     }
 
     #[test]
