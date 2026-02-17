@@ -255,6 +255,37 @@ pub enum Commands {
         #[arg(short, long)]
         model: Option<String>,
     },
+
+    /// Ground Truth管理（取り込み・比較）
+    Gt {
+        #[command(subcommand)]
+        action: GtAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GtAction {
+    /// PDFまたはJSONからGTを取り込む
+    Import {
+        /// 入力ファイル（PDF or JSON）
+        #[arg(required = true)]
+        source: PathBuf,
+        /// GT保存先ディレクトリ
+        #[arg(short, long, default_value = "tests/ground_truth/accuracy_eval")]
+        output_dir: PathBuf,
+        /// フォルダ名（GT JSONのファイル名。省略時はソースのステム）
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+    /// パイプライン出力とGTを比較
+    Compare {
+        /// GTディレクトリ
+        #[arg(long, default_value = "tests/ground_truth/accuracy_eval")]
+        gt_dir: PathBuf,
+        /// パイプライン出力ディレクトリ
+        #[arg(long, default_value = "tests/ground_truth/pipeline_output")]
+        pipeline_dir: PathBuf,
+    },
 }
 
 #[derive(Clone, Debug, Default)]

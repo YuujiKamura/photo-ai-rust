@@ -165,6 +165,7 @@ pub fn merge_results(
                 reasoning: step2.map(|s| s.reasoning.clone()).unwrap_or_default(),
                 focus_target: String::new(), // TODO: 1ステップ解析では出力される
                 skip: false,
+                group: 0,
             }
         })
         .collect()

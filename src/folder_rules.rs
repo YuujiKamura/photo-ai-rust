@@ -143,26 +143,62 @@ pub fn apply_folder_specific_corrections(results: &mut [AnalysisResult], folder_
     }
 
     if folder_name.contains("切削") && folder_name.contains("切削出来形") {
-        for i in 0..results.len() {
-            let prev_station = if i > 0 {
-                Some(results[i - 1].station.clone())
-            } else {
-                None
-            };
-            let r = &mut results[i];
+        // Pass 0: OCRからstation抽出 + subphase設定
+        for r in results.iter_mut() {
             if r.station.is_empty() {
                 r.station = extract_dekigata_station(&r.detected_text).unwrap_or_default();
-            }
-            if r.station.is_empty() {
-                let prev = prev_station.unwrap_or_default();
-                if !prev.is_empty() {
-                    r.station = prev;
-                }
             }
             if folder_name.contains("0209切削") || folder_name.contains("0211切削") {
                 r.subphase.clear();
             } else {
                 r.subphase = "路面切削".to_string();
+            }
+        }
+
+        // Pass 1+2: group内でstation伝搬（前方+後方）
+        {
+            use std::collections::HashMap;
+            let mut groups: HashMap<u32, Vec<usize>> = HashMap::new();
+            let mut ungrouped: Vec<usize> = Vec::new();
+            for (i, r) in results.iter().enumerate() {
+                if r.group > 0 {
+                    groups.entry(r.group).or_default().push(i);
+                } else {
+                    ungrouped.push(i);
+                }
+            }
+
+            // real group: グループ内でstation保有写真→全員に適用
+            for indices in groups.values() {
+                let station = indices
+                    .iter()
+                    .find(|&&i| !results[i].station.is_empty())
+                    .map(|&i| results[i].station.clone());
+                if let Some(st) = station {
+                    for &i in indices {
+                        if results[i].station.is_empty() {
+                            results[i].station = st.clone();
+                        }
+                    }
+                }
+            }
+
+            // group=0: 既存の前方+後方伝搬
+            // 前方伝搬
+            for wi in 1..ungrouped.len() {
+                let i = ungrouped[wi];
+                let prev_i = ungrouped[wi - 1];
+                if results[i].station.is_empty() && !results[prev_i].station.is_empty() {
+                    results[i].station = results[prev_i].station.clone();
+                }
+            }
+            // 後方伝搬
+            for wi in (0..ungrouped.len().saturating_sub(1)).rev() {
+                let i = ungrouped[wi];
+                let next_i = ungrouped[wi + 1];
+                if results[i].station.is_empty() && !results[next_i].station.is_empty() {
+                    results[i].station = results[next_i].station.clone();
+                }
             }
         }
 
@@ -330,6 +366,26 @@ pub fn apply_folder_specific_corrections(results: &mut [AnalysisResult], folder_
             if r.detected_text.trim().is_empty() {
                 r.station.clear();
                 r.measurements.clear();
+            }
+        }
+    }
+
+    if folder_name.contains("Photomanager")
+        && folder_name.contains("20260211")
+        && folder_name.contains("処分状況")
+    {
+        for r in results.iter_mut() {
+            r.photo_category = PHOTO_CAT_CONSTRUCTION.to_string();
+            r.work_type = "舗装工".to_string();
+            r.variety = "路面切削工".to_string();
+            r.subphase = "殻処分".to_string();
+            r.station = "2月11日".to_string();
+            r.measurements = "積載量：2.29ｔ".to_string();
+            // 235402のみ黒板日付訂正（黒板に2月10日と誤記）
+            if r.file_name == "20260211_235402.jpg" {
+                r.remarks = "As殻処分状況\u{3000}社内検査（黒板日付訂正）".to_string();
+            } else {
+                r.remarks = "As殻処分状況\u{3000}社内検査".to_string();
             }
         }
     }

@@ -29,6 +29,7 @@ fn create_test_result(index: usize) -> AnalysisResult {
         remarks_candidates: Vec::new(),
         focus_target: String::new(),
         skip: false,
+        group: 0,
     }
 }
 
@@ -203,6 +204,7 @@ fn test_excel_data_consistency() {
             remarks_candidates: Vec::new(),
             focus_target: String::new(),
             skip: false,
+            group: 0,
         },
     ];
 
@@ -270,6 +272,7 @@ fn test_excel_japanese_text() {
             remarks_candidates: Vec::new(),
             focus_target: String::new(),
             skip: false,
+            group: 0,
         },
     ];
 
