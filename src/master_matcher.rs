@@ -207,13 +207,18 @@ fn score_candidates(
     let mut scored: Vec<(HierarchyRow, usize)> = Vec::new();
 
     // Phase 1: 検索パターン列でマッチ
+    let ft = focus_target.unwrap_or("");
     let mut phase1_matches: Vec<(&HierarchyRow, usize)> = Vec::new();
     for row in &candidates {
         if !row.search_patterns.is_empty() {
             let patterns: Vec<&str> = row.search_patterns.split('|').collect();
-            let score = keywords.iter()
+            let mut score = keywords.iter()
                 .filter(|kw| patterns.iter().any(|p| kw.contains(p) || p.contains(kw.as_str())))
                 .count();
+            // focus_targetも検索パターンに照合（AIが正しい答えを出しているなら直接使う）
+            if !ft.is_empty() && patterns.iter().any(|p| ft.contains(p) || p.contains(ft)) {
+                score += 1;
+            }
             if score > 0 {
                 phase1_matches.push((row, score));
             }
@@ -232,7 +237,6 @@ fn score_candidates(
         }
 
         // 同スコアの複数候補 → focus_targetでタイブレイク
-        let ft = focus_target.unwrap_or("");
         if !ft.is_empty() {
             let best = best_matches.iter()
                 .max_by_key(|(row, _)| token_overlap_score(ft, &row.remarks))
@@ -247,7 +251,6 @@ fn score_candidates(
     }
 
     // Phase 2: remarks列にキーワード部分一致（トークンベース：語順違いに対応）
-    let ft = focus_target.unwrap_or("");
     for row in &candidates {
         if row.remarks.is_empty() { continue; }
         let kw_score: usize = keywords.iter()
@@ -481,6 +484,50 @@ mod tests {
         let result_empty = match_master_from_detected_texts(&master, &texts, "", Some(""));
         assert_eq!(result_none.as_ref().unwrap().remarks, result_empty.as_ref().unwrap().remarks);
         assert_eq!(result_none.unwrap().remarks, "舗設状況");
+    }
+
+    #[test]
+    fn test_focus_target_matches_search_pattern_directly() {
+        // Issue #97: コアー写真のdetected_textにコアーキーワードがない場合
+        // focus_targetがsearch_patternに直接マッチして正しい行を選ぶべき
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,出来形管理写真,舗装工,切削オーバーレイ工,表層工,コアー採取前,コアー採取前|コア採取前
+直接工事費,出来形管理写真,舗装工,切削オーバーレイ工,表層工,コアー採取状況,コアー採取状況|コア採取状況|コアー採集
+直接工事費,出来形管理写真,舗装工,切削オーバーレイ工,表層工,コアー厚さ測定,コアー厚さ測定|コア厚測定|舗装厚測定|コア厚さ
+直接工事費,出来形管理写真,舗装工,切削オーバーレイ工,表層工,コアー復築前,コアー復築前|コア復築前
+直接工事費,出来形管理写真,舗装工,切削オーバーレイ工,表層工,コアー復築状況,コアー復築状況|コア復築状況|コアー復築
+直接工事費,出来形管理写真,舗装工,切削オーバーレイ工,表層工,コアー復築完了,コアー復築完了|コア復築完了
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+
+        // R0010577: detected_textにコアーキーワードなし、focus_targetに正解あり
+        let text = "市道 南千反畑町第1号線舗装補修工事, 舗装工 表層工, No.8 R";
+        let texts = vec![text];
+        let result = match_master_from_detected_texts(&master, &texts, "コアNo.8", Some("コアー厚さ測定"));
+        assert!(result.is_some(), "focus_target should match コアー厚さ測定 search pattern");
+        assert_eq!(result.unwrap().remarks, "コアー厚さ測定");
+
+        // R0010578: detected_text="55mm"のみ、focus_target="舗装厚測定・接写"
+        let text2 = "55mm";
+        let texts2 = vec![text2];
+        let result2 = match_master_from_detected_texts(&master, &texts2, "コアNo.8", Some("舗装厚測定・接写"));
+        assert!(result2.is_some(), "focus_target '舗装厚測定・接写' should match search pattern '舗装厚測定'");
+        assert_eq!(result2.unwrap().remarks, "コアー厚さ測定");
+
+        // R0010582: コアー採取前
+        let text3 = "工事名：市道 南千反畑町第1号線舗装補修工事, 場所：No.1 R, 表層工 コアー 採取前";
+        let texts3 = vec![text3];
+        let result3 = match_master_from_detected_texts(&master, &texts3, "コアNo.1", Some("コアー採取前"));
+        assert!(result3.is_some());
+        assert_eq!(result3.unwrap().remarks, "コアー採取前");
+
+        // R0010589: コアー復築前
+        let text4 = "工事名 市道 南千反畑第1号線舗装補修工事, 場所 No. 1R, 表層工 コアー 復築前";
+        let texts4 = vec![text4];
+        let result4 = match_master_from_detected_texts(&master, &texts4, "コアNo.1", Some("コアー復築前"));
+        assert!(result4.is_some());
+        assert_eq!(result4.unwrap().remarks, "コアー復築前");
     }
 
     #[test]
