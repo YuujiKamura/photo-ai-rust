@@ -291,26 +291,46 @@ fn fix_misclassified_temperature(results: &[AnalysisResult]) -> Vec<Normalizatio
 fn unify_measurements_by_group(results: &[AnalysisResult]) -> Vec<NormalizationCorrection> {
     let mut corrections = Vec::new();
 
-    // 連続する同一remarksでグループ化
+    // グループ化: real group番号があればそれを使い、なければ連続同一remarksでグループ化
     let mut groups: Vec<Vec<usize>> = Vec::new();
-    let mut current_group: Vec<usize> = Vec::new();
-    let mut current_remarks: Option<&str> = None;
+
+    // Phase 1: real group番号によるグループ化
+    let mut real_groups: std::collections::HashMap<(u32, String), Vec<usize>> =
+        std::collections::HashMap::new();
+    let mut ungrouped: Vec<usize> = Vec::new();
 
     for (i, result) in results.iter().enumerate() {
-        // 温度写真判定: remarksまたはphoto_categoryで判定
-        let is_temp = measurements::is_temperature_photo(&result.remarks)
+        let remarks_is_temp = measurements::is_temperature_photo(&result.remarks);
+        let is_temp = remarks_is_temp
             || (result.photo_category == "品質管理写真"
                 && measurements::is_temperature_photo(&result.detected_text));
-
         if !is_temp {
-            if !current_group.is_empty() {
-                groups.push(std::mem::take(&mut current_group));
-                current_remarks = None;
-            }
             continue;
         }
+        // real groupによるグループ化はremarksが温度系の場合のみ
+        // (detected_text経由での温度判定は散布量試験等が誤ヒットする)
+        if result.group > 0 && remarks_is_temp {
+            real_groups
+                .entry((result.group, result.remarks.clone()))
+                .or_default()
+                .push(i);
+        } else if remarks_is_temp {
+            ungrouped.push(i);
+        }
+        // remarks自体が温度系でない場合（散布量試験等）は統一対象外
+    }
 
-        let remarks = result.remarks.as_str();
+    for indices in real_groups.values() {
+        if indices.len() >= 2 {
+            groups.push(indices.clone());
+        }
+    }
+
+    // Phase 2: group=0 の写真は既存の連続同一remarksロジックでグループ化
+    let mut current_group: Vec<usize> = Vec::new();
+    let mut current_remarks: Option<&str> = None;
+    for &i in &ungrouped {
+        let remarks = results[i].remarks.as_str();
         if current_remarks == Some(remarks) {
             current_group.push(i);
         } else {
@@ -367,40 +387,67 @@ fn unify_measurements_by_group(results: &[AnalysisResult]) -> Vec<NormalizationC
 /// 温度管理写真のdetected_textから「N台目」を抽出し、stationに追加。
 /// 3枚セット（全景+黒板+温度計）内で、黒板写真の台数を全写真に伝搬する。
 pub fn append_dump_number_to_station(results: &mut [AnalysisResult]) {
-    // 隣接3枚セットで同一remarksのグループを処理
-    let len = results.len();
-    let mut i = 0;
-    while i < len {
-        // 温度写真でなければスキップ
-        if !measurements::is_temperature_photo(&results[i].remarks) {
-            i += 1;
+    // real group番号によるグループ化
+    let mut real_groups: std::collections::HashMap<(u32, String), Vec<usize>> =
+        std::collections::HashMap::new();
+    let mut ungrouped_temp_indices: Vec<usize> = Vec::new();
+
+    for (i, r) in results.iter().enumerate() {
+        if !measurements::is_temperature_photo(&r.remarks) {
             continue;
         }
-
-        // 同一remarksの連続写真の範囲を特定
-        let remarks = results[i].remarks.clone();
-        let mut j = i + 1;
-        while j < len && results[j].remarks == remarks {
-            j += 1;
+        if r.group > 0 {
+            real_groups
+                .entry((r.group, r.remarks.clone()))
+                .or_default()
+                .push(i);
+        } else {
+            ungrouped_temp_indices.push(i);
         }
-        let group = &results[i..j];
+    }
 
-        // グループ内のどれかのdetected_textから台数を抽出
-        let dump_num = group.iter()
-            .filter_map(|r| measurements::extract_dump_number(&r.detected_text))
+    // real groupで処理
+    for indices in real_groups.values() {
+        let dump_num = indices
+            .iter()
+            .filter_map(|&i| measurements::extract_dump_number(&results[i].detected_text))
             .next();
-
         if let Some(num) = dump_num {
-            for r in &mut results[i..j] {
-                // 既に台目が付いていればスキップ
-                if r.station.contains("台目") {
+            for &i in indices {
+                if results[i].station.contains("台目") {
                     continue;
                 }
-                let base = r.station.split('\n').next().unwrap_or(&r.station).to_string();
-                r.station = format!("{} {}", base, num);
+                let base = results[i].station.split('\n').next().unwrap_or(&results[i].station).to_string();
+                results[i].station = format!("{} {}", base, num);
             }
         }
+    }
 
+    // group=0: 既存の連続同一remarksロジック
+    let mut i = 0;
+    while i < ungrouped_temp_indices.len() {
+        let idx = ungrouped_temp_indices[i];
+        let remarks = results[idx].remarks.clone();
+        let mut j = i + 1;
+        while j < ungrouped_temp_indices.len()
+            && results[ungrouped_temp_indices[j]].remarks == remarks
+        {
+            j += 1;
+        }
+        let group_indices = &ungrouped_temp_indices[i..j];
+        let dump_num = group_indices
+            .iter()
+            .filter_map(|&gi| measurements::extract_dump_number(&results[gi].detected_text))
+            .next();
+        if let Some(num) = dump_num {
+            for &gi in group_indices {
+                if results[gi].station.contains("台目") {
+                    continue;
+                }
+                let base = results[gi].station.split('\n').next().unwrap_or(&results[gi].station).to_string();
+                results[gi].station = format!("{} {}", base, num);
+            }
+        }
         i = j;
     }
 }
@@ -412,35 +459,65 @@ pub fn append_dump_number_to_station(results: &mut [AnalysisResult]) {
 /// 4枚目以降にskip=trueを設定してエクスポートから除外する。
 pub fn dedup_temperature_groups(results: &mut [AnalysisResult]) -> usize {
     let mut count = 0;
-    let len = results.len();
-    let mut i = 0;
-    while i < len {
-        if !measurements::is_temperature_photo(&results[i].remarks) {
-            i += 1;
+
+    // real group番号によるグループ化
+    let mut real_groups: std::collections::HashMap<(u32, String), Vec<usize>> =
+        std::collections::HashMap::new();
+    let mut ungrouped_temp_indices: Vec<usize> = Vec::new();
+
+    for (i, r) in results.iter().enumerate() {
+        if !measurements::is_temperature_photo(&r.remarks) {
             continue;
         }
-
-        // 同一remarksの連続写真の範囲を特定
-        let remarks = results[i].remarks.clone();
-        let mut j = i + 1;
-        while j < len && results[j].remarks == remarks {
-            j += 1;
+        if r.group > 0 {
+            real_groups
+                .entry((r.group, r.remarks.clone()))
+                .or_default()
+                .push(i);
+        } else {
+            ungrouped_temp_indices.push(i);
         }
+    }
 
-        // 3枚超過分をスキップ
-        if j - i > 3 {
-            for (idx, result) in results[(i + 3)..j].iter_mut().enumerate() {
+    // real groupで3枚超過分をスキップ
+    for ((_, remarks), indices) in &real_groups {
+        if indices.len() > 3 {
+            for (offset, &idx) in indices[3..].iter().enumerate() {
                 eprintln!(
                     "  スキップ: {} [{}] ({}枚中{}枚目)",
-                    result.file_name, remarks, j - i, idx + 4
+                    results[idx].file_name, remarks, indices.len(), offset + 4
                 );
-                result.skip = true;
+                results[idx].skip = true;
                 count += 1;
             }
         }
+    }
 
+    // group=0: 既存の連続同一remarksロジック
+    let mut i = 0;
+    while i < ungrouped_temp_indices.len() {
+        let idx = ungrouped_temp_indices[i];
+        let remarks = results[idx].remarks.clone();
+        let mut j = i + 1;
+        while j < ungrouped_temp_indices.len()
+            && results[ungrouped_temp_indices[j]].remarks == remarks
+        {
+            j += 1;
+        }
+        let group_indices = &ungrouped_temp_indices[i..j];
+        if group_indices.len() > 3 {
+            for (offset, &gi) in group_indices[3..].iter().enumerate() {
+                eprintln!(
+                    "  スキップ: {} [{}] ({}枚中{}枚目)",
+                    results[gi].file_name, remarks, group_indices.len(), offset + 4
+                );
+                results[gi].skip = true;
+                count += 1;
+            }
+        }
         i = j;
     }
+
     count
 }
 

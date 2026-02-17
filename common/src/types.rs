@@ -88,10 +88,18 @@ pub struct AnalysisResult {
     /// スキップフラグ（3枚セット超過分をエクスポートから除外）
     #[serde(default, skip_serializing_if = "is_false")]
     pub skip: bool,
+
+    /// photo-taggerのmachine_id由来グループ番号（内部管理用）
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub group: u32,
 }
 
 fn is_false(v: &bool) -> bool {
     !v
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 impl AnalysisResult {
@@ -252,6 +260,42 @@ mod tests {
         assert_eq!(original.work_type, restored.work_type);
         assert_eq!(original.has_board, restored.has_board);
         assert_eq!(original.photo_category, restored.photo_category);
+    }
+
+    // =============================================
+    // group フィールドテスト
+    // =============================================
+
+    #[test]
+    fn test_group_zero_not_serialized() {
+        let result = AnalysisResult {
+            file_name: "test.jpg".to_string(),
+            group: 0,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&result).expect("シリアライズ失敗");
+        assert!(!json.contains("group"), "group:0はJSON出力に現れないべき");
+    }
+
+    #[test]
+    fn test_group_nonzero_serialized_and_deserialized() {
+        let result = AnalysisResult {
+            file_name: "test.jpg".to_string(),
+            group: 5,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&result).expect("シリアライズ失敗");
+        assert!(json.contains("\"group\":5"), "group:5はJSON出力に現れるべき");
+
+        let restored: AnalysisResult = serde_json::from_str(&json).expect("デシリアライズ失敗");
+        assert_eq!(restored.group, 5);
+    }
+
+    #[test]
+    fn test_group_missing_in_json_defaults_to_zero() {
+        let json = r#"{"fileName": "old.jpg"}"#;
+        let result: AnalysisResult = serde_json::from_str(json).expect("デシリアライズ失敗");
+        assert_eq!(result.group, 0, "JSONにgroupがない場合は0になるべき");
     }
 
     // =============================================

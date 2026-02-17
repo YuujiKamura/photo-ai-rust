@@ -4,7 +4,7 @@
 
 use crate::ai_provider::AiProvider;
 use crate::analysis::{apply_station, ScanAnalysisConfig, prepare_analysis, scan_and_analyze};
-use crate::cli::{Commands, ExportFormat, PdfQuality};
+use crate::cli::{Commands, ExportFormat, GtAction, PdfQuality};
 use crate::config::Config;
 use crate::error::{self, Result};
 use crate::normalizer::{self, NormalizationOptions};
@@ -280,7 +280,7 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
         results = normalizer::apply_aliases(
             &results,
             args.preset.as_deref(),
-            args.alias.as_ref().map(|p| p.as_path()),
+            args.alias.as_deref(),
         )?;
         println!("✔ エイリアス変換完了");
     }
@@ -647,6 +647,36 @@ fn derive_export_title(results: &[analyzer::AnalysisResult], folder: &Path) -> S
     }
 }
 
+/// Gtコマンドを処理
+pub fn handle_gt_command(action: GtAction) -> Result<()> {
+    use crate::gt;
+
+    match action {
+        GtAction::Import { source, output_dir, name } => {
+            let results = gt::import_from_source(&source)?;
+            let stem = name.unwrap_or_else(|| {
+                source.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string()
+            });
+            let file_name = if stem.ends_with("__result") {
+                format!("{}.json", stem)
+            } else {
+                format!("{}__result.json", stem)
+            };
+            let output_path = output_dir.join(&file_name);
+            gt::save_as_gt(&results, &output_path)?;
+            println!("✔ GT取り込み: {}枚 → {}", results.len(), output_path.display());
+        }
+        GtAction::Compare { gt_dir, pipeline_dir } => {
+            let report = gt::compare_folders(&gt_dir, &pipeline_dir)?;
+            gt::print_report(&report);
+        }
+    }
+    Ok(())
+}
+
 impl Commands {
     /// コマンドを実行する
     pub async fn execute(self, cli_args: &CommonCliArgs, config: Config) -> Result<()> {
@@ -749,6 +779,10 @@ impl Commands {
                     model,
                     cli_args: cli_args.clone(),
                 })?;
+            }
+
+            Commands::Gt { action } => {
+                handle_gt_command(action)?;
             }
         }
 

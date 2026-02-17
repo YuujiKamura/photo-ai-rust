@@ -177,7 +177,7 @@ pub fn validate_temperature(temp_text: &str, temp_type: TemperatureType) -> Opti
     // 開放温度で126℃は明らかに高すぎる → 32.6℃の誤読の可能性
     if matches!(temp_type, TemperatureType::Opening) {
         // 3桁で100以上 → 小数点抜けの可能性
-        if temp >= 100.0 && temp < 1000.0 {
+        if (100.0..1000.0).contains(&temp) {
             // 126 → 12.6 or 32.6 など
             let digits = format!("{}", temp as i32);
             if digits.len() == 3 {

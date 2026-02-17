@@ -34,6 +34,7 @@ impl std::fmt::Display for Lane {
 
 /// 出来形管理用紙から抽出した値
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct DekigataValues {
     /// 測点名（"No.1" 等）
     pub station: String,
@@ -51,19 +52,6 @@ pub struct DekigataValues {
     pub width_right_actual: Option<f64>,
 }
 
-impl Default for DekigataValues {
-    fn default() -> Self {
-        Self {
-            station: String::new(),
-            v_design: [None; 5],
-            v_actual: [None; 5],
-            width_left_design: None,
-            width_left_actual: None,
-            width_right_design: None,
-            width_right_actual: None,
-        }
-    }
-}
 
 /// スペース区切りテキストをキーワードでセクション分割する
 ///
@@ -185,7 +173,7 @@ pub fn parse_dekigata_ocr(text: &str) -> Option<DekigataValues> {
             let mut v_count = 0;
             for v_cap in V_RE.captures_iter(section) {
                 let idx: usize = v_cap[1].parse().unwrap_or(0);
-                if idx >= 1 && idx <= 5 {
+                if (1..=5).contains(&idx) {
                     target[idx - 1] = v_cap[2].parse().ok();
                     v_count += 1;
                 }
