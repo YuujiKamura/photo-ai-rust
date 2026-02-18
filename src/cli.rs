@@ -256,6 +256,25 @@ pub enum Commands {
         model: Option<String>,
     },
 
+    /// 解析結果を評価（GT比較・精度検証）
+    Evaluate {
+        /// パイプライン出力JSONファイル
+        #[arg(required = true)]
+        input: PathBuf,
+
+        /// GTファイル（JSON）
+        #[arg(long, required = true)]
+        gt: PathBuf,
+
+        /// 評価フィールド（カンマ区切り: remarks,station,measurements）
+        #[arg(long)]
+        fields: Option<String>,
+
+        /// JSON形式で出力（CI連携用）
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Ground Truth管理（取り込み・比較）
     Gt {
         #[command(subcommand)]

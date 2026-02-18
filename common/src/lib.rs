@@ -17,6 +17,7 @@ pub mod work_type_defs;
 pub mod prompt_format;
 pub mod prompts;
 pub mod step2;
+pub mod evaluate;
 #[cfg(any(feature = "excel", feature = "pdf"))]
 pub mod export;
 

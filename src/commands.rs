@@ -116,6 +116,14 @@ pub struct CacheCommandArgs {
     pub info: bool,
 }
 
+/// Evaluateコマンドの引数
+pub struct EvaluateCommandArgs {
+    pub input: PathBuf,
+    pub gt: PathBuf,
+    pub fields: Option<String>,
+    pub json: bool,
+}
+
 /// Stationコマンドの引数
 pub struct StationCommandArgs {
     pub input: PathBuf,
@@ -647,6 +655,78 @@ fn derive_export_title(results: &[analyzer::AnalysisResult], folder: &Path) -> S
     }
 }
 
+/// Evaluateコマンドを処理
+pub fn handle_evaluate_command(args: EvaluateCommandArgs) -> Result<()> {
+    use photo_ai_common::evaluate::{self, EvalField};
+
+    // フィールド解析
+    let fields: Vec<EvalField> = if let Some(ref field_str) = args.fields {
+        field_str
+            .split(',')
+            .filter_map(|s| {
+                let s = s.trim();
+                EvalField::from_name(s).or_else(|| {
+                    eprintln!("不明なフィールド: {}", s);
+                    None
+                })
+            })
+            .collect()
+    } else {
+        EvalField::default_fields()
+    };
+
+    if fields.is_empty() {
+        return Err(error::PhotoAiError::Config(
+            "有効な評価フィールドがありません".to_string(),
+        ));
+    }
+
+    // パイプライン出力読み込み
+    let pipe_content = std::fs::read_to_string(&args.input)?;
+    let pipeline: Vec<analyzer::AnalysisResult> = serde_json::from_str(&pipe_content)?;
+
+    // GT読み込み
+    let gt_content = std::fs::read_to_string(&args.gt)?;
+    let gt: Vec<analyzer::AnalysisResult> = serde_json::from_str(&gt_content)?;
+
+    // 評価実行
+    let report = evaluate::evaluate(&pipeline, &gt, &fields);
+
+    if args.json {
+        // JSON出力（CI連携用）
+        let mut json_output = serde_json::Map::new();
+        json_output.insert("totalPhotos".to_string(), serde_json::json!(report.total_photos));
+        json_output.insert("matchedPhotos".to_string(), serde_json::json!(report.matched_photos));
+        json_output.insert("missingPhotos".to_string(), serde_json::json!(report.missing_photos));
+
+        let fields_json: Vec<serde_json::Value> = report.field_results.iter().map(|fr| {
+            serde_json::json!({
+                "field": fr.field.name(),
+                "total": fr.total,
+                "matched": fr.matched,
+                "accuracy": fr.accuracy(),
+            })
+        }).collect();
+        json_output.insert("fields".to_string(), serde_json::json!(fields_json));
+
+        let diffs_json: Vec<serde_json::Value> = report.diffs.iter().map(|d| {
+            serde_json::json!({
+                "fileName": d.file_name,
+                "field": d.field.name(),
+                "got": d.got,
+                "expected": d.expected,
+            })
+        }).collect();
+        json_output.insert("diffs".to_string(), serde_json::json!(diffs_json));
+
+        println!("{}", serde_json::to_string_pretty(&json_output)?);
+    } else {
+        evaluate::print_report(&report);
+    }
+
+    Ok(())
+}
+
 /// Gtコマンドを処理
 pub fn handle_gt_command(action: GtAction) -> Result<()> {
     use crate::gt;
@@ -778,6 +858,15 @@ impl Commands {
                     watch,
                     model,
                     cli_args: cli_args.clone(),
+                })?;
+            }
+
+            Commands::Evaluate { input, gt, fields, json } => {
+                handle_evaluate_command(EvaluateCommandArgs {
+                    input,
+                    gt,
+                    fields,
+                    json,
                 })?;
             }
 
