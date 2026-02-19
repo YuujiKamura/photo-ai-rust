@@ -14,6 +14,9 @@ pub use alias::apply_aliases;
 pub use dekigata::Lane;
 
 use crate::analyzer::AnalysisResult;
+use chrono::NaiveDateTime;
+
+const DEKIGATA_CONTIGUOUS_GAP_SECS: i64 = 5 * 60;
 
 /// 正規化結果
 #[derive(Debug, Clone)]
@@ -307,6 +310,97 @@ fn is_board_up_photo(focus_target: &str) -> bool {
     focus_target == "黒板アップ" || focus_target.contains("管理値")
 }
 
+fn parse_result_datetime(date: &str) -> Option<NaiveDateTime> {
+    let formats = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y/%m/%d %H:%M",
+    ];
+    for fmt in formats {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(date, fmt) {
+            return Some(dt);
+        }
+    }
+    None
+}
+
+fn split_group_by_time_gap(
+    results: &[AnalysisResult],
+    indices: &[usize],
+    gap_secs: i64,
+) -> Vec<Vec<usize>> {
+    if indices.is_empty() {
+        return Vec::new();
+    }
+
+    let mut ordered: Vec<usize> = indices.to_vec();
+    ordered.sort_by(|&a, &b| {
+        results[a]
+            .date
+            .cmp(&results[b].date)
+            .then(results[a].file_name.cmp(&results[b].file_name))
+    });
+
+    if ordered
+        .iter()
+        .any(|&i| parse_result_datetime(&results[i].date).is_none())
+    {
+        return vec![ordered];
+    }
+
+    let mut chunks: Vec<Vec<usize>> = Vec::new();
+    let mut current = vec![ordered[0]];
+    let mut prev = parse_result_datetime(&results[ordered[0]].date)
+        .expect("datetime checked above");
+
+    for &idx in ordered.iter().skip(1) {
+        let dt = parse_result_datetime(&results[idx].date)
+            .expect("datetime checked above");
+        let gap = (dt - prev).num_seconds().abs();
+        if gap > gap_secs {
+            chunks.push(std::mem::take(&mut current));
+        }
+        current.push(idx);
+        prev = dt;
+    }
+
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    chunks
+}
+
+fn extract_station_no(text: &str) -> Option<String> {
+    for marker in ["No.", "No ", "NO.", "NO "] {
+        if let Some(pos) = text.find(marker) {
+            let rest = &text[pos + marker.len()..];
+            let digits: String = rest
+                .chars()
+                .skip_while(|c| !c.is_ascii_digit())
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            if !digits.is_empty() {
+                return Some(format!("No.{}", digits));
+            }
+        }
+    }
+    None
+}
+
+fn station_hint_from_result(result: &AnalysisResult) -> Option<String> {
+    let merged = format!(
+        "{} {} {}",
+        result.detected_text, result.description, result.remarks
+    );
+    let no = extract_station_no(&merged)?;
+    if merged.contains("取付道路") || merged.contains("取付") {
+        Some(format!("取付道路 {}", no))
+    } else {
+        Some(no)
+    }
+}
+
 /// グループ内でボードアップ写真の計測値に統一する
 ///
 /// Phase 1: real group番号(photo-tagger)によるグループ化 → 全写真対象
@@ -323,6 +417,9 @@ fn unify_measurements_by_group(results: &[AnalysisResult]) -> Vec<NormalizationC
     let mut ungrouped_temp: Vec<usize> = Vec::new();
 
     for (i, result) in results.iter().enumerate() {
+        if dekigata::is_dekigata_photo(result) {
+            continue;
+        }
         if result.group > 0 {
             real_groups
                 .entry(result.group)
@@ -412,40 +509,60 @@ fn unify_station_by_group(results: &[AnalysisResult]) -> Vec<NormalizationCorrec
     }
 
     for indices in real_groups.values() {
-        if indices.len() < 2 { continue; }
+        for chunk in split_group_by_time_gap(results, indices, DEKIGATA_CONTIGUOUS_GAP_SECS) {
+            if chunk.len() < 2 {
+                continue;
+            }
 
-        // ステーション代表値の選定:
-        // 1. ボードアップ写真で非空station
-        // 2. has_board=trueの写真で非空station（最長値＝最も詳細）
-        // 3. 任意の非空station（最長値）
-        let representative_station = indices.iter()
-            .filter(|&&i| is_board_up_photo(&results[i].focus_target) && !results[i].station.is_empty())
-            .map(|&i| results[i].station.as_str())
-            .next()
-            .or_else(|| {
-                indices.iter()
-                    .filter(|&&i| results[i].has_board && !results[i].station.is_empty())
-                    .map(|&i| results[i].station.as_str())
-                    .max_by_key(|s| s.len())
-            })
-            .or_else(|| {
-                indices.iter()
-                    .filter(|&&i| !results[i].station.is_empty())
-                    .map(|&i| results[i].station.as_str())
-                    .max_by_key(|s| s.len())
-            });
+            // ステーション代表値の選定:
+            // 1. ボードアップ写真で非空station
+            // 2. has_board=trueの写真で非空station（最長値＝最も詳細）
+            // 3. 任意の非空station（最長値）
+            let hint_stations: Vec<String> = chunk
+                .iter()
+                .filter_map(|&i| station_hint_from_result(&results[i]))
+                .collect();
+            let representative_station = hint_stations
+                .iter()
+                .find(|s| s.contains("取付道路"))
+                .cloned()
+                .or_else(|| hint_stations.into_iter().next())
+                .or_else(|| {
+                    chunk
+                        .iter()
+                        .filter(|&&i| {
+                            is_board_up_photo(&results[i].focus_target)
+                                && !results[i].station.is_empty()
+                        })
+                        .map(|&i| results[i].station.as_str().to_string())
+                        .next()
+                })
+                .or_else(|| {
+                    chunk
+                        .iter()
+                        .filter(|&&i| results[i].has_board && !results[i].station.is_empty())
+                        .map(|&i| results[i].station.as_str().to_string())
+                        .max_by_key(|s| s.len())
+                })
+                .or_else(|| {
+                    chunk
+                        .iter()
+                        .filter(|&&i| !results[i].station.is_empty())
+                        .map(|&i| results[i].station.as_str().to_string())
+                        .max_by_key(|s| s.len())
+                });
 
-        if let Some(station) = representative_station {
-            let station_owned = station.to_string();
-            for &idx in indices {
-                if results[idx].station != station_owned {
-                    corrections.push(NormalizationCorrection {
-                        file_name: results[idx].file_name.clone(),
-                        field: CorrectionField::Station,
-                        original: results[idx].station.clone(),
-                        corrected: station_owned.clone(),
-                        reason: "グループ内ステーション統一".to_string(),
-                    });
+            if let Some(station_owned) = representative_station {
+                for &idx in &chunk {
+                    if results[idx].station != station_owned {
+                        corrections.push(NormalizationCorrection {
+                            file_name: results[idx].file_name.clone(),
+                            field: CorrectionField::Station,
+                            original: results[idx].station.clone(),
+                            corrected: station_owned.clone(),
+                            reason: "グループ内ステーション統一".to_string(),
+                        });
+                    }
                 }
             }
         }
@@ -453,7 +570,6 @@ fn unify_station_by_group(results: &[AnalysisResult]) -> Vec<NormalizationCorrec
 
     corrections
 }
-
 /// ダンプ台数を測点に付加する
 ///
 /// 温度管理写真のdetected_textから「N台目」を抽出し、stationに追加。
@@ -649,47 +765,51 @@ fn unify_dekigata_measurements(
 
     // 各photo-taggerグループで統一
     for group in tagger_groups.values() {
-        // ラベル判定:
-        // グループ内のどれか1枚でも「表層」分類なら「計画高」、
-        // それ以外（切削等）は「切削基準高」。
-        let is_surface_layer = group.iter().any(|&idx| {
-            let r = &results[idx];
-            r.subphase.contains("表層")
-                || r.remarks.contains("表層")
-                || r.description.contains("表層")
-                || r.focus_target.contains("表層")
-        });
-        let label = if is_surface_layer { "計画高" } else { "切削基準高" };
-
-        if let Some(measurements) =
-            dekigata::unify_dekigata_set(results, group, lane_override, label)
-        {
-            for &idx in group {
+        // 同一groupに別測点セットが混在するケースを避けるため、
+        // 時刻差5分超でサブグループに分割して統一する。
+        for chunk in split_group_by_time_gap(results, group, DEKIGATA_CONTIGUOUS_GAP_SECS) {
+            // ラベル判定:
+            // サブグループ内のどれか1枚でも「表層」分類なら「計画高」、
+            // それ以外（切削等）は「切削基準高」。
+            let is_surface_layer = chunk.iter().any(|&idx| {
                 let r = &results[idx];
-                if r.measurements != measurements {
-                    corrections.push(NormalizationCorrection {
-                        file_name: r.file_name.clone(),
-                        field: CorrectionField::Measurements,
-                        original: r.measurements.clone(),
-                        corrected: measurements.clone(),
-                        reason: "出来形管理用紙OCRから統一".to_string(),
-                    });
+                r.subphase.contains("表層")
+                    || r.remarks.contains("表層")
+                    || r.description.contains("表層")
+                    || r.focus_target.contains("表層")
+            });
+            let label = if is_surface_layer { "計画高" } else { "切削基準高" };
+
+            if let Some(measurements) =
+                dekigata::unify_dekigata_set(results, &chunk, lane_override, label)
+            {
+                for &idx in &chunk {
+                    let r = &results[idx];
+                    if r.measurements != measurements {
+                        corrections.push(NormalizationCorrection {
+                            file_name: r.file_name.clone(),
+                            field: CorrectionField::Measurements,
+                            original: r.measurements.clone(),
+                            corrected: measurements.clone(),
+                            reason: "出来形管理用紙OCRから統一".to_string(),
+                        });
+                    }
                 }
             }
-        }
 
-        // 備考統一
-        if let Some(remarks) = remarks_override {
-            for &idx in group {
-                let r = &results[idx];
-                if r.remarks != remarks {
-                    corrections.push(NormalizationCorrection {
-                        file_name: r.file_name.clone(),
-                        field: CorrectionField::Remarks,
-                        original: r.remarks.clone(),
-                        corrected: remarks.to_string(),
-                        reason: "出来形管理写真の備考統一".to_string(),
-                    });
+            // 備考統一
+            if let Some(remarks) = remarks_override {
+                for &idx in &chunk {
+                    let r = &results[idx];
+                    if r.remarks != remarks {
+                        corrections.push(NormalizationCorrection {
+                            file_name: r.file_name.clone(),
+                            field: CorrectionField::Remarks,
+                            original: r.remarks.clone(),
+                            corrected: remarks.to_string(),
+                            reason: "出来形管理写真の備考統一".to_string(),
+                        });
+                    }
                 }
             }
         }
@@ -893,6 +1013,30 @@ mod tests {
     }
 
     #[test]
+    fn test_unify_measurements_by_group_skips_dekigata_photos() {
+        let results = vec![
+            AnalysisResult {
+                file_name: "D1.JPG".to_string(),
+                photo_category: "出来形管理写真".to_string(),
+                group: 1,
+                measurements: "A".to_string(),
+                focus_target: "出来形管理".to_string(),
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "D2.JPG".to_string(),
+                photo_category: "出来形管理写真".to_string(),
+                group: 1,
+                measurements: "B".to_string(),
+                focus_target: "出来形管理".to_string(),
+                ..Default::default()
+            },
+        ];
+        let corrections = unify_measurements_by_group(&results);
+        assert!(corrections.is_empty());
+    }
+
+    #[test]
     fn test_unify_dekigata_uses_design_height_for_surface_group() {
         let ocr = "出来形管理用紙 No.1, 切削高(設計) V1=9.819 V2=9.842 V3=9.861 V4=9.826 V5=9.785, \
                    切削高(実施) V1=9.815 V2=9.842 V3=9.860 V4=9.825 V5=9.780, \
@@ -949,5 +1093,130 @@ mod tests {
 
         let corrections = unify_dekigata_measurements(&results, Some(Lane::Both), None);
         assert!(corrections.is_empty());
+    }
+
+    #[test]
+    fn test_unify_dekigata_splits_same_group_by_time_gap() {
+        let ocr_main = "出来形管理用紙 No.1, 計画高(設計) V1=9.869 V2=9.892 V3=9.911 V4=9.876 V5=9.835, \
+                        計画高(実施) V1=9.870 V2=9.895 V3=9.913 V4=9.878 V5=9.835, \
+                        左幅員 設計4.20 実測4.20, 右幅員 設計4.13 実測4.13";
+        let ocr_attach = "出来形管理用紙 No.1, 計画高(設計) V1=10.609 V2=10.636 V3=10.678 V4=10.632 V5=10.605, \
+                          計画高(実施) V1=10.611 V2=10.637 V3=10.678 V4=10.635 V5=10.607, \
+                          左幅員 設計3.23 実測3.23, 右幅員 設計3.15 実測3.15";
+        let results = vec![
+            AnalysisResult {
+                file_name: "A_overview.jpg".to_string(),
+                photo_category: "出来形管理写真".to_string(),
+                subphase: "表層工".to_string(),
+                date: "2026-02-18 00:36:13".to_string(),
+                group: 1,
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "A_board.jpg".to_string(),
+                photo_category: "出来形管理写真".to_string(),
+                subphase: "表層工".to_string(),
+                detected_text: ocr_main.to_string(),
+                date: "2026-02-18 00:36:43".to_string(),
+                group: 1,
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "B_overview.jpg".to_string(),
+                photo_category: "出来形管理写真".to_string(),
+                subphase: "表層工".to_string(),
+                date: "2026-02-18 01:47:25".to_string(),
+                group: 1,
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "B_board.jpg".to_string(),
+                photo_category: "出来形管理写真".to_string(),
+                subphase: "表層工".to_string(),
+                detected_text: ocr_attach.to_string(),
+                date: "2026-02-18 01:48:20".to_string(),
+                group: 1,
+                ..Default::default()
+            },
+        ];
+
+        let corrections = unify_dekigata_measurements(&results, Some(Lane::Both), None);
+        let a = corrections
+            .iter()
+            .find(|c| c.file_name == "A_overview.jpg" && c.field == CorrectionField::Measurements)
+            .unwrap();
+        let b = corrections
+            .iter()
+            .find(|c| c.file_name == "B_overview.jpg" && c.field == CorrectionField::Measurements)
+            .unwrap();
+        assert!(a.corrected.contains("V1=9.869"));
+        assert!(b.corrected.contains("V1=10.609"));
+    }
+
+    #[test]
+    fn test_unify_station_splits_same_group_by_time_gap() {
+        let results = vec![
+            AnalysisResult {
+                file_name: "A1.jpg".to_string(),
+                group: 1,
+                has_board: true,
+                station: "No.1".to_string(),
+                date: "2026-02-18 00:36:13".to_string(),
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "A2.jpg".to_string(),
+                group: 1,
+                station: "".to_string(),
+                date: "2026-02-18 00:36:43".to_string(),
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "B1.jpg".to_string(),
+                group: 1,
+                has_board: true,
+                station: "取付道路 No.1".to_string(),
+                date: "2026-02-18 01:47:25".to_string(),
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "B2.jpg".to_string(),
+                group: 1,
+                station: "".to_string(),
+                date: "2026-02-18 01:48:20".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let corrections = unify_station_by_group(&results);
+        let a2 = corrections.iter().find(|c| c.file_name == "A2.jpg").unwrap();
+        let b2 = corrections.iter().find(|c| c.file_name == "B2.jpg").unwrap();
+        assert_eq!(a2.corrected, "No.1");
+        assert_eq!(b2.corrected, "取付道路 No.1");
+    }
+
+    #[test]
+    fn test_unify_station_uses_detected_text_hint() {
+        let results = vec![
+            AnalysisResult {
+                file_name: "main_board.jpg".to_string(),
+                group: 1,
+                station: "取付道路 No.1".to_string(),
+                detected_text: "出来形管理用紙 No.1 計画高(設計)".to_string(),
+                date: "2026-02-18 00:36:43".to_string(),
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "main_overview.jpg".to_string(),
+                group: 1,
+                station: "".to_string(),
+                date: "2026-02-18 00:36:13".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let corrections = unify_station_by_group(&results);
+        assert!(corrections.iter().any(|c| c.file_name == "main_board.jpg" && c.corrected == "No.1"));
+        assert!(corrections.iter().any(|c| c.file_name == "main_overview.jpg" && c.corrected == "No.1"));
     }
 }
