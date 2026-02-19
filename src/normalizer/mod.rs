@@ -637,20 +637,32 @@ fn unify_dekigata_measurements(
         return corrections;
     }
 
-    // station でグループ化
-    let mut station_groups: std::collections::BTreeMap<String, Vec<usize>> =
+    // photo-taggerのgroup番号でグループ化（唯一の基準）
+    let mut tagger_groups: std::collections::BTreeMap<u32, Vec<usize>> =
         std::collections::BTreeMap::new();
     for &idx in &dekigata_indices {
-        let station = results[idx].station.clone();
-        if !station.is_empty() {
-            station_groups.entry(station).or_default().push(idx);
+        let g = results[idx].group;
+        if g > 0 {
+            tagger_groups.entry(g).or_default().push(idx);
         }
     }
 
-    // 各測点グループで統一
-    for group in station_groups.values() {
+    // 各photo-taggerグループで統一
+    for group in tagger_groups.values() {
+        // ラベル判定:
+        // グループ内のどれか1枚でも「表層」分類なら「計画高」、
+        // それ以外（切削等）は「切削基準高」。
+        let is_surface_layer = group.iter().any(|&idx| {
+            let r = &results[idx];
+            r.subphase.contains("表層")
+                || r.remarks.contains("表層")
+                || r.description.contains("表層")
+                || r.focus_target.contains("表層")
+        });
+        let label = if is_surface_layer { "計画高" } else { "切削基準高" };
+
         if let Some(measurements) =
-            dekigata::unify_dekigata_set(results, group, lane_override)
+            dekigata::unify_dekigata_set(results, group, lane_override, label)
         {
             for &idx in group {
                 let r = &results[idx];
@@ -878,5 +890,64 @@ mod tests {
         assert_eq!(corrections[0].corrected, "160.7℃");
         assert_eq!(corrections[1].file_name, "IMG003.JPG");
         assert_eq!(corrections[1].corrected, "155.4℃");
+    }
+
+    #[test]
+    fn test_unify_dekigata_uses_design_height_for_surface_group() {
+        let ocr = "出来形管理用紙 No.1, 切削高(設計) V1=9.819 V2=9.842 V3=9.861 V4=9.826 V5=9.785, \
+                   切削高(実施) V1=9.815 V2=9.842 V3=9.860 V4=9.825 V5=9.780, \
+                   左幅員 設計4.20 実測4.20, 右幅員 設計4.13 実測4.13";
+
+        let results = vec![
+            AnalysisResult {
+                file_name: "surface_overview.jpg".to_string(),
+                photo_category: "出来形管理写真".to_string(),
+                station: "No.1".to_string(),
+                subphase: "表層工".to_string(),
+                group: 1,
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "surface_board.jpg".to_string(),
+                photo_category: "出来形管理写真".to_string(),
+                station: "No.1".to_string(),
+                detected_text: ocr.to_string(),
+                group: 1,
+                ..Default::default()
+            },
+        ];
+
+        let corrections = unify_dekigata_measurements(&results, Some(Lane::Left), None);
+        assert!(!corrections.is_empty());
+        assert!(corrections
+            .iter()
+            .filter(|c| c.field == CorrectionField::Measurements)
+            .all(|c| c.corrected.contains("V1=9.819")));
+    }
+
+    #[test]
+    fn test_unify_dekigata_skips_group_zero() {
+        let ocr = "出来形管理用紙 No.1, 計画高(設計) V1=9.869 V2=9.892 V3=9.911 V4=9.876 V5=9.835, \
+                   計画高(実施) V1=9.870 V2=9.895 V3=9.913 V4=9.878 V5=9.835, \
+                   左幅員 設計4.20 実測4.20, 右幅員 設計4.13 実測4.13";
+        let results = vec![
+            AnalysisResult {
+                file_name: "g0_overview.jpg".to_string(),
+                photo_category: "出来形管理写真".to_string(),
+                subphase: "表層工".to_string(),
+                group: 0,
+                ..Default::default()
+            },
+            AnalysisResult {
+                file_name: "g0_board.jpg".to_string(),
+                photo_category: "出来形管理写真".to_string(),
+                detected_text: ocr.to_string(),
+                group: 0,
+                ..Default::default()
+            },
+        ];
+
+        let corrections = unify_dekigata_measurements(&results, Some(Lane::Both), None);
+        assert!(corrections.is_empty());
     }
 }
