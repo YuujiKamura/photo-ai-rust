@@ -1,0 +1,99 @@
+[
+  {
+    "id": "出荷指示確認",
+    "match_all": ["Photomanager", "出荷指示確認"],
+    "apply": {
+      "photo_category": "品質管理写真",
+      "remarks": "出荷指示確認",
+      "work_type": "舗装工",
+      "variety": "切削オーバーレイ工",
+      "subphase": "表層工"
+    },
+    "per_file": [
+      {
+        "condition": { "detected_text_contains": "外観検査" },
+        "apply": {
+          "station": "No.0右車線",
+          "measurements": "出荷温度：160℃\n積載量：3.0ｔ\n到着時外観検査"
+        }
+      },
+      {
+        "condition": { "default": true },
+        "apply": {
+          "station": "○○道路㈱△△As混合所",
+          "measurements": "出荷温度：160℃\n積載量：3.0ｔ\n保温シート確認"
+        }
+      }
+    ]
+  },
+  {
+    "id": "施工状況_example",
+    "match_all": ["施工状況"],
+    "station_replacements": {
+      "No.0R": "No.0 右車線",
+      "No.6R": "No.6 右車線"
+    },
+    "focus_target_renames": {
+      "端部乳剤塗布状況": "乳剤端部塗布状況"
+    },
+    "focus_target_merge": {
+      "from": ["切断・清掃状況", "路面切削状況", "舗設状況", "初期転圧状況"],
+      "to": "作業状況"
+    },
+    "remarks_variety_override": {
+      "remarks_list": ["舗設状況", "初期転圧状況", "2次転圧状況"],
+      "work_type": "舗装工",
+      "variety": "切削オーバーレイ工"
+    },
+    "tackcoat_counter": {
+      "remarks": "タックコート乳剤散布状況",
+      "first_focus_target": "乳剤散布状況",
+      "rest_focus_target": "作業状況"
+    }
+  },
+  {
+    "id": "安全パトロール_example",
+    "match_all": ["安全パトロール"],
+    "apply": {
+      "remarks": "安全パトロール実施状況",
+      "station": "1月1日"
+    }
+  },
+  {
+    "id": "切削出来形_example",
+    "match_all": ["切削", "切削出来形"],
+    "dekigata_station_extraction": true,
+    "station_propagation": true,
+    "default_subphase": "路面切削",
+    "measurement_maps": {
+      "0101切削": {
+        "No.1": "左車線　切削基準高 幅員W1\n設計: V1=0.000 V2=0.000\n実施: V1=0.000 V2=0.000\n幅員W1 設計: 0.00 実測: 0.00"
+      }
+    }
+  },
+  {
+    "id": "clear_fields_example",
+    "match_all": ["特定フォルダ", "No.9"],
+    "apply": {
+      "subphase": "路面切削"
+    },
+    "clear_fields": ["station", "measurements"]
+  },
+  {
+    "id": "file_overrides_example",
+    "match_all": ["散布量試験"],
+    "apply": {
+      "photo_category": "品質管理写真",
+      "remarks": "アスファルト乳剤\n散布量試験",
+      "work_type": "舗装工",
+      "variety": "切削オーバーレイ工",
+      "subphase": "表層工"
+    },
+    "file_overrides": {
+      "IMG_0001.JPG": {
+        "station": "No.0 左車線",
+        "measurements": "乳剤温度: 70℃"
+      }
+    }
+  }
+]

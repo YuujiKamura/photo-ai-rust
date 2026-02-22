@@ -2,7 +2,6 @@
 //!
 //! CLIコマンドの実行ロジックを提供します。
 
-use crate::ai_provider::AiProvider;
 use crate::analysis::{apply_station, ScanAnalysisConfig, prepare_analysis, scan_and_analyze};
 use crate::cli::{Commands, ExportFormat, GtAction, PdfQuality};
 use crate::config::Config;
@@ -16,21 +15,10 @@ use std::path::{Path, PathBuf};
 // MasterConfig を再エクスポート
 pub use crate::analysis::MasterConfig;
 
-impl From<AiProvider> for ReviewBackend {
-    fn from(provider: AiProvider) -> Self {
-        match provider {
-            AiProvider::Claude => ReviewBackend::Claude,
-            AiProvider::Codex => ReviewBackend::Codex,
-            AiProvider::Gemini => ReviewBackend::Gemini,
-        }
-    }
-}
-
 /// 共通CLI引数
 #[derive(Clone)]
 pub struct CommonCliArgs {
     pub verbose: bool,
-    pub provider: AiProvider,
 }
 
 /// Analyzeコマンドの引数
@@ -47,6 +35,7 @@ pub struct AnalyzeCommandArgs {
     pub recursive: bool,
     pub include_all: bool,
     pub line_types: Option<Vec<LineTypeEntry>>,
+    pub folder_rules: Option<PathBuf>,
     pub cli_args: CommonCliArgs,
 }
 
@@ -66,6 +55,7 @@ pub struct RunCommandArgs {
     pub recursive: bool,
     pub include_all: bool,
     pub line_types: Option<Vec<LineTypeEntry>>,
+    pub folder_rules: Option<PathBuf>,
     pub hide_measurements: bool,
     pub cli_args: CommonCliArgs,
 }
@@ -88,6 +78,7 @@ pub struct ReviewCommandArgs {
     pub path: PathBuf,
     pub watch: bool,
     pub model: Option<String>,
+    pub backend: String,
     pub cli_args: CommonCliArgs,
 }
 
@@ -180,8 +171,8 @@ struct CommonAnalysisParams {
     recursive: bool,
     include_all: bool,
     verbose: bool,
-    provider: AiProvider,
     line_types: Option<Vec<LineTypeEntry>>,
+    folder_rules: Option<PathBuf>,
 }
 
 fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<master_selector::MasterSelection> {
@@ -226,6 +217,9 @@ async fn run_common_analysis(
 ) -> Result<Vec<analyzer::AnalysisResult>> {
     println!("{}\n", header);
 
+    // フォルダルールの読み込み
+    let folder_rules = load_folder_rules_from_path(params.folder_rules.as_ref())?;
+
     // マスタ選択と検証
     let master_config = prepare_analysis(
         params.master.clone(),
@@ -242,7 +236,6 @@ async fn run_common_analysis(
         master_config: &master_config,
         photo_type: params.photo_type.as_deref(),
         use_cache: params.use_cache,
-        provider: params.provider,
         variety: params.variety.as_ref(),
         station: params.station.as_ref(),
         recursive: params.recursive,
@@ -250,6 +243,7 @@ async fn run_common_analysis(
         step_prefix_scan,
         step_prefix_analyze,
         line_types: params.line_types.as_deref(),
+        folder_rules: folder_rules.as_deref(),
     };
 
     scan_and_analyze(&scan_config).await
@@ -318,8 +312,8 @@ pub async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
         recursive: args.recursive,
         include_all: args.include_all,
         verbose: args.cli_args.verbose,
-        provider: args.cli_args.provider,
         line_types: args.line_types,
+        folder_rules: args.folder_rules,
     };
     let results = run_common_analysis(
         &params,
@@ -354,8 +348,8 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
         recursive: args.recursive,
         include_all: args.include_all,
         verbose: args.cli_args.verbose,
-        provider: args.cli_args.provider,
         line_types: args.line_types,
+        folder_rules: args.folder_rules,
     };
     let results = run_common_analysis(
         &params,
@@ -385,7 +379,11 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
 pub fn handle_review_command(args: ReviewCommandArgs) -> Result<()> {
     println!("🔍 photo-ai-rust - コードレビュー\n");
 
-    let backend: ReviewBackend = args.cli_args.provider.into();
+    let backend = match args.backend.to_lowercase().as_str() {
+        "claude" => ReviewBackend::Claude,
+        "codex" => ReviewBackend::Codex,
+        _ => ReviewBackend::Gemini,
+    };
 
     // ファイル指定の場合は親ディレクトリでReviewerを初期化
     let (base_dir, target_file) = if args.path.is_file() {
@@ -566,6 +564,21 @@ pub fn handle_cache_command(args: CacheCommandArgs) {
             Ok(false) => println!("キャッシュファイルが存在しません"),
             Err(e) => println!("キャッシュ削除エラー: {}", e),
         }
+    }
+}
+
+/// フォルダルールJSONを読み込む
+fn load_folder_rules_from_path(cli_path: Option<&PathBuf>) -> Result<Option<Vec<crate::folder_rules::FolderRule>>> {
+    use crate::folder_rules;
+    let resolved = folder_rules::resolve_rules_path(cli_path.map(|p| p.as_path()));
+    match resolved {
+        Some(path) => {
+            let rules = folder_rules::load_folder_rules(&path)
+                .map_err(|e| error::PhotoAiError::Config(format!("フォルダルール読み込み失敗: {}", e)))?;
+            println!("フォルダルール読み込み: {}件 ({})", rules.len(), path.display());
+            Ok(Some(rules))
+        }
+        None => Ok(None),
     }
 }
 
@@ -914,7 +927,7 @@ impl Commands {
     /// コマンドを実行する
     pub async fn execute(self, cli_args: &CommonCliArgs, config: Config) -> Result<()> {
         match self {
-            Commands::Analyze { folder, output, batch_size, master, work_type, photo_type, variety, station, use_cache, recursive, include_all, line_types } => {
+            Commands::Analyze { folder, output, batch_size, master, work_type, photo_type, variety, station, use_cache, recursive, include_all, line_types, folder_rules } => {
                 let line_types = load_line_types(line_types.as_ref())?;
                 handle_analyze_command(AnalyzeCommandArgs {
                     folder,
@@ -929,6 +942,7 @@ impl Commands {
                     recursive,
                     include_all,
                     line_types,
+                    folder_rules,
                     cli_args: cli_args.clone(),
                 }).await?;
             }
@@ -947,7 +961,7 @@ impl Commands {
                 })?;
             }
 
-            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all, line_types, hide_measurements } => {
+            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all, line_types, folder_rules, hide_measurements } => {
                 let line_types = load_line_types(line_types.as_ref())?;
                 handle_run_command(RunCommandArgs {
                     folder,
@@ -964,6 +978,7 @@ impl Commands {
                     recursive,
                     include_all,
                     line_types,
+                    folder_rules,
                     hide_measurements,
                     cli_args: cli_args.clone(),
                 }).await?;
@@ -1005,11 +1020,12 @@ impl Commands {
                 })?;
             }
 
-            Commands::Review { path, watch, model } => {
+            Commands::Review { path, watch, model, backend } => {
                 handle_review_command(ReviewCommandArgs {
                     path,
                     watch,
                     model,
+                    backend,
                     cli_args: cli_args.clone(),
                 })?;
             }

@@ -11,7 +11,6 @@ async fn main() -> Result<()> {
     let config = Config::load()?;
     let common_cli_args = CommonCliArgs {
         verbose: cli.verbose,
-        provider: cli.ai_provider,
     };
     cli.command.execute(&common_cli_args, config).await
 }

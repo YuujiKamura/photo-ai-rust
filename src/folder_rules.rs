@@ -1,12 +1,14 @@
 use crate::analyzer::AnalysisResult;
-use crate::domain::*;
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 pub fn extract_dekigata_station(text: &str) -> Option<String> {
     let markers = ["出来形管理用紙", "出来形管理用具"];
     for marker in markers {
         if let Some(idx) = text.find(marker) {
             let after = &text[idx + marker.len()..];
-            let after = after.trim_start_matches(&[' ', '　', ','][..]).trim_start();
+            let after = after.trim_start_matches(&[' ', '\u{3000}', ','][..]).trim_start();
             if after.starts_with("No.") || after.starts_with("NO.") || after.starts_with("no.") {
                 let num_start = 3;
                 let num_end = after[num_start..]
@@ -33,360 +35,622 @@ pub fn extract_dekigata_station(text: &str) -> Option<String> {
     None
 }
 
-pub fn apply_folder_specific_corrections(results: &mut [AnalysisResult], folder_name: &str) {
-    if folder_name.contains("Photomanager")
-        && folder_name.contains("20260211")
-        && folder_name.contains("出荷指示確認")
-    {
-        for r in results.iter_mut() {
-            r.photo_category = PHOTO_CAT_QUALITY.to_string();
-            r.remarks = "出荷指示確認".to_string();
-            r.work_type = "舗装工".to_string();
-            r.variety = VARIETY_CUTTING_OVERLAY.to_string();
-            r.subphase = SUBPHASE_SURFACE.to_string();
+// === Serde structs ===
 
-            let is_arrival_inspection = r.detected_text.contains("外観検査");
-            r.station = if is_arrival_inspection {
-                "No.0右車線".to_string()
-            } else {
-                "大林道路㈱熊本As混合所".to_string()
-            };
+#[derive(Debug, Deserialize, Clone)]
+pub struct FolderRule {
+    #[allow(dead_code)]
+    pub id: String,
+    pub match_all: Vec<String>,
+    #[serde(default)]
+    pub apply: Option<FieldOverrides>,
+    #[serde(default)]
+    pub per_file: Vec<PerFileRule>,
+    #[serde(default)]
+    pub station_replacements: HashMap<String, String>,
+    #[serde(default)]
+    pub focus_target_renames: HashMap<String, String>,
+    #[serde(default)]
+    pub focus_target_merge: Option<FocusTargetMerge>,
+    #[serde(default)]
+    pub remarks_variety_override: Option<RemarksVarietyOverride>,
+    #[serde(default)]
+    pub tackcoat_counter: Option<TackcoatCounter>,
+    #[serde(default)]
+    pub index_focus_target: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub dekigata_station_extraction: bool,
+    #[serde(default)]
+    pub station_propagation: bool,
+    #[serde(default)]
+    pub clear_subphase_for: Vec<String>,
+    #[serde(default)]
+    pub default_subphase: Option<String>,
+    #[serde(default)]
+    pub measurement_maps: HashMap<String, HashMap<String, String>>,
+    #[serde(default)]
+    pub station_renames: HashMap<String, HashMap<String, String>>,
+    #[serde(default)]
+    pub file_overrides: HashMap<String, FieldOverrides>,
+    #[serde(default)]
+    pub clear_fields: Vec<String>,
+}
 
-            r.measurements = if is_arrival_inspection {
-                "出荷温度：163℃\n積載量：3.5ｔ\n到着時外観検査".to_string()
-            } else {
-                "出荷温度：163℃\n積載量：3.5ｔ\n保温シート確認".to_string()
-            };
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct FieldOverrides {
+    pub photo_category: Option<String>,
+    pub work_type: Option<String>,
+    pub variety: Option<String>,
+    pub subphase: Option<String>,
+    pub remarks: Option<String>,
+    pub station: Option<String>,
+    pub measurements: Option<String>,
+    pub focus_target: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PerFileRule {
+    pub condition: PerFileCondition,
+    #[serde(default)]
+    pub apply: FieldOverrides,
+    #[serde(default)]
+    pub clear_fields: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PerFileCondition {
+    #[serde(default)]
+    pub detected_text_contains: Option<String>,
+    #[serde(default)]
+    pub detected_text_empty: Option<bool>,
+    #[serde(default)]
+    pub station_empty: Option<bool>,
+    #[serde(default)]
+    pub remarks_eq: Option<String>,
+    #[serde(default)]
+    pub default: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct FocusTargetMerge {
+    pub from: Vec<String>,
+    pub to: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct RemarksVarietyOverride {
+    pub remarks_list: Vec<String>,
+    pub work_type: String,
+    pub variety: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TackcoatCounter {
+    pub remarks: String,
+    pub first_focus_target: String,
+    pub rest_focus_target: String,
+}
+
+// === Loading ===
+
+pub fn load_folder_rules(path: &Path) -> anyhow::Result<Vec<FolderRule>> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("Failed to read folder rules from {}: {}", path.display(), e))?;
+    let rules: Vec<FolderRule> = serde_json::from_str(&content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse folder rules JSON from {}: {}", path.display(), e))?;
+    Ok(rules)
+}
+
+/// Resolve the path to folder_rules.json:
+/// 1. CLI-provided path
+/// 2. config/folder_rules.json relative to the executable
+/// 3. config/folder_rules.json relative to CARGO_MANIFEST_DIR (dev)
+pub fn resolve_rules_path(cli_path: Option<&Path>) -> Option<PathBuf> {
+    if let Some(p) = cli_path {
+        if p.exists() {
+            return Some(p.to_path_buf());
         }
     }
 
-    if folder_name.contains("0211切削") && folder_name.contains("施工状況") {
-        let mut tackcoat_seen = 0usize;
+    // Relative to executable
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let candidate = exe_dir.join("config").join("folder_rules.json");
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    // Relative to CARGO_MANIFEST_DIR (for development)
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let candidate = Path::new(&manifest_dir).join("config").join("folder_rules.json");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+// === Rule engine ===
+
+fn matches_rule(folder_name: &str, rule: &FolderRule) -> bool {
+    rule.match_all.iter().all(|s| folder_name.contains(s.as_str()))
+}
+
+fn apply_overrides(r: &mut AnalysisResult, overrides: &FieldOverrides) {
+    if let Some(ref v) = overrides.photo_category {
+        r.photo_category = v.clone();
+    }
+    if let Some(ref v) = overrides.work_type {
+        r.work_type = v.clone();
+    }
+    if let Some(ref v) = overrides.variety {
+        r.variety = v.clone();
+    }
+    if let Some(ref v) = overrides.subphase {
+        r.subphase = v.clone();
+    }
+    if let Some(ref v) = overrides.remarks {
+        r.remarks = v.clone();
+    }
+    if let Some(ref v) = overrides.station {
+        r.station = v.clone();
+    }
+    if let Some(ref v) = overrides.measurements {
+        r.measurements = v.clone();
+    }
+    if let Some(ref v) = overrides.focus_target {
+        r.focus_target = v.clone();
+    }
+}
+
+fn clear_field(r: &mut AnalysisResult, field: &str) {
+    match field {
+        "photo_category" => r.photo_category.clear(),
+        "work_type" => r.work_type.clear(),
+        "variety" => r.variety.clear(),
+        "subphase" => r.subphase.clear(),
+        "remarks" => r.remarks.clear(),
+        "station" => r.station.clear(),
+        "measurements" => r.measurements.clear(),
+        "focus_target" => r.focus_target.clear(),
+        _ => {}
+    }
+}
+
+fn matches_condition(r: &AnalysisResult, cond: &PerFileCondition) -> bool {
+    if cond.default == Some(true) {
+        return true;
+    }
+
+    // All specified conditions must be true (AND logic)
+    let mut has_any = false;
+
+    if let Some(ref text) = cond.detected_text_contains {
+        has_any = true;
+        if !r.detected_text.contains(text.as_str()) {
+            return false;
+        }
+    }
+
+    if let Some(true) = cond.detected_text_empty {
+        has_any = true;
+        if !r.detected_text.trim().is_empty() {
+            return false;
+        }
+    }
+
+    if let Some(true) = cond.station_empty {
+        has_any = true;
+        if !r.station.is_empty() {
+            return false;
+        }
+    }
+
+    if let Some(ref eq) = cond.remarks_eq {
+        has_any = true;
+        if r.remarks != *eq {
+            return false;
+        }
+    }
+
+    // If no conditions were specified (shouldn't happen), don't match
+    has_any
+}
+
+fn apply_single_rule(results: &mut [AnalysisResult], folder_name: &str, rule: &FolderRule) {
+    // 1. Apply global overrides to all photos
+    if let Some(ref overrides) = rule.apply {
         for r in results.iter_mut() {
-            if r.station.ends_with('R') {
-                r.station = r.station.replace("No.0R", "No.0 右車線");
-                r.station = r.station.replace("No.6R", "No.6 右車線");
-                r.station = r.station.replace("No.6 R", "No.6 右車線");
-            }
-            if r.station.is_empty() && r.remarks == "切断排水処分状況" {
-                r.station = "No.0 右車線".to_string();
-            }
+            apply_overrides(r, overrides);
+        }
+    }
 
-            if r.focus_target == "朝礼" {
-                r.focus_target = "安全活動".to_string();
+    // 2. Clear fields on all photos
+    if !rule.clear_fields.is_empty() {
+        for r in results.iter_mut() {
+            for field in &rule.clear_fields {
+                clear_field(r, field);
             }
-            if r.focus_target == "端部乳剤塗布状況" {
-                r.focus_target = "乳剤端部塗布状況".to_string();
-            }
-            if matches!(
-                r.focus_target.as_str(),
-                "切断・清掃状況"
-                    | "汚泥吸排状況"
-                    | "路面切削状況"
-                    | "舗設状況"
-                    | "初期転圧状況"
-                    | "2次転圧状況"
-                    | "二次転圧状況"
-            ) {
-                r.focus_target = "作業状況".to_string();
-            }
+        }
+    }
 
-            if r.remarks == "路面切削状況" && r.detected_text.contains("熊本130") {
-                r.remarks = "切削殻積込状況".to_string();
-                r.focus_target = "作業状況".to_string();
+    // 3. Station replacements
+    if !rule.station_replacements.is_empty() {
+        for r in results.iter_mut() {
+            for (old, new) in &rule.station_replacements {
+                if r.station.contains(old.as_str()) {
+                    r.station = r.station.replace(old.as_str(), new.as_str());
+                }
             }
+        }
+    }
 
-            if matches!(
-                r.remarks.as_str(),
-                "端部乳剤塗布状況"
-                    | "タックコート乳剤散布状況"
-                    | "舗設状況"
-                    | "初期転圧状況"
-                    | "2次転圧状況"
-            ) {
-                r.work_type = "舗装工".to_string();
-                r.variety = VARIETY_CUTTING_OVERLAY.to_string();
+    // 4. Focus target renames
+    if !rule.focus_target_renames.is_empty() {
+        for r in results.iter_mut() {
+            if let Some(new_name) = rule.focus_target_renames.get(&r.focus_target) {
+                r.focus_target = new_name.clone();
             }
+        }
+    }
 
-            if r.remarks == "タックコート乳剤散布状況" {
-                tackcoat_seen += 1;
-                r.focus_target = if tackcoat_seen == 1 {
-                    "乳剤散布状況".to_string()
+    // 5. Focus target merge
+    if let Some(ref merge) = rule.focus_target_merge {
+        for r in results.iter_mut() {
+            if merge.from.contains(&r.focus_target) {
+                r.focus_target = merge.to.clone();
+            }
+        }
+    }
+
+    // 6. Per-file rules (first matching condition wins)
+    for r in results.iter_mut() {
+        for pf in &rule.per_file {
+            if matches_condition(r, &pf.condition) {
+                apply_overrides(r, &pf.apply);
+                for field in &pf.clear_fields {
+                    clear_field(r, field);
+                }
+                break;
+            }
+        }
+    }
+
+    // 7. Remarks variety override
+    if let Some(ref rvo) = rule.remarks_variety_override {
+        for r in results.iter_mut() {
+            if rvo.remarks_list.contains(&r.remarks) {
+                r.work_type = rvo.work_type.clone();
+                r.variety = rvo.variety.clone();
+            }
+        }
+    }
+
+    // 8. Tackcoat counter
+    if let Some(ref tc) = rule.tackcoat_counter {
+        let mut seen = 0usize;
+        for r in results.iter_mut() {
+            if r.remarks == tc.remarks {
+                seen += 1;
+                r.focus_target = if seen == 1 {
+                    tc.first_focus_target.clone()
                 } else {
-                    "作業状況".to_string()
+                    tc.rest_focus_target.clone()
                 };
             }
         }
     }
 
-    if folder_name.contains("0211切削") && folder_name.contains("安全パトロール") {
-        for r in results.iter_mut() {
-            r.remarks = "安全パトロール実施状況".to_string();
-            r.station = "2月11日".to_string();
-        }
-    }
-
-    if folder_name.contains("Photomanager")
-        && folder_name.contains("20260211")
-        && folder_name.contains("トラックスケール")
-    {
-        let measurement = "前2,840kg＋後3,500kg\n−車両重量4,050kg\n＝積載量2.29ｔ".to_string();
+    // 9. Index-based focus_target
+    if let Some(ref idx_map) = rule.index_focus_target {
+        let default_ft = idx_map.get("default");
         for (i, r) in results.iter_mut().enumerate() {
-            r.station = "2月11日（黒板日付訂正）".to_string();
-            r.measurements = measurement.clone();
-            r.focus_target = if i == 1 {
-                "計量状況".to_string()
-            } else {
-                "計量値".to_string()
-            };
+            let key = i.to_string();
+            if let Some(ft) = idx_map.get(&key) {
+                r.focus_target = ft.clone();
+            } else if let Some(ft) = default_ft {
+                r.focus_target = ft.clone();
+            }
         }
     }
 
-    if folder_name.contains("切削") && folder_name.contains("切削出来形") {
-        // Pass 0: OCRからstation抽出 + subphase設定
+    // 10. Dekigata station extraction
+    if rule.dekigata_station_extraction {
         for r in results.iter_mut() {
             if r.station.is_empty() {
                 r.station = extract_dekigata_station(&r.detected_text).unwrap_or_default();
             }
-            if folder_name.contains("0209切削") || folder_name.contains("0211切削") {
+        }
+    }
+
+    // 11. Clear subphase / default subphase
+    if !rule.clear_subphase_for.is_empty() || rule.default_subphase.is_some() {
+        let should_clear = rule.clear_subphase_for.iter().any(|pat| folder_name.contains(pat.as_str()));
+        for r in results.iter_mut() {
+            if should_clear {
                 r.subphase.clear();
-            } else {
-                r.subphase = "路面切削".to_string();
+            } else if let Some(ref sp) = rule.default_subphase {
+                r.subphase = sp.clone();
             }
         }
+    }
 
-        // Pass 1+2: group内でstation伝搬（前方+後方）
-        {
-            use std::collections::HashMap;
-            let mut groups: HashMap<u32, Vec<usize>> = HashMap::new();
-            let mut ungrouped: Vec<usize> = Vec::new();
-            for (i, r) in results.iter().enumerate() {
-                if r.group > 0 {
-                    groups.entry(r.group).or_default().push(i);
-                } else {
-                    ungrouped.push(i);
-                }
-            }
+    // 12. Station propagation
+    if rule.station_propagation {
+        propagate_stations(results);
+    }
 
-            // real group: グループ内でstation保有写真→全員に適用
-            for indices in groups.values() {
-                let station = indices
-                    .iter()
-                    .find(|&&i| !results[i].station.is_empty())
-                    .map(|&i| results[i].station.clone());
-                if let Some(st) = station {
-                    for &i in indices {
-                        if results[i].station.is_empty() {
-                            results[i].station = st.clone();
-                        }
-                    }
-                }
-            }
-
-            // group=0: 既存の前方+後方伝搬
-            // 前方伝搬
-            for wi in 1..ungrouped.len() {
-                let i = ungrouped[wi];
-                let prev_i = ungrouped[wi - 1];
-                if results[i].station.is_empty() && !results[prev_i].station.is_empty() {
-                    results[i].station = results[prev_i].station.clone();
-                }
-            }
-            // 後方伝搬
-            for wi in (0..ungrouped.len().saturating_sub(1)).rev() {
-                let i = ungrouped[wi];
-                let next_i = ungrouped[wi + 1];
-                if results[i].station.is_empty() && !results[next_i].station.is_empty() {
-                    results[i].station = results[next_i].station.clone();
-                }
-            }
-        }
-
-        let map_0209 = [
-            ("No.1", "左車線　切削基準高 幅員W1\n設計: V1=9.819 V2=9.842 V3=9.861\n実施: V1=9.815 V2=9.842 V3=9.860\n幅員W1 設計: 4.20 実測: 4.20"),
-            ("No.3", "左車線　切削基準高 幅員W1\n設計: V1=9.988 V2=9.995 V3=10.005\n実施: V1=9.985 V2=9.990 V3=10.002\n幅員W1 設計: 3.20 実測: 3.20"),
-            ("No.5", "左車線　切削基準高 幅員W1\n設計: V1=9.969 V2=9.999 V3=10.047\n実施: V1=9.965 V2=9.997 V3=10.045\n幅員W1 設計: 3.20 実測: 3.20"),
-            ("No.7", "左車線　切削基準高 幅員W1\n設計: V1=10.090 V2=10.109 V3=10.143\n実施: V1=10.087 V2=10.105 V3=10.143\n幅員W1 設計: 3.18 実測: 3.18"),
-        ];
-        let map_0211 = [
-            ("No.1", "右車線　切削基準高 幅員W2\n設計: V4=9.826 V5=9.785\n実施: V4=9.825 V5=9.780\n幅員W2 設計: 4.13 実測: 4.13"),
-            ("No.3", "右車線　切削基準高 幅員W2\n設計: V4=9.955 V5=9.906\n実施: V4=9.996 V5=9.902\n幅員W2 設計: 3.90 実測: 3.90"),
-            ("No.5", "右車線　切削基準高 幅員W2\n設計: V4=10.001 V5=9.974\n実施: V4=10.000 V5=9.970\n幅員W2 設計: 3.18 実測: 3.18"),
-        ];
-        let map_0212 = [
-            ("No.7", "右車線　切削基準高 幅員W2\n設計: V3=10.143 V4=10.111 V5=10.092\n実施: V3=10.143 V4=10.108 V5=10.090\n幅員W2 設計: 3.19 実測: 3.19"),
-            ("No.9", "右車線　切削基準高 幅員W2\n設計: V3=10.376 V4=10.328 V5=10.298\n実施: V3=10.375 V4=10.328 V5=10.292\n幅員W2 設計: 3.20 実測: 3.20"),
-            ("No.11", "右車線　切削基準高 幅員W2\n設計: V3=10.624 V4=10.590 V5=10.569\n実施: V3=10.621 V4=10.585 V5=10.568\n幅員W2 設計: 3.20 実測: 3.20"),
-        ];
-        let map_0213 = [
-            ("No.11", "左車線　切削基準高 幅員W1\n設計: V1=10.557 V2=10.582 V3=10.624\n実施: V1=10.557 V2=10.580 V3=10.621\n幅員W1 設計: 3.20 実測: 3.20"),
-            ("取付道路 No.1", "設計: V1=10.559 V2=10.590 V3=10.619\n実施: V1=10.552 V2=10.584 V3=10.625\n設計: V4=10.582 V5=10.555\n実施: V4=10.582 V5=10.551\n幅員W1 設計: 3.23 実測: 3.23\n幅員W2 設計: 3.15 実測: 3.15"),
-        ];
-
-        if folder_name.contains("0209切削") {
+    // 13. Station renames (before measurement maps)
+    for (pattern, rename_map) in &rule.station_renames {
+        if folder_name.contains(pattern.as_str()) {
             for r in results.iter_mut() {
-                for (st, m) in map_0209 {
-                    if r.station == st {
-                        r.measurements = m.to_string();
-                    }
-                }
-                if r.file_name == "R0010315.JPG" {
-                    r.focus_target = "出来形管理".to_string();
+                if let Some(new_st) = rename_map.get(&r.station) {
+                    r.station = new_st.clone();
                 }
             }
-        } else if folder_name.contains("0211切削") {
+        }
+    }
+
+    // 14. Measurement maps
+    for (pattern, m_map) in &rule.measurement_maps {
+        if folder_name.contains(pattern.as_str()) {
             for r in results.iter_mut() {
-                for (st, m) in map_0211 {
-                    if r.station == st {
-                        r.measurements = m.to_string();
-                    }
-                }
-            }
-        } else if folder_name.contains("0212切削") {
-            for r in results.iter_mut() {
-                for (st, m) in map_0212 {
-                    if r.station == st {
-                        r.measurements = m.to_string();
-                    }
-                }
-            }
-        } else if folder_name.contains("0213切削") {
-            for r in results.iter_mut() {
-                if r.station == "No.1" {
-                    r.station = "取付道路 No.1".to_string();
-                }
-                for (st, m) in map_0213 {
-                    if r.station == st {
-                        r.measurements = m.to_string();
-                    }
+                if let Some(m) = m_map.get(&r.station) {
+                    r.measurements = m.clone();
                 }
             }
         }
     }
 
-    if folder_name.contains("0213切削")
-        && folder_name.contains("切削出来形")
-        && folder_name.contains("No.9")
-    {
+    // 15. File overrides
+    for (file_name, overrides) in &rule.file_overrides {
         for r in results.iter_mut() {
-            r.station.clear();
-            r.measurements.clear();
-            r.subphase = "路面切削".to_string();
-        }
-    }
-
-    if folder_name.contains("0213切削") && folder_name.contains("施工状況") {
-        for r in results.iter_mut() {
-            r.station = "取付道路 No.1".to_string();
-            if matches!(
-                r.remarks.as_str(),
-                "端部乳剤塗布状況"
-                    | "タックコート乳剤散布状況"
-                    | "舗設状況"
-                    | "初期転圧状況"
-                    | "2次転圧状況"
-                    | "二次転圧状況"
-            ) {
-                r.work_type = "舗装工".to_string();
-                r.variety = VARIETY_CUTTING_OVERLAY.to_string();
+            if r.file_name == *file_name {
+                apply_overrides(r, overrides);
             }
         }
     }
+}
 
-    if folder_name.contains("0209切削") && folder_name.contains("散布量試験") {
-        for r in results.iter_mut() {
-            r.photo_category = PHOTO_CAT_QUALITY.to_string();
-            r.remarks = "アスファルト乳剤\n散布量試験".to_string();
-            r.work_type = "舗装工".to_string();
-            r.variety = VARIETY_CUTTING_OVERLAY.to_string();
-            r.subphase = SUBPHASE_SURFACE.to_string();
+fn propagate_stations(results: &mut [AnalysisResult]) {
+    let mut groups: HashMap<u32, Vec<usize>> = HashMap::new();
+    let mut ungrouped: Vec<usize> = Vec::new();
+    for (i, r) in results.iter().enumerate() {
+        if r.group > 0 {
+            groups.entry(r.group).or_default().push(i);
+        } else {
+            ungrouped.push(i);
+        }
+    }
 
-            if r.station == "No.0," {
-                r.station = "No.0".to_string();
-            }
-
-            match r.file_name.as_str() {
-                "R0010325.JPG" => {
-                    r.station = "No.0 左車線".to_string();
-                    r.measurements = "乳剤温度: 70℃\n比重: 1.010\nマット重量: 20g×3枚".to_string();
+    // Real groups: propagate station from leader to members
+    for indices in groups.values() {
+        let station = indices
+            .iter()
+            .find(|&&i| !results[i].station.is_empty())
+            .map(|&i| results[i].station.clone());
+        if let Some(st) = station {
+            for &i in indices {
+                if results[i].station.is_empty() {
+                    results[i].station = st.clone();
                 }
-                "R0010335.JPG" => {
-                    r.station = "No.0 左車線".to_string();
-                }
-                "R0010324.JPG" => r.measurements = "タンク内温度: 66℃".to_string(),
-                "R0010326.JPG" => r.measurements = "マット外寸: 25cm×40cm".to_string(),
-                "R0010327.JPG" => r.measurements = "散布前重量: 0.02kg".to_string(),
-                "R0010336.JPG" => r.measurements = "散布後重量: 0.13kg".to_string(),
-                "R0010337.JPG" => {
-                    r.station = "No.0 左車線".to_string();
-                    r.measurements = "平均散布量: 1.04l/m²\n判定: 0.8l/m²以上散布 ○".to_string()
-                }
-                _ => {}
             }
         }
     }
 
-    if folder_name.contains("0209切削") && folder_name.contains("施工状況") {
-        for r in results.iter_mut() {
-            if matches!(
-                r.remarks.as_str(),
-                "端部乳剤塗布状況"
-                    | "タックコート乳剤散布状況"
-                    | "舗設状況"
-                    | "初期転圧状況"
-                    | "2次転圧状況"
-                    | "二次転圧状況"
-            ) {
-                r.work_type = "舗装工".to_string();
-                r.variety = VARIETY_CUTTING_OVERLAY.to_string();
-            }
-            match r.file_name.as_str() {
-                "R0010305.JPG" => r.remarks = "路面切削状況".to_string(),
-                "R0010372.JPG" => {
-                    r.station = "ダイヤモンド標示".to_string();
-                    r.remarks = "仮ラインテープ設置状況".to_string();
-                    r.work_type = WORK_LANE_MARKING.to_string();
-                    r.variety = WORK_LANE_MARKING.to_string();
-                    r.subphase = "仮区画線".to_string();
-                }
-                "R0010373.JPG" => {
-                    r.station = "横断歩道線".to_string();
-                    r.remarks = "仮ラインテープ設置状況".to_string();
-                    r.work_type = WORK_LANE_MARKING.to_string();
-                    r.variety = WORK_LANE_MARKING.to_string();
-                    r.subphase = "仮区画線".to_string();
-                }
-                _ => {}
-            }
+    // group=0: forward propagation
+    for wi in 1..ungrouped.len() {
+        let i = ungrouped[wi];
+        let prev_i = ungrouped[wi - 1];
+        if results[i].station.is_empty() && !results[prev_i].station.is_empty() {
+            results[i].station = results[prev_i].station.clone();
         }
     }
-
-    if folder_name.contains("0212切削") && folder_name.contains("切削出来形 立会") {
-        for r in results.iter_mut() {
-            if r.detected_text.trim().is_empty() {
-                r.station.clear();
-                r.measurements.clear();
-            }
+    // group=0: backward propagation
+    for wi in (0..ungrouped.len().saturating_sub(1)).rev() {
+        let i = ungrouped[wi];
+        let next_i = ungrouped[wi + 1];
+        if results[i].station.is_empty() && !results[next_i].station.is_empty() {
+            results[i].station = results[next_i].station.clone();
         }
     }
+}
 
-    if folder_name.contains("Photomanager")
-        && folder_name.contains("20260211")
-        && folder_name.contains("処分状況")
-    {
-        for r in results.iter_mut() {
-            r.photo_category = PHOTO_CAT_CONSTRUCTION.to_string();
-            r.work_type = "舗装工".to_string();
-            r.variety = "路面切削工".to_string();
-            r.subphase = "殻処分".to_string();
-            r.station = "2月11日".to_string();
-            r.measurements = "積載量：2.29ｔ".to_string();
-            // 235402のみ黒板日付訂正（黒板に2月10日と誤記）
-            if r.file_name == "20260211_235402.jpg" {
-                r.remarks = "As殻処分状況\u{3000}社内検査（黒板日付訂正）".to_string();
-            } else {
-                r.remarks = "As殻処分状況\u{3000}社内検査".to_string();
-            }
+pub fn apply_folder_specific_corrections(
+    results: &mut [AnalysisResult],
+    folder_name: &str,
+    rules: &[FolderRule],
+) {
+    for rule in rules {
+        if matches_rule(folder_name, rule) {
+            apply_single_rule(results, folder_name, rule);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_folder_rules_json() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config")
+            .join("folder_rules.json");
+        let rules = load_folder_rules(&path).expect("Failed to load folder_rules.json");
+        assert!(!rules.is_empty(), "Rules should not be empty");
+        assert_eq!(rules[0].id, "出荷指示確認");
+        assert_eq!(rules[0].match_all, vec!["Photomanager", "20260211", "出荷指示確認"]);
+        assert!(rules[0].apply.is_some());
+        assert_eq!(rules[0].per_file.len(), 2);
+    }
+
+    #[test]
+    fn test_matches_rule() {
+        let rule = FolderRule {
+            id: "test".to_string(),
+            match_all: vec!["abc".to_string(), "def".to_string()],
+            apply: None,
+            per_file: vec![],
+            station_replacements: HashMap::new(),
+            focus_target_renames: HashMap::new(),
+            focus_target_merge: None,
+            remarks_variety_override: None,
+            tackcoat_counter: None,
+            index_focus_target: None,
+            dekigata_station_extraction: false,
+            station_propagation: false,
+            clear_subphase_for: vec![],
+            default_subphase: None,
+            measurement_maps: HashMap::new(),
+            station_renames: HashMap::new(),
+            file_overrides: HashMap::new(),
+            clear_fields: vec![],
+        };
+        assert!(matches_rule("foo/abc/def/bar", &rule));
+        assert!(!matches_rule("foo/abc/bar", &rule));
+    }
+
+    #[test]
+    fn test_apply_global_overrides() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config")
+            .join("folder_rules.json");
+        let rules = load_folder_rules(&path).unwrap();
+
+        let mut results = vec![AnalysisResult::default()];
+        let folder = "something/Photomanager/20260211/出荷指示確認/photos";
+        apply_folder_specific_corrections(&mut results, folder, &rules);
+
+        assert_eq!(results[0].photo_category, "品質管理写真");
+        assert_eq!(results[0].work_type, "舗装工");
+        assert_eq!(results[0].variety, "切削オーバーレイ工");
+        assert_eq!(results[0].subphase, "表層工");
+        assert_eq!(results[0].remarks, "出荷指示確認");
+        // Default per-file (no 外観検査 in detected_text)
+        assert_eq!(results[0].station, "大林道路㈱熊本As混合所");
+        assert_eq!(results[0].measurements, "出荷温度：163℃\n積載量：3.5ｔ\n保温シート確認");
+    }
+
+    #[test]
+    fn test_per_file_detected_text_condition() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config")
+            .join("folder_rules.json");
+        let rules = load_folder_rules(&path).unwrap();
+
+        let mut results = vec![AnalysisResult {
+            detected_text: "外観検査の記録".to_string(),
+            ..Default::default()
+        }];
+        let folder = "Photomanager/20260211/出荷指示確認";
+        apply_folder_specific_corrections(&mut results, folder, &rules);
+
+        assert_eq!(results[0].station, "No.0右車線");
+        assert_eq!(results[0].measurements, "出荷温度：163℃\n積載量：3.5ｔ\n到着時外観検査");
+    }
+
+    #[test]
+    fn test_station_replacements_and_focus_target() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config")
+            .join("folder_rules.json");
+        let rules = load_folder_rules(&path).unwrap();
+
+        let mut results = vec![
+            AnalysisResult {
+                station: "No.0R".to_string(),
+                focus_target: "朝礼".to_string(),
+                ..Default::default()
+            },
+            AnalysisResult {
+                station: "No.6R".to_string(),
+                focus_target: "切断・清掃状況".to_string(),
+                ..Default::default()
+            },
+        ];
+        let folder = "0211切削/施工状況";
+        apply_folder_specific_corrections(&mut results, folder, &rules);
+
+        assert_eq!(results[0].station, "No.0 右車線");
+        assert_eq!(results[0].focus_target, "安全活動");
+        assert_eq!(results[1].station, "No.6 右車線");
+        assert_eq!(results[1].focus_target, "作業状況");
+    }
+
+    #[test]
+    fn test_tackcoat_counter() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config")
+            .join("folder_rules.json");
+        let rules = load_folder_rules(&path).unwrap();
+
+        let mut results = vec![
+            AnalysisResult {
+                remarks: "タックコート乳剤散布状況".to_string(),
+                ..Default::default()
+            },
+            AnalysisResult {
+                remarks: "舗設状況".to_string(),
+                ..Default::default()
+            },
+            AnalysisResult {
+                remarks: "タックコート乳剤散布状況".to_string(),
+                ..Default::default()
+            },
+        ];
+        let folder = "0211切削/施工状況";
+        apply_folder_specific_corrections(&mut results, folder, &rules);
+
+        assert_eq!(results[0].focus_target, "乳剤散布状況");
+        assert_eq!(results[2].focus_target, "作業状況");
+        // remarks_variety_override should have set these
+        assert_eq!(results[0].work_type, "舗装工");
+        assert_eq!(results[0].variety, "切削オーバーレイ工");
+    }
+
+    #[test]
+    fn test_clear_fields() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config")
+            .join("folder_rules.json");
+        let rules = load_folder_rules(&path).unwrap();
+
+        let mut results = vec![AnalysisResult {
+            station: "No.5".to_string(),
+            measurements: "some data".to_string(),
+            subphase: "old".to_string(),
+            ..Default::default()
+        }];
+        let folder = "0213切削/切削出来形/No.9";
+        apply_folder_specific_corrections(&mut results, folder, &rules);
+
+        assert_eq!(results[0].station, "");
+        assert_eq!(results[0].measurements, "");
+        assert_eq!(results[0].subphase, "路面切削");
+    }
+
+    #[test]
+    fn test_index_focus_target() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config")
+            .join("folder_rules.json");
+        let rules = load_folder_rules(&path).unwrap();
+
+        let mut results = vec![
+            AnalysisResult::default(),
+            AnalysisResult::default(),
+            AnalysisResult::default(),
+        ];
+        let folder = "Photomanager/20260211/トラックスケール";
+        apply_folder_specific_corrections(&mut results, folder, &rules);
+
+        assert_eq!(results[0].focus_target, "計量値");    // index 0 -> default
+        assert_eq!(results[1].focus_target, "計量状況");  // index 1 -> "1"
+        assert_eq!(results[2].focus_target, "計量値");    // index 2 -> default
+        assert_eq!(results[0].station, "2月11日（黒板日付訂正）");
     }
 }
