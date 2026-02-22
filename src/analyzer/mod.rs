@@ -1,8 +1,8 @@
-mod claude_cli;
+mod gemini_cli;
 pub mod cache;
 
 pub use cache::{CacheFile, filter_cached_images};
-pub use claude_cli::analyze_batch_single_step;
+pub use gemini_cli::analyze_batch_single_step;
 
 // 共通型は photo_ai_common からre-export
 pub use photo_ai_common::{AnalysisResult, RawImageData, Step2Result, detect_work_types};
@@ -11,7 +11,6 @@ use crate::error::Result;
 use crate::scanner::ImageInfo;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
-use crate::ai_provider::AiProvider;
 
 /// バッチ処理用のプログレスバーを作成
 fn create_batch_progress_bar(total_batches: usize) -> ProgressBar {
@@ -40,7 +39,6 @@ pub async fn analyze_images(
     images: &[ImageInfo],
     batch_size: usize,
     verbose: bool,
-    provider: AiProvider,
 ) -> Result<Vec<AnalysisResult>> {
     let mut results = Vec::new();
     let total_batches = images.len().div_ceil(batch_size);
@@ -53,7 +51,7 @@ pub async fn analyze_images(
             log_batch_verbose(&pb, batch_idx, batch.len(), None);
         }
 
-        let batch_results = claude_cli::analyze_batch(batch, verbose, provider).await?;
+        let batch_results = gemini_cli::analyze_batch(batch, verbose).await?;
         results.extend(batch_results);
 
         pb.inc(1);
@@ -73,7 +71,6 @@ pub async fn analyze_images_with_cache(
     folder: &Path,
     batch_size: usize,
     verbose: bool,
-    provider: AiProvider,
 ) -> Result<Vec<AnalysisResult>> {
     // キャッシュを読み込み
     let mut cache = CacheFile::load(folder);
@@ -92,7 +89,7 @@ pub async fn analyze_images_with_cache(
         let images_to_analyze: Vec<ImageInfo> = uncached_images.iter().map(|(img, _)| img.clone()).collect();
         let hashes: Vec<String> = uncached_images.iter().map(|(_, hash)| hash.clone()).collect();
 
-        let new_results = analyze_images(&images_to_analyze, batch_size, verbose, provider).await?;
+        let new_results = analyze_images(&images_to_analyze, batch_size, verbose).await?;
 
         // 新規結果をキャッシュに追加
         for (i, result) in new_results.iter().enumerate() {
@@ -139,7 +136,6 @@ pub async fn analyze_images_single_step(
     photo_type: Option<&str>,
     batch_size: usize,
     verbose: bool,
-    provider: AiProvider,
 ) -> Result<Vec<AnalysisResult>> {
     let mut results = Vec::new();
     let total_batches = images.len().div_ceil(batch_size);
@@ -156,7 +152,7 @@ pub async fn analyze_images_single_step(
             log_batch_verbose(&pb, batch_idx, batch.len(), Some(&format!("1ステップ解析: {}", mode_label)));
         }
 
-        let batch_results = claude_cli::analyze_batch_single_step(batch, master, work_type, variety, photo_type, verbose, provider).await?;
+        let batch_results = gemini_cli::analyze_batch_single_step(batch, master, work_type, variety, photo_type, verbose).await?;
         results.extend(batch_results);
 
         pb.inc(1);

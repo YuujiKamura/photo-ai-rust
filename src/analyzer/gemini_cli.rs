@@ -1,4 +1,4 @@
-//! Claude CLI連携モジュール
+//! Gemini CLI連携モジュール
 //!
 //! 解析処理:
 //! - 1ステップ解析: 工種指定時、1回のAI呼び出しで画像認識と分類を実行
@@ -8,7 +8,6 @@
 
 use crate::error::{PhotoAiError, Result};
 use crate::scanner::ImageInfo;
-use crate::ai_provider::AiProvider;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -24,7 +23,6 @@ use photo_ai_common::{
 pub async fn analyze_batch_step1(
     images: &[ImageInfo],
     verbose: bool,
-    provider: AiProvider,
 ) -> Result<Vec<RawImageData>> {
     // 元画像パスをそのまま使用（run_gemini_cliが内部でASCIIパスにコピーする）
     let image_paths: Vec<PathBuf> = images.iter().map(|img| img.path.clone()).collect();
@@ -42,8 +40,8 @@ pub async fn analyze_batch_step1(
         println!("  [Step1] プロンプト長: {} chars", full_prompt.len());
     }
 
-    // AI CLI呼び出し（画像パスはrun_gemini_cliが@fileで付加する）
-    let response = run_ai_cli(&full_prompt, Some(&image_paths), verbose, provider)?;
+    // Gemini CLI呼び出し（画像パスはrun_gemini_cliが@fileで付加する）
+    let response = run_gemini_cli(&full_prompt, Some(&image_paths), verbose)?;
 
     if verbose {
         println!("  [Step1] レスポンス長: {} chars", response.len());
@@ -57,10 +55,9 @@ pub async fn analyze_batch_step1(
 pub async fn analyze_batch(
     images: &[ImageInfo],
     verbose: bool,
-    provider: AiProvider,
 ) -> Result<Vec<AnalysisResult>> {
     // Step1のみ実行（マスタなし）
-    let raw_data = analyze_batch_step1(images, verbose, provider).await?;
+    let raw_data = analyze_batch_step1(images, verbose).await?;
 
     // マスタなしの場合はStep1結果をそのまま変換
     let info_map: std::collections::HashMap<&str, &ImageInfo> = images
@@ -106,7 +103,6 @@ pub async fn analyze_batch_single_step(
     variety: Option<&str>,
     photo_type: Option<&str>,
     verbose: bool,
-    provider: AiProvider,
 ) -> Result<Vec<AnalysisResult>> {
     // 元画像パスをそのまま使用（run_gemini_cliが内部でASCIIパスにコピーする）
     let image_paths: Vec<PathBuf> = images.iter().map(|img| img.path.clone()).collect();
@@ -127,8 +123,8 @@ pub async fn analyze_batch_single_step(
         println!("  [1ステップ解析] プロンプト長: {} chars", full_prompt.len());
     }
 
-    // AI CLI呼び出し
-    let response = run_ai_cli(&full_prompt, Some(&image_paths), verbose, provider)?;
+    // Gemini CLI呼び出し
+    let response = run_gemini_cli(&full_prompt, Some(&image_paths), verbose)?;
 
     if verbose {
         println!("  [1ステップ解析] レスポンス長: {} chars", response.len());
@@ -314,57 +310,6 @@ fn run_cli_command(config: CliConfig) -> Result<String> {
 }
 
 
-fn run_ai_cli(
-    prompt: &str,
-    image_paths: Option<&[PathBuf]>,
-    verbose: bool,
-    provider: AiProvider,
-) -> Result<String> {
-    match provider {
-        AiProvider::Claude => run_claude_cli(prompt, verbose),
-        AiProvider::Codex => run_codex_cli(prompt, image_paths, verbose),
-        AiProvider::Gemini => run_gemini_cli(prompt, image_paths, verbose),
-    }
-}
-
-fn run_codex_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -> Result<String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let temp_dir = std::env::temp_dir();
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let output_path = temp_dir.join(format!("photo-ai-codex-{}.txt", ts));
-
-    // 引数構築
-    let mut args = vec![
-        "exec".to_string(),
-        "--output-last-message".to_string(),
-        output_path.display().to_string(),
-        "-".to_string(),
-    ];
-
-    // 画像パス追加
-    if let Some(paths) = image_paths {
-        for path in paths {
-            args.push("-i".to_string());
-            args.push(path.display().to_string());
-        }
-    }
-
-    let config = CliConfig {
-        command: "codex".to_string(),
-        args,
-        stdin_prompt: Some(prompt.to_string()),
-        output_file: Some(output_path),
-        provider_name: "Codex".to_string(),
-        verbose,
-    };
-
-    run_cli_command(config)
-}
-
 fn run_gemini_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) -> Result<String> {
     // Gemini CLI @file構文はパスにスペースや日本語を含むと動作しない
     // 一時ディレクトリにコピーしてASCIIパスで参照する
@@ -410,20 +355,6 @@ fn run_gemini_cli(prompt: &str, image_paths: Option<&[PathBuf]>, verbose: bool) 
         std::fs::remove_dir_all(&dir).ok();
     }
     result
-}
-
-fn run_claude_cli(prompt: &str, verbose: bool) -> Result<String> {
-    // Claude CLIは常にstdin経由で送信（コマンドライン長制限を回避）
-    let config = CliConfig {
-        command: "claude".to_string(),
-        args: vec!["--output-format".to_string(), "text".to_string()],
-        stdin_prompt: Some(prompt.to_string()),
-        output_file: None,
-        provider_name: "Claude".to_string(),
-        verbose,
-    };
-
-    run_cli_command(config)
 }
 
 fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMaster) {

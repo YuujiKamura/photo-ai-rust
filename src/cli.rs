@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use crate::ai_provider::AiProvider;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -12,10 +11,6 @@ pub struct Cli {
     /// 詳細ログを出力
     #[arg(short, long, global = true)]
     pub verbose: bool,
-
-    /// AIプロバイダ (claude/codex/gemini)
-    #[arg(long, default_value = "gemini", global = true)]
-    pub ai_provider: AiProvider,
 }
 
 #[derive(Subcommand)]
@@ -70,6 +65,10 @@ pub enum Commands {
         /// 区画線工の線種リストJSONファイル
         #[arg(long)]
         line_types: Option<PathBuf>,
+
+        /// フォルダルールJSONファイル
+        #[arg(long)]
+        folder_rules: Option<PathBuf>,
     },
 
     /// 解析結果からPDF/Excelを生成
@@ -171,6 +170,10 @@ pub enum Commands {
         #[arg(long)]
         line_types: Option<PathBuf>,
 
+        /// フォルダルールJSONファイル
+        #[arg(long)]
+        folder_rules: Option<PathBuf>,
+
         /// 測定値フィールドを非表示
         #[arg(long)]
         hide_measurements: bool,
@@ -257,6 +260,10 @@ pub enum Commands {
         /// AIモデル指定（プロバイダに依存）
         #[arg(short, long)]
         model: Option<String>,
+
+        /// レビューバックエンド (gemini/claude/codex)
+        #[arg(long, default_value = "gemini")]
+        backend: String,
     },
 
     /// 解析結果を評価（GT比較・精度検証）

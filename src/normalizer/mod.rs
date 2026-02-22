@@ -778,10 +778,10 @@ fn unify_dekigata_measurements(
                     || r.description.contains("表層")
                     || r.focus_target.contains("表層")
             });
-            let label = if is_surface_layer { "計画高" } else { "切削基準高" };
+            let _label = if is_surface_layer { "計画高" } else { "切削基準高" };
 
             if let Some(measurements) =
-                dekigata::unify_dekigata_set(results, &chunk, lane_override, label)
+                dekigata::unify_dekigata_set(results, &chunk, lane_override)
             {
                 for &idx in &chunk {
                     let r = &results[idx];

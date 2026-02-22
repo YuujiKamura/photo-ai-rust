@@ -9,6 +9,9 @@ test-photos/
 .env
 .env.*
 
+# Project-specific folder rules (contains domain data)
+config/folder_rules.json
+
 # CCPM (Claude Code PM)
 .claude/settings.local.json
 .claude/prds/*.md

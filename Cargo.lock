@@ -5094,8 +5094,12 @@ dependencies = [
  "anyhow",
  "clap",
  "cli-ai-analyzer",
+ "csv",
+ "encoding_rs",
+ "rust_xlsxwriter 0.79.4",
  "serde",
  "serde_json",
+ "unicode-width 0.1.14",
 ]
 
 [[package]]
