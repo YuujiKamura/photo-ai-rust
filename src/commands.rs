@@ -621,7 +621,13 @@ fn extract_mmdd_from_results(results: &[analyzer::AnalysisResult]) -> Option<Str
 /// 解析結果とフォルダ名から統一命名規則でタイトルを生成
 ///
 /// 命名規則: {写真区分略称}_{活動名}_{MMDD}
-/// 例: 出来形管理_切削出来形立会_0212, 施工状況_0209
+/// 例: 出来形管理_切削出来形立会_0212, 施工状況_道路付属施設工_0220
+///
+/// 活動名の導出優先順位:
+/// 1. 結果データの最頻出workType（空でなければ）
+/// 2. 結果データの最頻出remarks（空でなければ）
+/// 3. 結果データの最頻出subphase（空でなければ）
+/// 4. フォルダ名（日付のみのフォルダ名は除外）
 fn derive_export_title(results: &[analyzer::AnalysisResult], folder: &Path) -> String {
     let folder_name = folder.file_name()
         .and_then(|n| n.to_str())
@@ -637,14 +643,34 @@ fn derive_export_title(results: &[analyzer::AnalysisResult], folder: &Path) -> S
     let cat_short = shorten_photo_category(&category);
     let mmdd = extract_mmdd_from_results(results);
 
-    // フォルダ名が写真区分と同じor含まれる場合は活動名を省略
-    let activity = if folder_clean == cat_short
-        || folder_clean.contains(&cat_short)
-        || cat_short.contains(&folder_clean)
-    {
-        None
+    // 活動名を結果データから導出
+    let derived_activity = derive_activity_name(results);
+
+    // フォルダ名が日付パターン(数字のみ)なら活動名としては使わない
+    let folder_is_date = folder_clean.chars().all(|c| c.is_ascii_digit());
+
+    let activity_str: String;
+    let activity = if let Some(ref act) = derived_activity {
+        // 結果データから導出した活動名
+        activity_str = act.clone();
+        // 写真区分と同じなら省略
+        if activity_str == cat_short || cat_short.contains(&activity_str) {
+            None
+        } else {
+            Some(activity_str.as_str())
+        }
+    } else if !folder_is_date {
+        // フォルダ名を使う（日付でない場合）
+        if folder_clean == cat_short
+            || folder_clean.contains(&cat_short)
+            || cat_short.contains(&folder_clean)
+        {
+            None
+        } else {
+            Some(folder_clean.as_str())
+        }
     } else {
-        Some(folder_clean.as_str())
+        None
     };
 
     match (activity, mmdd.as_deref()) {
@@ -653,6 +679,133 @@ fn derive_export_title(results: &[analyzer::AnalysisResult], folder: &Path) -> S
         (None, Some(d)) => format!("{}_{}", cat_short, d),
         (None, None) => cat_short,
     }
+}
+
+/// 解析結果から活動名を導出する
+///
+/// 優先順位: workType → remarks(写真区分・工種と被らないもの) → subphase
+fn derive_activity_name(results: &[analyzer::AnalysisResult]) -> Option<String> {
+    // 1. 最頻出workType
+    let work_type = most_common_field(results, |r| &r.work_type);
+    if let Some(ref wt) = work_type {
+        if !wt.is_empty() {
+            return Some(wt.clone());
+        }
+    }
+
+    // 2. 最頻出remarks（ただし写真区分の略称と被る場合は除外）
+    let remarks = most_common_field(results, |r| &r.remarks);
+    if let Some(ref rm) = remarks {
+        if !rm.is_empty() {
+            return Some(rm.clone());
+        }
+    }
+
+    // 3. 最頻出subphase
+    let subphase = most_common_field(results, |r| &r.subphase);
+    if let Some(ref sp) = subphase {
+        if !sp.is_empty() {
+            return Some(sp.clone());
+        }
+    }
+
+    None
+}
+
+/// 結果データの指定フィールドから最頻出の値を取得
+fn most_common_field<F>(results: &[analyzer::AnalysisResult], field: F) -> Option<String>
+where
+    F: Fn(&analyzer::AnalysisResult) -> &str,
+{
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for r in results {
+        let val = field(r);
+        if !val.is_empty() {
+            *counts.entry(val).or_default() += 1;
+        }
+    }
+    counts.into_iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(k, _)| k.to_string())
+}
+
+/// Doctorコマンドを処理
+pub fn handle_doctor_command() -> Result<()> {
+    println!("🩺 photo-ai-rust doctor - 前提条件チェック\n");
+    let mut all_ok = true;
+
+    // 1. gemini CLI (Windows: gemini.cmd, Unix: gemini)
+    print!("  gemini CLI ........ ");
+    let gemini_names = if cfg!(windows) {
+        vec!["gemini.cmd", "gemini"]
+    } else {
+        vec!["gemini"]
+    };
+    let gemini_result = gemini_names.iter().find_map(|name| {
+        std::process::Command::new(name).arg("--version").output().ok()
+            .filter(|o| o.status.success())
+    });
+    match gemini_result {
+        Some(output) => {
+            let ver = String::from_utf8_lossy(&output.stdout);
+            let ver = ver.trim();
+            println!("OK ({})", if ver.is_empty() { "version unknown" } else { ver });
+        }
+        None => {
+            all_ok = false;
+            println!("NG");
+            println!("    → gemini がPATHにありません");
+            println!("    → 対処: npm install -g @google/gemini-cli && gemini auth");
+        }
+    }
+
+    // 2. マスタCSV
+    print!("  マスタCSV ......... ");
+    match master_selector::resolve_master_base_dir() {
+        Some(base) => {
+            let by_work_type = base.join("by_work_type");
+            let count = std::fs::read_dir(&by_work_type)
+                .map(|entries| entries.flatten().filter(|e| {
+                    e.path().extension().map(|ext| ext == "csv").unwrap_or(false)
+                }).count())
+                .unwrap_or(0);
+            println!("OK ({}ファイル: {})", count, by_work_type.display());
+        }
+        None => {
+            all_ok = false;
+            println!("NG");
+            println!("    → マスタディレクトリが見つかりません");
+            println!("    → 検索パス:");
+            for candidate in master_selector::build_master_candidates() {
+                println!("      - {}/by_work_type/", candidate.display());
+            }
+            println!("    → 対処: PHOTO_AI_MASTER_DIR 環境変数を設定 or --master で直接指定");
+        }
+    }
+
+    // 3. Dropbox認証
+    print!("  Dropbox認証 ....... ");
+    let dropbox_config = dirs::config_dir()
+        .map(|d| d.join("dropbox-fetch"));
+    let has_token = dropbox_config
+        .as_ref()
+        .map(|d| d.join("token.json").exists())
+        .unwrap_or(false);
+    if has_token {
+        println!("OK");
+    } else {
+        println!("未設定 (オプション)");
+        println!("    → dropbox-fetch を使う場合: dropbox-fetch auth");
+    }
+
+    println!();
+    if all_ok {
+        println!("✅ すべてのチェックに合格しました");
+    } else {
+        println!("⚠ 一部のチェックが失敗しました（上記の対処法を確認してください）");
+    }
+
+    Ok(())
 }
 
 /// Evaluateコマンドを処理
@@ -868,6 +1021,10 @@ impl Commands {
                     fields,
                     json,
                 })?;
+            }
+
+            Commands::Doctor => {
+                handle_doctor_command()?;
             }
 
             Commands::Gt { action } => {

@@ -21,6 +21,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// 写真フォルダを解析してJSONを出力
+    #[command(after_help = "例:\n  photo-ai-rust analyze ./photos\n  photo-ai-rust analyze ./photos -m master/by_work_type/舗装工.csv\n  photo-ai-rust analyze ./photos -w 舗装工 -t 施工状況写真")]
     Analyze {
         /// 写真フォルダのパス
         #[arg(required = true)]
@@ -72,6 +73,7 @@ pub enum Commands {
     },
 
     /// 解析結果からPDF/Excelを生成
+    #[command(after_help = "例:\n  photo-ai-rust export result.json --format pdf\n  photo-ai-rust export result.json --format both -o ./output/")]
     Export {
         /// 入力JSONファイル
         #[arg(required = true)]
@@ -111,6 +113,7 @@ pub enum Commands {
     },
 
     /// 解析からPDF/Excel出力まで一括実行
+    #[command(after_help = "例:\n  photo-ai-rust run ./photos --format pdf\n  photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --format both\n  photo-ai-rust run ./photos --use-cache --format pdf")]
     Run {
         /// 写真フォルダのパス
         #[arg(required = true)]
@@ -274,6 +277,9 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+
+    /// 前提条件を一括チェック
+    Doctor,
 
     /// Ground Truth管理（取り込み・比較）
     Gt {
