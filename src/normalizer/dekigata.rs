@@ -60,6 +60,8 @@ fn split_by_keywords(text: &str) -> Vec<String> {
     let keywords = [
         "切削高(設計)", "切削高（設計）",
         "切削高(実施)", "切削高（実施）",
+        "計画高(設計)", "計画高（設計）",
+        "計画高(実施)", "計画高（実施）",
         "左幅員", "右幅員",
     ];
 
@@ -159,8 +161,10 @@ pub fn parse_dekigata_ocr(text: &str) -> Option<DekigataValues> {
     };
 
     for section in &sections {
-        let is_design = section.contains("切削高(設計)") || section.contains("切削高（設計）");
-        let is_actual = section.contains("切削高(実施)") || section.contains("切削高（実施）");
+        let is_design = section.contains("切削高(設計)") || section.contains("切削高（設計）")
+            || section.contains("計画高(設計)") || section.contains("計画高（設計）");
+        let is_actual = section.contains("切削高(実施)") || section.contains("切削高（実施）")
+            || section.contains("計画高(実施)") || section.contains("計画高（実施）");
 
         if is_design || is_actual {
             let target = if is_design {
@@ -371,6 +375,10 @@ pub fn find_board_detail_photo(
             || r.detected_text.contains("切削高（設計）")
             || r.detected_text.contains("切削高(実施)")
             || r.detected_text.contains("切削高（実施）")
+            || r.detected_text.contains("計画高(設計)")
+            || r.detected_text.contains("計画高（設計）")
+            || r.detected_text.contains("計画高(実施)")
+            || r.detected_text.contains("計画高（実施）")
     })
 }
 

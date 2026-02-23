@@ -111,10 +111,13 @@ impl AnalysisResult {
 
     /// フィールドキーに対応するラベルを返す
     /// 機械関連の写真の場合、Station フィールドは「機種」を返す
+    /// 使用材料写真の場合、Measurements ラベルは非表示
     pub fn get_label_for_field(&self, key: crate::layout::FieldKey) -> &str {
         use crate::layout::FieldKey;
         if self.is_machinery_related() && key == FieldKey::Station {
             "機種"
+        } else if self.photo_category == "使用材料写真" && key == FieldKey::Measurements {
+            ""
         } else {
             // LAYOUT_FIELDS からデフォルトラベルを取得
             crate::layout::LAYOUT_FIELDS

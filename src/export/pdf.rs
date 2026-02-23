@@ -708,20 +708,26 @@ fn add_info_field_ops(
             let field_center = field_bottom + field_height / 2.0;
 
             // 測定値フィールド: ラベル表示 + 値を赤色で描画
-            let is_measurements = field.label == "測定値";
-            let is_remarks = field.label == "備考";
+            let is_measurements = field.key == photo_ai_common::layout::FieldKey::Measurements;
+            let is_remarks = field.key == photo_ai_common::layout::FieldKey::Remarks;
             let label_y = field_center - UNIFIED_FONT_SIZE * 0.3;
+            let has_label = !label_text.is_empty();
+            let value_x = if has_label { info_x_pt + label_width + 10.0 } else { info_x_pt + 5.0 };
             if is_measurements && value_text != "-" {
-                // ラベル「測定値」を描画
-                add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
+                // ラベルがあれば描画
+                if has_label {
+                    add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
+                }
                 // 値を赤色で描画
                 let text_y = wide_text_config.centered_first_line_y(&value_text, field_center, field_height);
-                add_measurements_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, field_height, fonts, &wide_text_config);
+                add_measurements_text_ops(ops, &value_text, value_x, text_y, field_height, fonts, &wide_text_config);
             } else {
                 let cfg = if is_remarks { &remarks_text_config } else { &text_config };
                 let text_y = cfg.centered_first_line_y(&value_text, field_center, field_height);
-                add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
-                add_fitted_text_ops(ops, &value_text, info_x_pt + label_width + 10.0, text_y, field_height, fonts, cfg);
+                if has_label {
+                    add_text_ops(ops, &label_text, info_x_pt + 5.0, label_y, UNIFIED_FONT_SIZE, fonts);
+                }
+                add_fitted_text_ops(ops, &value_text, value_x, text_y, field_height, fonts, cfg);
             }
 
             // 行の下に水平線（最後の行以外）

@@ -177,6 +177,28 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
     }
 
     let folder_name = config.folder.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+    // マスタに直接マッチするエントリがあるかチェック
+    if !crate::master_matcher::folder_has_master_entry(&master, folder_name) {
+        // tagger結果からdescriptionを集約して提案材料にする
+        let descriptions: Vec<&str> = group_records.values()
+            .map(|r| r.core.description.as_str())
+            .filter(|d| !d.is_empty())
+            .collect();
+        let desc_summary = if descriptions.is_empty() {
+            "(tagger結果なし)".to_string()
+        } else {
+            descriptions.join(" / ")
+        };
+        eprintln!();
+        eprintln!("⚠ マスタに「{}」に対応するエントリがありません。", folder_name);
+        eprintln!("  照合が的外れになる可能性があります。");
+        eprintln!("  以下のような行をマスタCSV (master/by_work_type/**.csv) に追加してください:");
+        eprintln!("  \"直接工事費\",\"(写真区分)\",\"(工種)\",\"(種別)\",\"(細別)\",\"{}\",\"(検索パターン)\"", folder_name);
+        eprintln!("  tagger推定内容: {}", desc_summary);
+        eprintln!();
+    }
+
     let folder_context = config.folder.display().to_string();
     let mut results = convert_groups_to_results(
         &grouped_images,
@@ -282,13 +304,13 @@ fn convert_groups_to_results(
             ..Default::default()
         };
 
-        result.has_board = rec.has_board;
-        result.detected_text = rec.detected_text.clone();
-        result.description = rec.description.clone();
-        result.focus_target = rec.role.clone();
+        result.has_board = rec.core.has_board;
+        result.detected_text = rec.core.detected_text.clone();
+        result.description = rec.core.description.clone();
+        result.focus_target = rec.core.role.clone();
 
         // 写真ごとのdetected_textからキー:値を抽出
-        let kvs = extract_kv_from_text(&rec.detected_text);
+        let kvs = extract_kv_from_text(&rec.core.detected_text);
 
         // 測点: この写真の黒板OCRから「場所」を取得
         let photo_station = kvs.iter()
@@ -297,7 +319,7 @@ fn convert_groups_to_results(
             .unwrap_or_default();
         // 出来形管理用紙からNo.Xを抽出（場所/測点キーがない場合）
         let photo_station = if photo_station.is_empty() {
-            extract_dekigata_station(&rec.detected_text).unwrap_or_default()
+            extract_dekigata_station(&rec.core.detected_text).unwrap_or_default()
         } else {
             photo_station
         };
@@ -305,18 +327,18 @@ fn convert_groups_to_results(
 
         // 写真ごとにマスタ照合（混在フォルダ対応）
         // machine_typeもキーワードに追加して照合精度を向上
-        let ft = if rec.role.is_empty() { None } else { Some(rec.role.as_str()) };
-        let photo_matched_row = if !rec.detected_text.is_empty() {
-            let combined = if !rec.machine_type.is_empty() {
-                format!("{}\n{}", rec.detected_text, rec.machine_type)
+        let ft = if rec.core.role.is_empty() { None } else { Some(rec.core.role.as_str()) };
+        let photo_matched_row = if !rec.core.detected_text.is_empty() {
+            let combined = if !rec.core.machine_type.is_empty() {
+                format!("{}\n{}", rec.core.detected_text, rec.core.machine_type)
             } else {
-                rec.detected_text.clone()
+                rec.core.detected_text.clone()
             };
             let texts = vec![combined.as_str()];
             match_master_from_detected_texts(master, &texts, folder_name, ft)
-        } else if !rec.machine_type.is_empty() {
+        } else if !rec.core.machine_type.is_empty() {
             // detected_text空でもmachine_typeがあればキーワードとして使う
-            let texts = vec![rec.machine_type.as_str()];
+            let texts = vec![rec.core.machine_type.as_str()];
             match_master_from_detected_texts(master, &texts, folder_name, ft)
         } else {
             // detected_text空、machine_type空ならフォルダ名のみで照合
@@ -342,11 +364,11 @@ fn convert_groups_to_results(
             // 「切削機」フォルダの使用機械は、機械名を備考へ埋め込む。
             if result.remarks == "使用機械"
                 && folder_name.contains("切削機")
-                && rec.machine_type.contains("路面切削機")
+                && rec.core.machine_type.contains("路面切削機")
             {
-                let id_head = rec.machine_id.split_whitespace().next().unwrap_or("");
+                let id_head = rec.core.machine_id.split_whitespace().next().unwrap_or("");
                 if !id_head.is_empty() {
-                    result.remarks = format!("使用機械（{} {}）", rec.machine_type.trim(), id_head);
+                    result.remarks = format!("使用機械（{} {}）", rec.core.machine_type.trim(), id_head);
                 }
             }
 
@@ -361,25 +383,25 @@ fn convert_groups_to_results(
             // 機械系写真は測点欄へ機械名を補完する。
             if result.station.is_empty()
                 && (result.remarks == "使用機械" || result.remarks == "重機始業前点検")
-                && !rec.machine_type.trim().is_empty()
+                && !rec.core.machine_type.trim().is_empty()
             {
-                if result.remarks == "使用機械" && !rec.machine_id.trim().is_empty() {
-                    result.station = format!("{} {}", rec.machine_type.trim(), rec.machine_id.trim());
+                if result.remarks == "使用機械" && !rec.core.machine_id.trim().is_empty() {
+                    result.station = format!("{} {}", rec.core.machine_type.trim(), rec.core.machine_id.trim());
                 } else {
-                    result.station = rec.machine_type.trim().to_string();
+                    result.station = rec.core.machine_type.trim().to_string();
                 }
             }
 
             // 切削機フォルダの使用機械は運用値に合わせて固定する。
-            if folder_name.contains("切削機") && rec.machine_type.contains("路面切削機") {
-                let id_head = rec.machine_id.split_whitespace().next().unwrap_or("");
+            if folder_name.contains("切削機") && rec.core.machine_type.contains("路面切削機") {
+                let id_head = rec.core.machine_id.split_whitespace().next().unwrap_or("");
                 result.photo_category = PHOTO_CAT_OTHER.to_string();
                 result.work_type = "舗装工".to_string();
                 result.variety.clear();
                 result.subphase.clear();
                 result.station.clear();
                 if !id_head.is_empty() {
-                    result.remarks = format!("使用機械（{} {}）", rec.machine_type.trim(), id_head);
+                    result.remarks = format!("使用機械（{} {}）", rec.core.machine_type.trim(), id_head);
                 } else {
                     result.remarks = "使用機械".to_string();
                 }
@@ -398,21 +420,21 @@ fn convert_groups_to_results(
                 result.station = date_to_month_day(&result.date);
             }
             if folder_name.contains("処分状況_車番調査")
-                && rec.detected_text.contains("処分状況")
-                && rec.detected_text.contains("車番調査")
+                && rec.core.detected_text.contains("処分状況")
+                && rec.core.detected_text.contains("車番調査")
             {
                 result.photo_category = PHOTO_CAT_CONSTRUCTION.to_string();
                 result.work_type = "舗装工".to_string();
                 result.variety = "路面切削工".to_string();
                 result.subphase = "殻処分".to_string();
-                if rec.detected_text.contains("車番") {
+                if rec.core.detected_text.contains("車番") {
                     result.remarks = "As殻処分状況　車番調査（黒板日付訂正）".to_string();
                 } else {
                     result.remarks = "As殻処分状況　車番調査".to_string();
                 }
             }
             if folder_name.contains("処分状況_車番調査") && result.measurements.is_empty() {
-                if let Some(m) = extract_tonnage_from_text(&rec.detected_text) {
+                if let Some(m) = extract_tonnage_from_text(&rec.core.detected_text) {
                     result.measurements = m;
                 }
             }
@@ -420,9 +442,9 @@ fn convert_groups_to_results(
         // マスタ照合失敗時は全フィールド空のまま（ゴミを埋めない）
         crate::temperature::apply_temperature_folder_postprocess(&mut result, folder_name);
 
-        result.reasoning = format!("photo-groups.json: {} / {}", rec.machine_type, rec.machine_id);
+        result.reasoning = format!("photo-groups.json: {} / {}", rec.core.machine_type, rec.core.machine_id);
 
-        Some((rec.group, role_priority(&rec.role), result))
+        Some((rec.group, role_priority(&rec.core.role), result))
     }).collect();
 
     // 日付・ファイル名の時系列ソート（グループ順ではなく撮影順）

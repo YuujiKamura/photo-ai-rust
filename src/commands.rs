@@ -3,7 +3,7 @@
 //! CLIコマンドの実行ロジックを提供します。
 
 use crate::analysis::{apply_station, ScanAnalysisConfig, prepare_analysis, scan_and_analyze};
-use crate::cli::{Commands, ExportFormat, GtAction, PdfQuality};
+use crate::cli::{Commands, ExportFormat, GtAction, PdfQuality, ReviewBackendArg};
 use crate::config::Config;
 use crate::error::{self, Result};
 use crate::normalizer::{self, NormalizationOptions};
@@ -78,7 +78,7 @@ pub struct ReviewCommandArgs {
     pub path: PathBuf,
     pub watch: bool,
     pub model: Option<String>,
-    pub backend: String,
+    pub backend: ReviewBackendArg,
     pub cli_args: CommonCliArgs,
 }
 
@@ -175,25 +175,32 @@ struct CommonAnalysisParams {
     folder_rules: Option<PathBuf>,
 }
 
-fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<master_selector::MasterSelection> {
-    if let Some(path) = master {
-        // パスからwork_typeを推定（by_work_type/xxx.csv → xxx）
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        if stem == "construction_hierarchy" {
-            // 共通マスタ指定 → 全工種マージ読み込み
-            let all_paths = master_selector::collect_all_master_paths();
-            return Some(master_selector::MasterSelection { path, work_type: None, all_paths });
-        }
+/// CLIで指定されたマスタパスからMasterSelectionを解決（純粋ロジック、UI無し）
+fn resolve_master_from_cli(master: Option<PathBuf>) -> Option<master_selector::MasterSelection> {
+    let path = master?;
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    if stem == "construction_hierarchy" {
+        // 共通マスタ指定 → 全工種マージ読み込み
+        let all_paths = master_selector::collect_all_master_paths();
+        Some(master_selector::MasterSelection { path, work_type: None, all_paths })
+    } else {
         let work_type = Some(stem.to_string());
-        return Some(master_selector::MasterSelection { path, work_type, all_paths: None });
+        Some(master_selector::MasterSelection { path, work_type, all_paths: None })
+    }
+}
+
+fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<master_selector::MasterSelection> {
+    // 1. CLI指定があればそれを使う
+    if let Some(selection) = resolve_master_from_cli(master) {
+        return Some(selection);
     }
 
-    // 対話式選択
+    // 2. 対話式選択
     if interactive {
         return master_selector::select_master_interactive();
     }
 
-    // デフォルトマスタ（全工種 → マージ読み込み）
+    // 3. デフォルトマスタ（全工種 → マージ読み込み）
     let all_paths = master_selector::collect_all_master_paths();
     match all_paths {
         Some(paths) => {
@@ -249,6 +256,27 @@ async fn run_common_analysis(
     scan_and_analyze(&scan_config).await
 }
 
+/// エクスポート共通パラメータ
+pub struct ExportParams<'a> {
+    pub format: &'a ExportFormat,
+    pub output: &'a Path,
+    pub photos_per_page: u8,
+    pub title: &'a str,
+    pub quality: PdfQuality,
+    pub hide_measurements: bool,
+    pub base_path: &'a Path,
+}
+
+/// タイトル導出とエクスポートの共通処理
+fn run_export(results: &[analyzer::AnalysisResult], params: &ExportParams<'_>) -> Result<()> {
+    let title = if params.title == "工事写真帳" {
+        derive_export_title(results, params.base_path)
+    } else {
+        params.title.to_string()
+    };
+    export::export_results(results, params.format, params.output, params.photos_per_page, &title, params.quality, params.hide_measurements)
+}
+
 /// Exportコマンドを処理
 pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
     println!("📄 photo-ai-rust - エクスポート\n");
@@ -269,13 +297,6 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
         }
     }
 
-    // タイトルがデフォルトの場合、結果データまたは入力パスから自動導出
-    let title = if args.title == "工事写真帳" {
-        derive_export_title(&results, args.input.parent().unwrap_or(Path::new(".")))
-    } else {
-        args.title.clone()
-    };
-
     // エイリアス変換を適用
     if args.preset.is_some() || args.alias.is_some() {
         println!("- エイリアス変換中...");
@@ -287,11 +308,17 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
         println!("✔ エイリアス変換完了");
     }
 
-    let output_dir = args.output.unwrap_or_else(|| {
-        args.input.parent().unwrap_or(Path::new(".")).to_path_buf()
-    });
+    let output_dir = args.output.unwrap_or_else(|| base_dir.to_path_buf());
 
-    export::export_results(&results, &args.format, &output_dir, args.photos_per_page, &title, args.pdf_quality, args.hide_measurements)?;
+    run_export(&results, &ExportParams {
+        format: &args.format,
+        output: &output_dir,
+        photos_per_page: args.photos_per_page,
+        title: &args.title,
+        quality: args.pdf_quality,
+        hide_measurements: args.hide_measurements,
+        base_path: base_dir,
+    })?;
 
     println!("\n✅ エクスポート完了");
     Ok(())
@@ -368,8 +395,15 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
 
     // 4. Export
     println!("[4/4] エクスポート中...");
-    let title = derive_export_title(&results, &args.folder);
-    export::export_results(&results, &args.format, &output_paths.export_path, 3, &title, args.pdf_quality, args.hide_measurements)?;
+    run_export(&results, &ExportParams {
+        format: &args.format,
+        output: &output_paths.export_path,
+        photos_per_page: 3,
+        title: "工事写真帳",
+        quality: args.pdf_quality,
+        hide_measurements: args.hide_measurements,
+        base_path: &args.folder,
+    })?;
 
     println!("\n✅ 完了");
     Ok(())
@@ -379,10 +413,10 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
 pub fn handle_review_command(args: ReviewCommandArgs) -> Result<()> {
     println!("🔍 photo-ai-rust - コードレビュー\n");
 
-    let backend = match args.backend.to_lowercase().as_str() {
-        "claude" => ReviewBackend::Claude,
-        "codex" => ReviewBackend::Codex,
-        _ => ReviewBackend::Gemini,
+    let backend = match args.backend {
+        ReviewBackendArg::Gemini => ReviewBackend::Gemini,
+        ReviewBackendArg::Claude => ReviewBackend::Claude,
+        ReviewBackendArg::Codex => ReviewBackend::Codex,
     };
 
     // ファイル指定の場合は親ディレクトリでReviewerを初期化
@@ -444,6 +478,38 @@ pub fn handle_config_command(args: ConfigCommandArgs) -> Result<()> {
     Ok(())
 }
 
+/// 正規化統計を表示
+fn print_normalize_stats(result: &normalizer::NormalizationResult) {
+    println!("\n📊 正規化結果:");
+    println!("  総レコード数: {}", result.stats.total_records);
+    println!("  修正対象: {}件", result.stats.corrected_records);
+    println!("  - 計測値修正: {}件", result.stats.measurement_corrections);
+}
+
+/// 修正内容を表示
+fn print_corrections(corrections: &[normalizer::NormalizationCorrection]) {
+    if !corrections.is_empty() {
+        println!("\n📝 修正内容:");
+        for correction in corrections {
+            println!(
+                "  {} [{}]: {} → {}",
+                correction.file_name,
+                correction.field,
+                correction.original,
+                correction.corrected
+            );
+        }
+    }
+}
+
+/// 正規化結果を保存
+fn save_normalize_results(results: &[analyzer::AnalysisResult], path: &Path) -> Result<()> {
+    let json = serde_json::to_string_pretty(results)?;
+    std::fs::write(path, json)?;
+    println!("\n✔ 保存: {}", path.display());
+    Ok(())
+}
+
 /// Normalizeコマンドを処理
 pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
     println!("🔧 photo-ai-rust - 正規化\n");
@@ -469,25 +535,8 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
     // 正規化実行
     let result = normalizer::normalize_results(&results, &options);
 
-    // 統計表示
-    println!("\n📊 正規化結果:");
-    println!("  総レコード数: {}", result.stats.total_records);
-    println!("  修正対象: {}件", result.stats.corrected_records);
-    println!("  - 計測値修正: {}件", result.stats.measurement_corrections);
-
-    // 修正内容を表示
-    if !result.corrections.is_empty() {
-        println!("\n📝 修正内容:");
-        for correction in &result.corrections {
-            println!(
-                "  {} [{}]: {} → {}",
-                correction.file_name,
-                correction.field,
-                correction.original,
-                correction.corrected
-            );
-        }
-    }
+    print_normalize_stats(&result);
+    print_corrections(&result.corrections);
 
     // 区画線工の線種判定（差分実行）
     let line_type_changes = if let Some(ref lt) = args.line_types {
@@ -518,9 +567,7 @@ pub fn handle_normalize_command(args: NormalizeCommandArgs) -> Result<()> {
         normalizer::append_dump_number_to_station(&mut results);
 
         let output_path = args.output.unwrap_or(args.input);
-        let json = serde_json::to_string_pretty(&results)?;
-        std::fs::write(&output_path, json)?;
-        println!("\n✔ 保存: {}", output_path.display());
+        save_normalize_results(&results, &output_path)?;
     } else {
         println!("\n[ドライラン] 変更は適用されませんでした");
     }

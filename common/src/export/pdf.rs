@@ -114,6 +114,7 @@ impl PdfMetrics {
 /// PDFの情報欄に表示する1行
 #[derive(Debug, Clone)]
 pub struct PdfInfoField {
+    pub key: crate::layout::FieldKey,
     pub label: String,
     pub value: String,
     pub row_span: u8,
@@ -140,6 +141,7 @@ pub fn build_pdf_info_fields_opt(result: &AnalysisResult, hide_measurements: boo
                 result.get_field_value(field.key).to_string()
             };
             PdfInfoField {
+                key: field.key,
                 label: result.get_label_for_field(field.key).to_string(),
                 value,
                 row_span: field.row_span,
