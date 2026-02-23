@@ -285,6 +285,22 @@ pub enum Commands {
         json: bool,
     },
 
+    /// 着手前写真と竣工写真をAIで自動ペアリング
+    #[command(name = "pair-completion")]
+    PairCompletion {
+        /// 着手前写真PDF
+        #[arg(long, required = true)]
+        before: PathBuf,
+
+        /// 竣工写真フォルダ
+        #[arg(long, required = true)]
+        after: PathBuf,
+
+        /// 出力JSONファイル（デフォルト: pairing.json）
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
     /// 前提条件を一括チェック
     Doctor,
 

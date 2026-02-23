@@ -13,6 +13,9 @@ license = "MIT"
 # PDF解析・埋め込みライブラリ
 pdf-analysis-embed = { path = "../pdf-analysis-embed" }
 
+# AI CLI解析
+cli-ai-analyzer = { path = "../cli-ai-analyzer" }
+
 # コードレビュー
 ai-code-review = { path = "../ai-code-review" }
 
@@ -48,6 +51,9 @@ rust_xlsxwriter = "0.79"
 
 # Excel読み込み
 calamine = "0.26"
+
+# PDF解析（lopdf）
+lopdf = "0.34"
 
 # エラー処理
 anyhow = "1"

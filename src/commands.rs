@@ -115,6 +115,14 @@ pub struct EvaluateCommandArgs {
     pub json: bool,
 }
 
+/// PairCompletionコマンドの引数
+pub struct PairCompletionCommandArgs {
+    pub before: PathBuf,
+    pub after: PathBuf,
+    pub output: Option<PathBuf>,
+    pub cli_args: CommonCliArgs,
+}
+
 /// Stationコマンドの引数
 pub struct StationCommandArgs {
     pub input: PathBuf,
@@ -1088,6 +1096,13 @@ impl Commands {
 
             Commands::Doctor => {
                 handle_doctor_command()?;
+            }
+
+            Commands::PairCompletion { before, after, output } => {
+                crate::pair_completion::handle_pair_completion(PairCompletionCommandArgs {
+                    before, after, output,
+                    cli_args: cli_args.clone(),
+                }).await?;
             }
 
             Commands::Gt { action } => {
