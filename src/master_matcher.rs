@@ -295,6 +295,34 @@ pub(crate) fn match_master_from_detected_texts(
         .map(|(row, _)| row)
 }
 
+/// フォルダ名がマスタに直接マッチするか確認する
+///
+/// Returns true if:
+/// 1. フォルダ名がマスタの備考列に完全一致する
+/// 2. フォルダ名がマスタの検索パターンにマッチする
+pub(crate) fn folder_has_master_entry(master: &HierarchyMaster, folder_name: &str) -> bool {
+    if folder_name.is_empty() {
+        return false;
+    }
+    // Check 1: 備考列の完全一致
+    if master.rows().iter().any(|r| r.remarks == folder_name) {
+        return true;
+    }
+    // Check 2: 検索パターンでマッチ
+    for row in master.rows() {
+        if row.search_patterns.is_empty() {
+            continue;
+        }
+        for pat in row.search_patterns.split('|') {
+            let pat = pat.trim();
+            if !pat.is_empty() && folder_name.contains(pat) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// "2026-02-09 21:23:53" → "2月9日"
 pub(crate) fn date_to_month_day(date_str: &str) -> String {
     let parts: Vec<&str> = date_str.split(&['-', ' '][..]).collect();

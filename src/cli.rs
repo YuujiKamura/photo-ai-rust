@@ -263,7 +263,7 @@ pub enum Commands {
 
         /// レビューバックエンド (gemini/claude/codex)
         #[arg(long, default_value = "gemini")]
-        backend: String,
+        backend: ReviewBackendArg,
     },
 
     /// 解析結果を評価（GT比較・精度検証）
@@ -425,6 +425,28 @@ impl std::str::FromStr for LaneArg {
             "right" | "r" | "右" => Ok(LaneArg::Right),
             "both" | "b" | "両" => Ok(LaneArg::Both),
             _ => Err(format!("Unknown lane: {}. Use left/right/both", s)),
+        }
+    }
+}
+
+/// レビューバックエンド（CLIパース用）
+#[derive(Clone, Debug, Default)]
+pub enum ReviewBackendArg {
+    #[default]
+    Gemini,
+    Claude,
+    Codex,
+}
+
+impl std::str::FromStr for ReviewBackendArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "gemini" => Ok(ReviewBackendArg::Gemini),
+            "claude" => Ok(ReviewBackendArg::Claude),
+            "codex" => Ok(ReviewBackendArg::Codex),
+            _ => Err(format!("Unknown backend: {}. Use gemini/claude/codex", s)),
         }
     }
 }

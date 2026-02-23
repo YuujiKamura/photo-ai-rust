@@ -85,9 +85,27 @@ pub struct MasterSelection {
     pub all_paths: Option<Vec<PathBuf>>,  // 全工種の場合: by_work_type/*.csv + メインCSV
 }
 
+/// マスタ情報（名前、パス、行数）
+pub struct MasterInfo {
+    pub name: String,
+    pub path: PathBuf,
+    pub row_count: usize,
+}
+
+/// 利用可能なマスタ一覧を行数付きで取得（純粋ロジック、テスト可能）
+pub fn list_masters_with_counts() -> Vec<MasterInfo> {
+    list_available_masters()
+        .into_iter()
+        .map(|(name, path)| {
+            let row_count = count_csv_rows(&path);
+            MasterInfo { name, path, row_count }
+        })
+        .collect()
+}
+
 /// 対話式でマスタを選択（工種名も返す）
 pub fn select_master_interactive() -> Option<MasterSelection> {
-    let masters = list_available_masters();
+    let masters = list_masters_with_counts();
 
     if masters.is_empty() {
         eprintln!("⚠ マスタファイルが見つかりません");
@@ -103,10 +121,8 @@ pub fn select_master_interactive() -> Option<MasterSelection> {
     println!("\n📋 工種マスタを選択してください:\n");
     println!("  0) 全工種 (マージ読み込み)");
 
-    for (i, (name, path)) in masters.iter().enumerate() {
-        // 件数を取得
-        let count = count_csv_rows(path);
-        println!("  {}) {} ({}件)", i + 1, name, count);
+    for (i, info) in masters.iter().enumerate() {
+        println!("  {}) {} ({}件)", i + 1, info.name, info.row_count);
     }
 
     println!();
@@ -132,11 +148,11 @@ pub fn select_master_interactive() -> Option<MasterSelection> {
             make_all_master_selection()
         }
         Ok(n) if n >= 1 && n <= masters.len() => {
-            let (name, path) = &masters[n - 1];
-            println!("→ {} を使用", name);
+            let info = &masters[n - 1];
+            println!("→ {} を使用", info.name);
             Some(MasterSelection {
-                path: path.clone(),
-                work_type: Some(name.clone()),
+                path: info.path.clone(),
+                work_type: Some(info.name.clone()),
                 all_paths: None,
             })
         }
