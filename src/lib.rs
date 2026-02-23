@@ -17,3 +17,4 @@ pub mod analysis;
 pub mod folder_rules;
 pub mod commands;
 pub mod gt;
+pub mod pair_completion;

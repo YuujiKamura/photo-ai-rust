@@ -51,6 +51,9 @@ pub enum PhotoAiError {
     #[error("コードレビューエラー: {0}")]
     CodeReview(String),
 
+    #[error("PDF画像抽出エラー: {0}")]
+    PdfExtraction(String),
+
     #[error(transparent)]
     Common(#[from] photo_ai_common::Error),
 }
