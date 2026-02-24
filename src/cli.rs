@@ -288,7 +288,7 @@ pub enum Commands {
     /// 着手前写真と竣工写真をAIで自動ペアリング（コンタクトシート+アンサンブル方式）
     #[command(name = "pair-completion")]
     PairCompletion {
-        /// 着手前写真PDF
+        /// 着手前写真PDF or 画像フォルダ
         #[arg(long, required = true)]
         before: PathBuf,
 

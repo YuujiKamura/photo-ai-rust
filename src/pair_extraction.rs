@@ -12,6 +12,48 @@ pub struct ExtractedPage {
     pub station_text: String,
 }
 
+/// フォルダ内の画像ファイルを ExtractedPage として返す（PDF代替入力用）
+pub fn extract_pages_from_folder(folder: &Path) -> Result<Vec<ExtractedPage>> {
+    if !folder.exists() || !folder.is_dir() {
+        return Err(PhotoAiError::FolderNotFound(folder.display().to_string()));
+    }
+
+    let mut files: Vec<PathBuf> = std::fs::read_dir(folder)
+        .map_err(|e| PhotoAiError::PdfExtraction(format!("フォルダ読み込み失敗: {}", e)))?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| matches!(ext.to_lowercase().as_str(), "jpg" | "jpeg" | "png"))
+                    .unwrap_or(false)
+        })
+        .collect();
+
+    files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+    let extracted = files
+        .into_iter()
+        .enumerate()
+        .map(|(i, path)| {
+            let station_text = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            ExtractedPage {
+                page_num: (i + 1) as u32,
+                image_path: path,
+                station_text,
+            }
+        })
+        .collect();
+
+    Ok(extracted)
+}
+
 /// PDFの各ページから最大の JPEG 画像を抽出し、テキスト情報と共に返す
 pub fn extract_images_from_pdf(pdf_path: &Path) -> Result<Vec<ExtractedPage>> {
     if !pdf_path.exists() {
