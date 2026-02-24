@@ -7,6 +7,7 @@ use error::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::init();
     let cli = Cli::parse();
     let config = Config::load()?;
     let common_cli_args = CommonCliArgs {

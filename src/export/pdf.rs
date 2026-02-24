@@ -28,7 +28,7 @@ impl FontSet {
 }
 
 /// 日本語フォントのパスを検索（明朝体優先）
-fn find_japanese_font() -> Option<PathBuf> {
+pub(crate) fn find_japanese_font() -> Option<PathBuf> {
     // 日本語フォント候補（明朝体優先）
     let font_names = [
         // 明朝体
