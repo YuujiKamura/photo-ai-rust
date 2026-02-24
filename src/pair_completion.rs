@@ -8,7 +8,7 @@ use crate::contactsheet::generate_contact_sheet;
 use crate::error::{PhotoAiError, Result};
 use crate::export::pair_pdf::PairEntry;
 use crate::pair_ensemble::ensemble_pair_query;
-use crate::pair_extraction::{extract_images_from_pdf, ExtractedPage};
+use crate::pair_extraction::{extract_images_from_pdf, extract_pages_from_folder, ExtractedPage};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -132,19 +132,29 @@ pub async fn handle_pair_completion(args: PairCompletionCommandArgs) -> Result<(
     let verbose = args.cli_args.verbose;
     println!("photo-ai-rust - 着手前/竣工 ペアリング（コンタクトシート+アンサンブル方式）\n");
 
-    // Step 1: 入力準備
-    println!("[1/4] PDF画像抽出中...");
-    let before_pages = extract_images_from_pdf(&args.before)?;
-    println!("  着手前: {}ページ", before_pages.len());
-
-    if before_pages.is_empty() {
-        return Err(PhotoAiError::PdfExtraction(
-            "PDFから画像を抽出できませんでした".into(),
-        ));
-    }
-
-    // TempDirGuard: スコープ終了時にtempディレクトリを自動削除（空チェック後）
-    let _temp_guard = TempDirGuard(before_pages[0].image_path.parent().unwrap().to_path_buf());
+    // Step 1: 入力準備（PDF or フォルダ）
+    let (before_pages, _temp_guard) = if args.before.is_dir() {
+        println!("[1/4] 画像フォルダスキャン中...");
+        let pages = extract_pages_from_folder(&args.before)?;
+        println!("  着手前: {}枚（フォルダ入力）", pages.len());
+        if pages.is_empty() {
+            return Err(PhotoAiError::NoImagesFound(
+                args.before.display().to_string(),
+            ));
+        }
+        (pages, None)
+    } else {
+        println!("[1/4] PDF画像抽出中...");
+        let pages = extract_images_from_pdf(&args.before)?;
+        println!("  着手前: {}ページ", pages.len());
+        if pages.is_empty() {
+            return Err(PhotoAiError::PdfExtraction(
+                "PDFから画像を抽出できませんでした".into(),
+            ));
+        }
+        let guard = TempDirGuard(pages[0].image_path.parent().unwrap().to_path_buf());
+        (pages, Some(guard))
+    };
 
     let after_files = scan_after_folder(&args.after)?;
     println!("  竣工写真: {}枚", after_files.len());
@@ -157,10 +167,24 @@ pub async fn handle_pair_completion(args: PairCompletionCommandArgs) -> Result<(
 
     // Step 2: コンタクトシート生成
     println!("[2/4] コンタクトシート生成中...");
-    let temp_dir = before_pages[0]
-        .image_path
-        .parent()
-        .unwrap_or(Path::new("."));
+    // フォルダ入力時はコンタクトシート用に別tempを確保
+    let cs_temp_dir;
+    let _cs_temp_guard;
+    let temp_dir = if _temp_guard.is_some() {
+        // PDF入力: PDF抽出先のtempをそのまま使う
+        _cs_temp_guard = None;
+        before_pages[0]
+            .image_path
+            .parent()
+            .unwrap_or(Path::new("."))
+    } else {
+        // フォルダ入力: コンタクトシート用の別tempを作成
+        cs_temp_dir =
+            std::env::temp_dir().join(format!("photo-ai-cs-{}", std::process::id()));
+        std::fs::create_dir_all(&cs_temp_dir)?;
+        _cs_temp_guard = Some(TempDirGuard(cs_temp_dir.clone()));
+        cs_temp_dir.as_path()
+    };
 
     let before_image_paths: Vec<PathBuf> =
         before_pages.iter().map(|p| p.image_path.clone()).collect();
@@ -254,34 +278,13 @@ pub async fn handle_pair_completion(args: PairCompletionCommandArgs) -> Result<(
     println!("  多数決 (2/3):   {}件", majority);
     println!("  不一致 (<2/3):  {}件 <- 要確認", split);
 
-    // --build: フルパスJSON生成 + PDF生成
+    // --build: Pフォルダ作成
     if args.build {
-        let project_name = args.project_name.as_deref().unwrap_or("工事");
-        println!("\n--- フルパスJSON + PDF生成 ---");
+        println!("\n--- Pフォルダ作成 ---");
 
-        let output_dir = args
-            .after
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("写真帳まとめ");
-        std::fs::create_dir_all(&output_dir)?;
-
-        let pairs = build_pair_json(&results, &before_pages, &args.after, &output_dir)?;
-
-        if pairs.is_empty() {
-            eprintln!("警告: 有効なペアがありません");
-        } else {
-            // フルパスJSON保存
-            let json_path = output_dir.join("pair_entries.json");
-            let json = serde_json::to_string_pretty(&pairs)?;
-            std::fs::write(&json_path, &json)?;
-            println!("\nペアJSON: {} ({}件)", json_path.display(), pairs.len());
-
-            // PDF生成
-            let pdf_path = output_dir.join(format!("着手前竣工_{}.pdf", project_name));
-            crate::export::pair_pdf::generate_pair_pdf(&pairs, project_name, &pdf_path)?;
-            println!("PDF生成完了: {}", pdf_path.display());
-        }
+        let output_dir = args.after.clone();
+        let pairs = build_pair_folders(&results, &before_pages, &args.after, &output_dir)?;
+        println!("\n{}件のPフォルダを作成: {}", pairs.len(), output_dir.display());
     }
 
     println!("\nペアリング完了");
@@ -289,43 +292,23 @@ pub async fn handle_pair_completion(args: PairCompletionCommandArgs) -> Result<(
     Ok(())
 }
 
-// --- --build: フルパスJSON生成 ---
+// --- --build: Pフォルダ作成 ---
 
-/// ペアリング結果からフルパスのPairEntryリストを生成し、before画像を恒久保存
-fn build_pair_json(
+/// ペアリング結果からPフォルダ群を作成（P01_測点名/ にbefore+afterを配置）
+fn build_pair_folders(
     results: &[PairResult],
     before_pages: &[ExtractedPage],
     after_folder: &Path,
     output_dir: &Path,
 ) -> Result<Vec<PairEntry>> {
-    let before_dir = output_dir.join("before_extracted");
-    std::fs::create_dir_all(&before_dir)?;
-
     let mut pairs = Vec::new();
-    for (i, pair) in results.iter().enumerate() {
+    let mut pair_num = 0u32;
+
+    for pair in results.iter() {
         if pair.confidence < CONFIDENCE_MAJORITY || pair.after_file.is_empty() {
             continue;
         }
-
-        // before画像を恒久保存
-        let before_path = if let Some(page) = before_pages
-            .iter()
-            .find(|p| p.page_num == pair.before_page)
-        {
-            let dest = before_dir.join(format!("before_{:02}.jpg", i + 1));
-            std::fs::copy(&page.image_path, &dest)?;
-            dest
-        } else {
-            eprintln!("警告: 着手前画像が見つかりません (page {})", pair.before_page);
-            continue;
-        };
-
-        // after画像パス解決
-        let after_path = after_folder.join(&pair.after_file);
-        if !after_path.exists() {
-            eprintln!("警告: 竣工写真が見つかりません: {}", pair.after_file);
-            continue;
-        }
+        pair_num += 1;
 
         let station_name = pair.before_station
             .lines()
@@ -334,15 +317,45 @@ fn build_pair_json(
             .trim()
             .to_string();
 
+        // フォルダ名: P01_No.0より終点を望む
+        let safe_name = station_name
+            .replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], "_");
+        let folder_name = format!("P{:02}_{}", pair_num, safe_name);
+        let pair_dir = output_dir.join(&folder_name);
+        std::fs::create_dir_all(&pair_dir)?;
+
+        // before画像をコピー
+        let before_path = if let Some(page) = before_pages
+            .iter()
+            .find(|p| p.page_num == pair.before_page)
+        {
+            let src_name = page.image_path.file_name().unwrap_or_default();
+            let dest = pair_dir.join(src_name);
+            std::fs::copy(&page.image_path, &dest)?;
+            dest
+        } else {
+            eprintln!("警告: 着手前画像が見つかりません (page {})", pair.before_page);
+            continue;
+        };
+
+        // after画像をコピー
+        let after_src = after_folder.join(&pair.after_file);
+        if !after_src.exists() {
+            eprintln!("警告: 竣工写真が見つかりません: {}", pair.after_file);
+            continue;
+        }
+        let after_dest = pair_dir.join(&pair.after_file);
+        std::fs::copy(&after_src, &after_dest)?;
+
+        println!("  {} : {} + {}", folder_name,
+            before_path.file_name().unwrap_or_default().to_string_lossy(),
+            pair.after_file);
+
         pairs.push(PairEntry {
             station_name,
             before_path,
-            after_path,
+            after_path: after_dest,
         });
-
-        println!("  P{:02} {} -> {}", i + 1,
-            pair.before_station.lines().next().unwrap_or("?").trim(),
-            pair.after_file);
     }
 
     Ok(pairs)
