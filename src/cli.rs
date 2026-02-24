@@ -285,7 +285,7 @@ pub enum Commands {
         json: bool,
     },
 
-    /// 着手前写真と竣工写真をAIで自動ペアリング
+    /// 着手前写真と竣工写真をAIで自動ペアリング（コンタクトシート+アンサンブル方式）
     #[command(name = "pair-completion")]
     PairCompletion {
         /// 着手前写真PDF
@@ -297,6 +297,57 @@ pub enum Commands {
         after: PathBuf,
 
         /// 出力JSONファイル（デフォルト: pairing.json）
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// 工事名（フォルダ作成・PDF生成に使用）
+        #[arg(long)]
+        project_name: Option<String>,
+
+        /// ペアリング後にフォルダ作成+PDF生成まで実行
+        #[arg(long)]
+        build: bool,
+    },
+
+    /// 着手前竣工写真帳PDFを生成
+    #[command(name = "pair-pdf")]
+    PairPdf {
+        /// 画像フォルダ（単独: Pフォルダスキャン、--json併用: 画像パス解決）
+        folder: Option<PathBuf>,
+
+        /// ペアリングJSON（PairEntry形式 or pairing_manual形式）
+        #[arg(long)]
+        json: Option<PathBuf>,
+
+        /// 工事名
+        #[arg(long, required = true)]
+        project_name: String,
+
+        /// 出力先ディレクトリ（デフォルト: フォルダの親/写真帳まとめ/）
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Pフォルダ内のafter写真を差し替えてPDFを再生成
+    #[command(name = "pair-replace")]
+    PairReplace {
+        /// Pフォルダの親（竣工写真フォルダ）
+        #[arg(required = true)]
+        folder: PathBuf,
+
+        /// 差し替えるペア番号（例: 1-3, 1,3,5, 2）
+        #[arg(long, required = true)]
+        pairs: String,
+
+        /// 新しい竣工写真フォルダ（ソート順でpairsに対応）
+        #[arg(long, required = true)]
+        new_after: PathBuf,
+
+        /// 工事名（PDF生成に必要）
+        #[arg(long, required = true)]
+        project_name: String,
+
+        /// PDF出力先（デフォルト: folder親/写真帳まとめ/）
         #[arg(short, long)]
         output: Option<PathBuf>,
     },

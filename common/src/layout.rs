@@ -29,6 +29,24 @@ pub const INFO_RATIO: f32 = 0.35;
 pub const HEADER_HEIGHT_PT: f32 = 0.0;
 
 // ============================================
+// A4横（ランドスケープ）定数
+// ============================================
+
+/// A4横幅（pt）- 297mm
+pub const A4_LANDSCAPE_WIDTH_PT: f32 = 842.0;
+/// A4横高さ（pt）- 210mm
+pub const A4_LANDSCAPE_HEIGHT_PT: f32 = 595.35;
+
+/// 着手前竣工PDF: 上下マージン（pt）- 10mm
+pub const PAIR_MARGIN_Y_PT: f32 = 28.35;
+/// 着手前竣工PDF: 左右マージン（pt）- ~6.8mm
+pub const PAIR_MARGIN_X_PT: f32 = 19.2;
+/// 着手前竣工PDF: キャプション領域高さ（pt）- ~15.2mm
+pub const PAIR_CAPTION_AREA_PT: f32 = 43.2;
+/// 着手前竣工PDF: キャプション罫線幅（pt）- ~93mm
+pub const PAIR_RULE_WIDTH_PT: f32 = 264.0;
+
+// ============================================
 // mm基準定数（Excel用）
 // ============================================
 

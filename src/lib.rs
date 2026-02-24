@@ -18,3 +18,6 @@ pub mod folder_rules;
 pub mod commands;
 pub mod gt;
 pub mod pair_completion;
+pub mod pair_extraction;
+pub mod pair_ensemble;
+pub mod contactsheet;

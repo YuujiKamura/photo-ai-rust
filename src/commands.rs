@@ -120,7 +120,26 @@ pub struct PairCompletionCommandArgs {
     pub before: PathBuf,
     pub after: PathBuf,
     pub output: Option<PathBuf>,
+    pub project_name: Option<String>,
+    pub build: bool,
     pub cli_args: CommonCliArgs,
+}
+
+/// PairReplaceコマンドの引数
+pub struct PairReplaceCommandArgs {
+    pub folder: PathBuf,
+    pub pairs: String,
+    pub new_after: PathBuf,
+    pub project_name: String,
+    pub output: Option<PathBuf>,
+}
+
+/// PairPdfコマンドの引数
+pub struct PairPdfCommandArgs {
+    pub folder: Option<PathBuf>,
+    pub json: Option<PathBuf>,
+    pub project_name: String,
+    pub output: Option<PathBuf>,
 }
 
 /// Stationコマンドの引数
@@ -797,6 +816,41 @@ where
         .map(|(k, _)| k.to_string())
 }
 
+/// PairPdfコマンドを処理
+pub fn handle_pair_pdf_command(args: PairPdfCommandArgs) -> Result<()> {
+    println!("着手前竣工写真帳PDF生成\n");
+
+    // ペア読み込み（JSON or フォルダスキャン）
+    let pairs = if let Some(ref json_path) = args.json {
+        println!("JSON入力: {}", json_path.display());
+        crate::pair_completion::load_pairs_from_json(json_path, args.folder.as_deref())?
+    } else if let Some(ref folder) = args.folder {
+        crate::pair_completion::scan_pair_folders(folder)?
+    } else {
+        return Err(error::PhotoAiError::Config("--json か folder のどちらかを指定してください".to_string()));
+    };
+    println!("ペア数: {}", pairs.len());
+
+    if pairs.is_empty() {
+        return Err(error::PhotoAiError::Config("ペアが見つかりません".to_string()));
+    }
+
+    // 出力パス
+    let default_dir = if let Some(ref json_path) = args.json {
+        json_path.parent().unwrap_or(Path::new(".")).to_path_buf()
+    } else {
+        args.folder.as_ref().unwrap().parent().unwrap_or(Path::new(".")).join("写真帳まとめ")
+    };
+    let output_dir = args.output.unwrap_or(default_dir);
+    let output_path = output_dir.join(format!("着手前竣工_{}.pdf", args.project_name));
+
+    // PDF生成
+    export::pair_pdf::generate_pair_pdf(&pairs, &args.project_name, &output_path)?;
+
+    println!("\n✅ PDF生成完了: {}", output_path.display());
+    Ok(())
+}
+
 /// Doctorコマンドを処理
 pub fn handle_doctor_command() -> Result<()> {
     println!("🩺 photo-ai-rust doctor - 前提条件チェック\n");
@@ -1094,13 +1148,28 @@ impl Commands {
                 })?;
             }
 
+            Commands::PairPdf { folder, json, project_name, output } => {
+                handle_pair_pdf_command(PairPdfCommandArgs {
+                    folder,
+                    json,
+                    project_name,
+                    output,
+                })?;
+            }
+
+            Commands::PairReplace { folder, pairs, new_after, project_name, output } => {
+                crate::pair_completion::handle_pair_replace(PairReplaceCommandArgs {
+                    folder, pairs, new_after, project_name, output,
+                })?;
+            }
+
             Commands::Doctor => {
                 handle_doctor_command()?;
             }
 
-            Commands::PairCompletion { before, after, output } => {
+            Commands::PairCompletion { before, after, output, project_name, build } => {
                 crate::pair_completion::handle_pair_completion(PairCompletionCommandArgs {
-                    before, after, output,
+                    before, after, output, project_name, build,
                     cli_args: cli_args.clone(),
                 }).await?;
             }

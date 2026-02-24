@@ -1,4 +1,5 @@
 pub mod pdf;
+pub mod pair_pdf;
 pub mod excel;
 pub mod photo_xml;
 
