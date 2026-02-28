@@ -120,29 +120,58 @@ pub struct PdfInfoField {
     pub row_span: u8,
 }
 
-/// 情報欄フィールドを構築（GAS準拠: 8フィールド）
-/// 日時 → 区分 → 工種 → 種別 → 細別 → 測点 → 備考 → 測定値
-/// 測定値が空のとき測定値行はラベル毎非表示（スペースを他フィールドに配分）
-pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
-    build_pdf_info_fields_opt(result, false)
+/// 測定値フィールドを表示するか判定（プレゼンテーション層の責務）
+///
+/// 実際の測定データがあれば常に表示。
+/// データがない場合は、品質管理・出来形管理写真のみ空欄プレースホルダーを表示。
+/// 施工状況写真・安全管理写真・着手前完成写真・その他は非表示。
+fn should_show_measurements(result: &AnalysisResult) -> bool {
+    use crate::types::PhotoData;
+    let v = result.measurements();
+    if !v.is_empty() && v != "-" {
+        return true;
+    }
+    matches!(result.photo_category.as_str(), "品質管理写真" | "出来形管理写真")
 }
 
-/// hide_measurements=true の場合、測定値フィールドの値を空にする（ラベル・枠は残す）。
-pub fn build_pdf_info_fields_opt(result: &AnalysisResult, hide_measurements: bool) -> Vec<PdfInfoField> {
+/// 測定値ラベルを非表示にするか判定
+///
+/// 使用材料写真: ラベル「測定値」を非表示にし、値の描画幅を拡大する。
+fn should_hide_measurement_label(result: &AnalysisResult) -> bool {
+    result.photo_category == "使用材料写真"
+}
+
+/// 情報欄フィールドを構築（GAS準拠: 8フィールド）
+/// 日時 → 区分 → 工種 → 種別 → 細別 → 測点 → 備考 → 測定値
+///
+/// 測定値の表示制御はphoto_categoryに基づく:
+/// - 品質管理/出来形管理写真: 常に表示（データなしでもプレースホルダー）
+/// - 使用材料写真: ラベル非表示（値の描画幅を拡大）
+/// - その他カテゴリ: データがある場合のみ表示
+pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
     use crate::types::PhotoData;
+    let show_meas = should_show_measurements(result);
+    let hide_meas_label = should_hide_measurement_label(result);
+
     LAYOUT_FIELDS
         .iter()
         .map(|field| {
-            let value = if hide_measurements && field.key == FieldKey::Measurements {
+            let is_meas = field.key == FieldKey::Measurements;
+            let value = if is_meas && !show_meas {
                 String::new()
             } else if field.key == FieldKey::Date {
                 format_date(&result.date)
             } else {
                 result.get_field_value(field.key).to_string()
             };
+            let label = if is_meas && (!show_meas || hide_meas_label) {
+                String::new()
+            } else {
+                result.get_label_for_field(field.key).to_string()
+            };
             PdfInfoField {
                 key: field.key,
-                label: result.get_label_for_field(field.key).to_string(),
+                label,
                 value,
                 row_span: field.row_span,
             }
@@ -284,7 +313,7 @@ mod tests {
         // 8フィールド確認
         assert_eq!(fields.len(), 8);
 
-        // フィールド順序確認
+        // フィールド順序確認（測定値はデフォルトcategoryでは非表示）
         assert_eq!(fields[0].label, "日時");
         assert_eq!(fields[1].label, "区分");
         assert_eq!(fields[2].label, "工種");
@@ -292,12 +321,13 @@ mod tests {
         assert_eq!(fields[4].label, "細別");
         assert_eq!(fields[5].label, "測点");
         assert_eq!(fields[6].label, "備考");
-        assert_eq!(fields[7].label, "測定値");
+        assert!(fields[7].label.is_empty(), "default category: measurement label hidden");
 
-        // デフォルト値確認
-        for field in &fields {
+        // デフォルト値確認（測定値は非表示なので空）
+        for field in &fields[..7] {
             assert_eq!(field.value, "-");
         }
+        assert!(fields[7].value.is_empty(), "default category: measurement value hidden");
     }
 
     #[test]
@@ -336,5 +366,97 @@ mod tests {
 
         // photoHeight = 392.65 - 5 * 2 = 382.65
         assert!((core.photo_height_pt - 382.65).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_should_show_measurements_with_data() {
+        let result = AnalysisResult {
+            photo_category: "施工状況写真".to_string(),
+            measurements: "厚さ50mm".to_string(),
+            ..Default::default()
+        };
+        assert!(should_show_measurements(&result));
+    }
+
+    #[test]
+    fn test_should_hide_measurements_construction() {
+        let result = AnalysisResult {
+            photo_category: "施工状況写真".to_string(),
+            ..Default::default()
+        };
+        assert!(!should_show_measurements(&result));
+    }
+
+    #[test]
+    fn test_should_show_measurements_quality() {
+        let result = AnalysisResult {
+            photo_category: "品質管理写真".to_string(),
+            ..Default::default()
+        };
+        assert!(should_show_measurements(&result));
+    }
+
+    #[test]
+    fn test_should_show_measurements_dekigata() {
+        let result = AnalysisResult {
+            photo_category: "出来形管理写真".to_string(),
+            ..Default::default()
+        };
+        assert!(should_show_measurements(&result));
+    }
+
+    #[test]
+    fn test_should_hide_measurements_safety() {
+        let result = AnalysisResult {
+            photo_category: "安全管理写真".to_string(),
+            ..Default::default()
+        };
+        assert!(!should_show_measurements(&result));
+    }
+
+    #[test]
+    fn test_hide_measurement_label_material() {
+        let result = AnalysisResult {
+            photo_category: "使用材料写真".to_string(),
+            ..Default::default()
+        };
+        assert!(should_hide_measurement_label(&result));
+    }
+
+    #[test]
+    fn test_build_info_fields_construction_no_measurements() {
+        let result = AnalysisResult {
+            photo_category: "施工状況写真".to_string(),
+            ..Default::default()
+        };
+        let fields = build_pdf_info_fields(&result);
+        let meas = fields.iter().find(|f| f.key == FieldKey::Measurements).unwrap();
+        assert!(meas.label.is_empty(), "施工状況写真: measurement label should be empty");
+        assert!(meas.value.is_empty(), "施工状況写真: measurement value should be empty");
+    }
+
+    #[test]
+    fn test_build_info_fields_quality_placeholder() {
+        let result = AnalysisResult {
+            photo_category: "品質管理写真".to_string(),
+            ..Default::default()
+        };
+        let fields = build_pdf_info_fields(&result);
+        let meas = fields.iter().find(|f| f.key == FieldKey::Measurements).unwrap();
+        assert_eq!(meas.label, "測定値", "品質管理写真: measurement label should be shown");
+        assert_eq!(meas.value, "-", "品質管理写真: measurement value should be placeholder");
+    }
+
+    #[test]
+    fn test_build_info_fields_material_hide_label() {
+        let result = AnalysisResult {
+            photo_category: "使用材料写真".to_string(),
+            measurements: "セメント 50kg".to_string(),
+            ..Default::default()
+        };
+        let fields = build_pdf_info_fields(&result);
+        let meas = fields.iter().find(|f| f.key == FieldKey::Measurements).unwrap();
+        assert!(meas.label.is_empty(), "使用材料写真: measurement label should be hidden");
+        assert_eq!(meas.value, "セメント 50kg", "使用材料写真: measurement value should be shown");
     }
 }

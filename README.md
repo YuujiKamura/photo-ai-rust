@@ -1,143 +1,137 @@
 # photo-ai-rust
 
-工事写真AI解析・写真台帳生成ツール（Rust実装）
-
-## Web版
-
-**[Web版を使う (GitHub Pages)](https://yuujikamura.github.io/photo-ai-rust/)**
-
-ブラウザから直接写真をアップロードして解析・PDF出力できます。
+工事写真AI解析・写真台帳生成CLI（Rust）
 
 ## 概要
 
-建設工事の写真を自動解析し、工種・種別・作業段階を分類して写真台帳（PDF/Excel）を生成するツールです。
+建設工事の写真をGemini AIで自動解析し、工種階層マスタと照合して写真台帳（PDF/Excel）を生成する。
 
-### 主な機能
+## 前提条件
 
-- **AI写真解析**: Claude CLI連携による画像認識・OCR
-- **2段階解析**: Step1（画像認識）→ Step2（工種マスタ照合）
-- **工種自動判定**: 写真内容から舗装工・区画線工等を自動識別
-- **PDF出力**: A4写真台帳（日本語フォント対応）
-- **Excel出力**: データ一覧形式
-- **キャッシュ機能**: 解析結果をローカルキャッシュ
+- Rust 1.70+
+- [photo-tagger](https://github.com/YuujiKamura/photo-tagger) — Gemini APIで写真グループ分け・OCR（必須）
+- Gemini API key（photo-tagger用）
+
+```bash
+photo-ai-rust doctor   # 前提条件を一括チェック
+```
 
 ## インストール
 
 ```bash
-# ビルド
 cargo build --release
-
-# インストール（オプション）
-cargo install --path .
 ```
 
-### 前提条件
+## 解析パイプライン
 
-- Rust 1.70+
-- [Claude CLI](https://github.com/anthropics/claude-code) がインストール・認証済み
+```
+写真フォルダ
+  → scan（画像収集）
+  → photo-tagger（Gemini API：グループ分け・OCR・focus_target抽出）
+  → マスタ照合（detected_text + folder_name → 工種階層マッチング）
+  → グループ伝播（リーダーのマッチ結果を同一グループに適用）
+  → ドメイン補正（工種変換・線種検出）
+  → 正規化（測定値統一・測点適用）
+  → export（PDF/Excel）
+```
+
+詳細は [Issue #104](https://github.com/YuujiKamura/photo-ai-rust/issues/104) を参照。
 
 ## 使用方法
 
-### 基本コマンド
+### 一括実行（推奨）
 
 ```bash
-# 写真解析（JSON出力）
-photo-ai-rust analyze <folder> -o result.json
+# 解析 → PDF出力
+photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --format pdf
 
-# PDF/Excel出力
+# 解析 → PDF + Excel
+photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --format both
+
+# キャッシュ使用（再解析スキップ）
+photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --use-cache --format pdf
+```
+
+### 個別実行
+
+```bash
+# 解析のみ（JSON出力）
+photo-ai-rust analyze ./photos -m master/by_work_type/舗装工.csv
+
+# 出力のみ（既存JSONから）
 photo-ai-rust export result.json --format pdf
-photo-ai-rust export result.json --format excel
 
-# 一括実行（解析 → 出力）
-photo-ai-rust run <folder> --format both
+# 正規化（グループ単位で計測値統一）
+photo-ai-rust normalize result.json -S "No.1"
 ```
 
-### 2段階解析（工種マスタ使用）
+### 主要オプション
 
-```bash
-# 工種階層マスタを指定して解析
-photo-ai-rust analyze <folder> --master master/hierarchy.csv -o result.json
+| オプション | 説明 | デフォルト |
+|-----------|------|-----------|
+| `-m, --master` | 工種マスタCSV | - |
+| `-f, --format` | 出力形式 (pdf/excel/xml/both) | pdf |
+| `-w, --work-type` | 工種指定 | - |
+| `-s, --station` | 測点一括指定 | - |
+| `--pdf-quality` | PDF品質 (high/medium/low) | medium |
+| `--use-cache` | 解析キャッシュ使用 | off |
+| `-r, --recursive` | サブフォルダ再帰スキャン | off |
+| `--preset` | エイリアスプリセット (pavement/marking/general) | - |
 
-# 一括実行
-photo-ai-rust run <folder> --master master/hierarchy.csv --format pdf
+## 工種マスタ
+
+`master/by_work_type/` に工種別CSVを配置:
+
+```
+master/by_work_type/
+├── 舗装工.csv
+├── 区画線工.csv
+├── 構造物撤去工.csv
+├── 道路土工.csv
+└── ...
 ```
 
-2段階解析の流れ:
-1. **Step1**: 画像からOCR・数値・シーン説明を抽出
-2. **工種判定**: Step1結果から舗装工・区画線工等を自動識別
-3. **Step2**: 絞り込んだマスタと照合して工種・種別・作業段階を決定
+CSV列: 費目, 写真区分, 工種, 種別, 細別, 備考, 検索パターン
 
-### オプション
-
-```bash
-# 解析オプション
---batch-size <N>    # バッチサイズ（デフォルト: 5）
---master <CSV>      # 工種階層マスタCSV
---use-cache         # キャッシュを使用
--v, --verbose       # 詳細出力
-
-# 出力オプション
---format <FORMAT>   # pdf, excel, both
---photos-per-page   # 1ページあたりの写真数（2 or 3）
---title <TITLE>     # 台帳タイトル
---pdf-quality       # PDF品質（high, medium, low）
---preset <NAME>     # エイリアスプリセット（pavement等）
-```
-
-### キャッシュ管理
-
-```bash
-# キャッシュ情報表示
-photo-ai-rust cache --folder <folder>
-
-# キャッシュ削除
-photo-ai-rust cache --clear --folder <folder>
-```
-
-## プロジェクト構造
+## プロジェクト構成
 
 ```
 photo-ai-rust/
 ├── src/                    # CLI本体
-│   ├── analyzer/           # AI解析（Claude CLI連携）
+│   ├── main.rs             # エントリポイント
+│   ├── commands.rs         # コマンドハンドラ
+│   ├── analysis.rs         # パイプライン制御
+│   ├── master_matcher.rs   # マスタ照合
+│   ├── normalizer/         # 正規化（測定値統一・測点）
 │   ├── export/             # PDF/Excel出力
-│   ├── matcher/            # 工種マッチング
-│   └── scanner/            # 画像スキャン
-├── common/                 # 共有ライブラリ
+│   ├── scanner/            # 画像スキャン
+│   └── temperature.rs      # 温度管理写真処理
+├── common/                 # 共有ライブラリ（photo-ai-common）
 │   └── src/
-│       ├── hierarchy.rs    # 工種階層マスタ
-│       ├── alias.rs        # エイリアス変換
-│       ├── layout.rs       # レイアウト定義
-│       └── types.rs        # 共通型定義
-├── web/                    # Web版（HTML/JS）
-├── web-wasm/               # Web版（Rust/WASM）予定
-└── master/                 # マスタデータ
+│       ├── types.rs        # AnalysisResult, PhotoDataトレイト
+│       ├── hierarchy/      # 工種階層マスタ読み込み
+│       ├── export/         # PDF/Excelコア（レイアウト・描画）
+│       └── layout.rs       # レイアウト定数・FieldKey
+├── master/                 # 工種マスタCSV
+├── web-wasm/               # WASM版（未完成・凍結）
+└── desktop-rust/           # デスクトップ版（未完成・凍結）
 ```
 
-## レイアウト仕様
+## サブコマンド一覧
 
-### ページ設定
-| 項目 | 値 |
-|------|-----|
-| 用紙サイズ | A4 (210mm x 297mm) |
-| 余白 | 10mm |
-| 写真間ギャップ | 10mm |
-
-### 写真・情報パネル比率
-| 項目 | 比率 | 幅 (mm) |
-|------|------|---------|
-| 写真エリア | 65% | 123.5mm |
-| 情報パネル | 35% | 66.5mm |
-
-### 写真高さ
-| レイアウト | 高さ (mm) | アスペクト比 |
-|-----------|----------|-------------|
-| 3枚/ページ | 85.67mm | 1.44:1 (横長) |
-| 2枚/ページ | 128.5mm | 0.96:1 (ほぼ正方形) |
-
-## 関連プロジェクト
-
-- [GASPhotoAIManager](https://github.com/YuujiKamura/GASPhotoAIManager) - Google Apps Script版（メインリポジトリ）
+| コマンド | 用途 |
+|---------|------|
+| `run` | 解析→出力の一括実行 |
+| `analyze` | 写真解析（JSON出力） |
+| `export` | JSON→PDF/Excel変換 |
+| `normalize` | 正規化（計測値統一・測点適用） |
+| `evaluate` | 解析精度評価（GT比較） |
+| `pair-completion` | 着手前・竣工写真の自動ペアリング |
+| `pair-pdf` | 着手前竣工写真帳PDF生成 |
+| `station` | 対話的測点入力 |
+| `cache` | キャッシュ管理 |
+| `doctor` | 前提条件チェック |
+| `config` | 設定表示/編集 |
 
 ## ライセンス
 
