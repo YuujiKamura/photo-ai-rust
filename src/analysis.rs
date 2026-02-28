@@ -14,7 +14,7 @@ use crate::master_matcher::{
 };
 use crate::line_type_detector::detect_line_type;
 use photo_ai_common::{HierarchyMaster, LineTypeEntry};
-use photo_tagger::GroupRecords;
+use photo_tagger::{GroupRecords, UsageMode};
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
@@ -64,6 +64,7 @@ pub struct ScanAnalysisConfig<'a> {
     pub step_prefix_analyze: &'a str,
     pub line_types: Option<&'a [LineTypeEntry]>,
     pub folder_rules: Option<&'a [FolderRule]>,
+    pub usage_mode: UsageMode,
 }
 
 /// マスタ選択結果
@@ -156,9 +157,13 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
     let vocabulary = master.extract_vocabulary();
 
     // 3. photo-tagger（語彙リスト付き）
-    println!("{} photo-tagger実行中...", config.step_prefix_analyze);
+    if config.usage_mode == UsageMode::PayPerUse {
+        println!("{} photo-tagger実行中... [従量課金API]", config.step_prefix_analyze);
+    } else {
+        println!("{} photo-tagger実行中...", config.step_prefix_analyze);
+    }
     let vocab_ref = if vocabulary.is_empty() { None } else { Some(vocabulary.as_slice()) };
-    let group_records = photo_tagger::run_grouping(config.folder, config.batch_size, vocab_ref)
+    let group_records = photo_tagger::run_grouping(config.folder, config.batch_size, vocab_ref, config.usage_mode)
         .map_err(|e| error::PhotoAiError::ApiCall(format!("photo-tagger: {}", e)))?;
 
     if group_records.is_empty() {
@@ -219,6 +224,8 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
     );
 
     apply_folder_specific_corrections(&mut results, &folder_context, config.folder_rules);
+    // 温度管理フォルダ: Phase 2 — 正規化後の最終調整
+    // focusTarget→remarks正規化、黒板日付→station、温度値抽出→measurements伝搬
     crate::temperature::apply_temperature_folder_final_adjustments(&mut results, &folder_context);
 
     Ok(results)
@@ -440,6 +447,9 @@ fn convert_groups_to_results(
             }
         }
         // マスタ照合失敗時は全フィールド空のまま（ゴミを埋めない）
+        // 温度管理フォルダ: Phase 1 — 写真区分・工種・種別・細別を固定値に設定
+        // （Phase 2 は正規化完了後の apply_temperature_folder_final_adjustments で
+        //   remarks/station/measurements を最終調整）
         crate::temperature::apply_temperature_folder_postprocess(&mut result, folder_name);
 
         result.reasoning = format!("photo-groups.json: {} / {}", rec.core.machine_type, rec.core.machine_id);

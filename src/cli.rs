@@ -69,6 +69,10 @@ pub enum Commands {
         /// フォルダルールJSONファイル
         #[arg(long)]
         folder_rules: Option<PathBuf>,
+
+        /// API key従量課金モード（GEMINI_API_KEY環境変数が必要）
+        #[arg(long)]
+        pay_per_use: bool,
     },
 
     /// 解析結果からPDF/Excelを生成
@@ -90,10 +94,6 @@ pub enum Commands {
         #[arg(short, long, default_value = "3")]
         photos_per_page: u8,
 
-        /// ドキュメントタイトル
-        #[arg(short, long, default_value = "工事写真帳")]
-        title: String,
-
         /// PDF画像品質 (high/medium/low)
         #[arg(long, default_value = "medium")]
         pdf_quality: PdfQuality,
@@ -105,10 +105,6 @@ pub enum Commands {
         /// カスタムエイリアスファイル（JSON）
         #[arg(long)]
         alias: Option<PathBuf>,
-
-        /// 測定値フィールドを非表示
-        #[arg(long)]
-        hide_measurements: bool,
     },
 
     /// 解析からPDF/Excel出力まで一括実行
@@ -174,9 +170,9 @@ pub enum Commands {
         #[arg(long)]
         folder_rules: Option<PathBuf>,
 
-        /// 測定値フィールドを非表示
+        /// API key従量課金モード（GEMINI_API_KEY環境変数が必要）
         #[arg(long)]
-        hide_measurements: bool,
+        pay_per_use: bool,
     },
 
     /// 設定を表示/編集

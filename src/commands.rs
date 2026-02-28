@@ -10,6 +10,7 @@ use crate::normalizer::{self, NormalizationOptions};
 use crate::{analyzer, export, master_selector};
 use ai_code_review::{CodeReviewer, Backend as ReviewBackend};
 use photo_ai_common::{LineTypeEntry, LineTypesConfig};
+use photo_tagger::{ApiKeyGuard, UsageMode};
 use std::path::{Path, PathBuf};
 
 // MasterConfig を再エクスポート
@@ -36,6 +37,7 @@ pub struct AnalyzeCommandArgs {
     pub include_all: bool,
     pub line_types: Option<Vec<LineTypeEntry>>,
     pub folder_rules: Option<PathBuf>,
+    pub usage_mode: UsageMode,
     pub cli_args: CommonCliArgs,
 }
 
@@ -56,7 +58,7 @@ pub struct RunCommandArgs {
     pub include_all: bool,
     pub line_types: Option<Vec<LineTypeEntry>>,
     pub folder_rules: Option<PathBuf>,
-    pub hide_measurements: bool,
+    pub usage_mode: UsageMode,
     pub cli_args: CommonCliArgs,
 }
 
@@ -66,11 +68,9 @@ pub struct ExportCommandArgs {
     pub format: ExportFormat,
     pub output: Option<PathBuf>,
     pub photos_per_page: u8,
-    pub title: String,
     pub pdf_quality: PdfQuality,
     pub preset: Option<String>,
     pub alias: Option<PathBuf>,
-    pub hide_measurements: bool,
 }
 
 /// Reviewコマンドの引数
@@ -200,6 +200,7 @@ struct CommonAnalysisParams {
     verbose: bool,
     line_types: Option<Vec<LineTypeEntry>>,
     folder_rules: Option<PathBuf>,
+    usage_mode: UsageMode,
 }
 
 /// CLIで指定されたマスタパスからMasterSelectionを解決（純粋ロジック、UI無し）
@@ -243,6 +244,9 @@ fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<mas
 }
 
 /// 共通の解析処理を実行（ヘッダー表示→prepare_analysis→scan_and_analyze）
+///
+/// PayPerUseモードの場合、呼び出し元がApiKeyGuardを保持している前提。
+/// guardのlifetime中はenv var GEMINI_API_KEYがセットされている。
 async fn run_common_analysis(
     params: &CommonAnalysisParams,
     header: &str,
@@ -278,6 +282,7 @@ async fn run_common_analysis(
         step_prefix_analyze,
         line_types: params.line_types.as_deref(),
         folder_rules: folder_rules.as_deref(),
+        usage_mode: params.usage_mode,
     };
 
     scan_and_analyze(&scan_config).await
@@ -288,20 +293,14 @@ pub struct ExportParams<'a> {
     pub format: &'a ExportFormat,
     pub output: &'a Path,
     pub photos_per_page: u8,
-    pub title: &'a str,
     pub quality: PdfQuality,
-    pub hide_measurements: bool,
     pub base_path: &'a Path,
 }
 
 /// タイトル導出とエクスポートの共通処理
 fn run_export(results: &[analyzer::AnalysisResult], params: &ExportParams<'_>) -> Result<()> {
-    let title = if params.title == "工事写真帳" {
-        derive_export_title(results, params.base_path)
-    } else {
-        params.title.to_string()
-    };
-    export::export_results(results, params.format, params.output, params.photos_per_page, &title, params.quality, params.hide_measurements)
+    let title = derive_export_title(results, params.base_path);
+    export::export_results(results, params.format, params.output, params.photos_per_page, &title, params.quality)
 }
 
 /// Exportコマンドを処理
@@ -341,9 +340,7 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
         format: &args.format,
         output: &output_dir,
         photos_per_page: args.photos_per_page,
-        title: &args.title,
         quality: args.pdf_quality,
-        hide_measurements: args.hide_measurements,
         base_path: base_dir,
     })?;
 
@@ -353,6 +350,13 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
 
 /// Analyzeコマンドを処理
 pub async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
+    // PayPerUseモード: APIキーを対話入力→暗号化保持
+    let _api_key_guard = if args.usage_mode == UsageMode::PayPerUse {
+        Some(ApiKeyGuard::prompt().map_err(|e| error::PhotoAiError::Config(e.to_string()))?)
+    } else {
+        None
+    };
+
     // 共通解析処理
     let params = CommonAnalysisParams {
         folder: args.folder.clone(),
@@ -368,6 +372,7 @@ pub async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
         verbose: args.cli_args.verbose,
         line_types: args.line_types,
         folder_rules: args.folder_rules,
+        usage_mode: args.usage_mode,
     };
     let results = run_common_analysis(
         &params,
@@ -389,6 +394,13 @@ pub async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
 
 /// Runコマンドを処理する（スキャン→解析→保存→エクスポート）
 pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
+    // PayPerUseモード: APIキーを対話入力→暗号化保持
+    let _api_key_guard = if args.usage_mode == UsageMode::PayPerUse {
+        Some(ApiKeyGuard::prompt().map_err(|e| error::PhotoAiError::Config(e.to_string()))?)
+    } else {
+        None
+    };
+
     // 共通解析処理
     let params = CommonAnalysisParams {
         folder: args.folder.clone(),
@@ -404,6 +416,7 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
         verbose: args.cli_args.verbose,
         line_types: args.line_types,
         folder_rules: args.folder_rules,
+        usage_mode: args.usage_mode,
     };
     let results = run_common_analysis(
         &params,
@@ -426,9 +439,7 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
         format: &args.format,
         output: &output_paths.export_path,
         photos_per_page: 3,
-        title: "工事写真帳",
         quality: args.pdf_quality,
-        hide_measurements: args.hide_measurements,
         base_path: &args.folder,
     })?;
 
@@ -694,15 +705,56 @@ fn most_common_category(results: &[analyzer::AnalysisResult]) -> String {
         .unwrap_or_default()
 }
 
-/// 解析結果の日付からMMDD形式を抽出（"2026-02-12 ..." → "0212"）
+/// フォルダ名からMMDD(4桁)を抽出。夜間工事で日付をまたいでも施工日（作業開始日）が正。
+fn extract_mmdd_from_folder(folder_name: &str) -> Option<String> {
+    let chars: Vec<char> = folder_name.chars().collect();
+    for window in chars.windows(4) {
+        if window.iter().all(|c| c.is_ascii_digit()) {
+            let mmdd: String = window.iter().collect();
+            let mm: u32 = mmdd[0..2].parse().ok()?;
+            let dd: u32 = mmdd[2..4].parse().ok()?;
+            if (1..=12).contains(&mm) && (1..=31).contains(&dd) {
+                return Some(mmdd);
+            }
+        }
+    }
+    None
+}
+
+/// 解析結果の日付から最頻出日のMMDD形式を抽出。
+/// 夜間工事では日付をまたぐ写真があるため、最頻出日（=施工日）を使う。
 fn extract_mmdd_from_results(results: &[analyzer::AnalysisResult]) -> Option<String> {
-    results.iter()
-        .find(|r| r.date.len() >= 10)
-        .map(|r| {
-            let month = &r.date[5..7];
-            let day = &r.date[8..10];
-            format!("{}{}", month, day)
-        })
+    let mut dates: Vec<&str> = results.iter()
+        .filter(|r| r.date.len() >= 10)
+        .map(|r| &r.date[..10])
+        .collect();
+    if dates.is_empty() {
+        return None;
+    }
+    dates.sort();
+    // Find mode (most common date). On tie, earlier date wins (= work start date).
+    let mut best = dates[0];
+    let mut best_count = 0usize;
+    let mut current = dates[0];
+    let mut current_count = 0usize;
+    for &d in &dates {
+        if d == current {
+            current_count += 1;
+        } else {
+            if current_count > best_count {
+                best = current;
+                best_count = current_count;
+            }
+            current = d;
+            current_count = 1;
+        }
+    }
+    if current_count > best_count {
+        best = current;
+    }
+    let month = &best[5..7];
+    let day = &best[8..10];
+    Some(format!("{}{}", month, day))
 }
 
 /// 解析結果とフォルダ名から統一命名規則でタイトルを生成
@@ -728,7 +780,9 @@ fn derive_export_title(results: &[analyzer::AnalysisResult], folder: &Path) -> S
         return format!("写真帳_{}", folder_clean);
     }
     let cat_short = shorten_photo_category(&category);
-    let mmdd = extract_mmdd_from_results(results);
+    // MMDD: フォルダ名優先（施工日）、なければEXIF最頻出日
+    let mmdd = extract_mmdd_from_folder(&folder_clean)
+        .or_else(|| extract_mmdd_from_results(results));
 
     // 活動名を結果データから導出
     let derived_activity = derive_activity_name(results);
@@ -1036,8 +1090,9 @@ impl Commands {
     /// コマンドを実行する
     pub async fn execute(self, cli_args: &CommonCliArgs, config: Config) -> Result<()> {
         match self {
-            Commands::Analyze { folder, output, batch_size, master, work_type, photo_type, variety, station, use_cache, recursive, include_all, line_types, folder_rules } => {
+            Commands::Analyze { folder, output, batch_size, master, work_type, photo_type, variety, station, use_cache, recursive, include_all, line_types, folder_rules, pay_per_use } => {
                 let line_types = load_line_types(line_types.as_ref())?;
+                let usage_mode = if pay_per_use { UsageMode::PayPerUse } else { UsageMode::TimeBasedQuota };
                 handle_analyze_command(AnalyzeCommandArgs {
                     folder,
                     output,
@@ -1052,26 +1107,26 @@ impl Commands {
                     include_all,
                     line_types,
                     folder_rules,
+                    usage_mode,
                     cli_args: cli_args.clone(),
                 }).await?;
             }
 
-            Commands::Export { input, format, output, photos_per_page, title, pdf_quality, preset, alias, hide_measurements } => {
+            Commands::Export { input, format, output, photos_per_page, pdf_quality, preset, alias } => {
                 handle_export_command(ExportCommandArgs {
                     input,
                     format,
                     output,
                     photos_per_page,
-                    title,
                     pdf_quality,
                     preset,
                     alias,
-                    hide_measurements,
                 })?;
             }
 
-            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all, line_types, folder_rules, hide_measurements } => {
+            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all, line_types, folder_rules, pay_per_use } => {
                 let line_types = load_line_types(line_types.as_ref())?;
+                let usage_mode = if pay_per_use { UsageMode::PayPerUse } else { UsageMode::TimeBasedQuota };
                 handle_run_command(RunCommandArgs {
                     folder,
                     output,
@@ -1088,7 +1143,7 @@ impl Commands {
                     include_all,
                     line_types,
                     folder_rules,
-                    hide_measurements,
+                    usage_mode,
                     cli_args: cli_args.clone(),
                 }).await?;
             }
@@ -1180,5 +1235,32 @@ impl Commands {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_mmdd_from_folder() {
+        assert_eq!(extract_mmdd_from_folder("0209切削_温度管理"), Some("0209".into()));
+        assert_eq!(extract_mmdd_from_folder("品質管理_温度管理_0213"), Some("0213".into()));
+        assert_eq!(extract_mmdd_from_folder("0212"), Some("0212".into()));
+        assert_eq!(extract_mmdd_from_folder("温度管理"), None);
+        assert_eq!(extract_mmdd_from_folder("1399_bad"), None); // month 13 invalid
+    }
+
+    #[test]
+    fn test_extract_mmdd_from_results_uses_mode_date() {
+        // 夜間工事: 大半が2/12、一部が日付またぎで2/13 → 施工日2/12が正
+        let results: Vec<analyzer::AnalysisResult> = vec![
+            analyzer::AnalysisResult { date: "2026-02-12 21:00:00".into(), ..Default::default() },
+            analyzer::AnalysisResult { date: "2026-02-12 22:30:00".into(), ..Default::default() },
+            analyzer::AnalysisResult { date: "2026-02-12 23:45:00".into(), ..Default::default() },
+            analyzer::AnalysisResult { date: "2026-02-13 00:30:00".into(), ..Default::default() },
+            analyzer::AnalysisResult { date: "2026-02-13 02:00:00".into(), ..Default::default() },
+        ];
+        assert_eq!(extract_mmdd_from_results(&results), Some("0212".into()));
     }
 }
