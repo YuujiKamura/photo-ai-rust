@@ -10,7 +10,18 @@
 
 - Rust 1.70+
 - [photo-tagger](https://github.com/YuujiKamura/photo-tagger) — Gemini AIで写真グループ分け・OCR（必須）
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli) — photo-taggerのバックエンド（`npm install -g @google/gemini-cli`、Googleアカウント認証）
+- [Gemini CLI](https://github.com/google-gemini/gemini-cli) — photo-taggerのデフォルトバックエンド（`npm install -g @google/gemini-cli`、Googleアカウント認証）
+
+### AIバックエンド
+
+photo-taggerは内部で [cli-ai-analyzer](https://github.com/YuujiKamura/cli-ai-analyzer) を使用。2つのモードがある:
+
+| モード | 認証 | 費用 | 備考 |
+|--------|------|------|------|
+| Gemini CLI（デフォルト） | Googleアカウント OAuth | 無料枠 | `gemini auth` で認証 |
+| Gemini REST API | `GEMINI_API_KEY` 環境変数 | 従量課金 | cli-ai-analyzer側で `--pay-per-use` 指定 |
+
+現状、photo-taggerはGemini CLIモード固定。REST APIモードを使うにはphoto-tagger側の改修が必要。
 
 ```bash
 photo-ai-rust doctor   # 前提条件を一括チェック
