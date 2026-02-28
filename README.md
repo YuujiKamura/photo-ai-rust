@@ -9,8 +9,8 @@
 ## 前提条件
 
 - Rust 1.70+
-- [photo-tagger](https://github.com/YuujiKamura/photo-tagger) — Gemini APIで写真グループ分け・OCR（必須）
-- Gemini API key（photo-tagger用）
+- [photo-tagger](https://github.com/YuujiKamura/photo-tagger) — Gemini AIで写真グループ分け・OCR（必須）
+- [Gemini CLI](https://github.com/google-gemini/gemini-cli) — photo-taggerのバックエンド（`npm install -g @google/gemini-cli`、Googleアカウント認証）
 
 ```bash
 photo-ai-rust doctor   # 前提条件を一括チェック
