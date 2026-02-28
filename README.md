@@ -37,46 +37,164 @@ cargo build --release
 
 詳細は [Issue #104](https://github.com/YuujiKamura/photo-ai-rust/issues/104) を参照。
 
-## 使用方法
+## ユースケース別レシピ
 
-### 一括実行（推奨）
+### 1. 舗装工の施工写真を写真帳にしたい
 
 ```bash
-# 解析 → PDF出力
-photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --format pdf
+# 基本: フォルダ指定 → PDF
+photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv
 
-# 解析 → PDF + Excel
-photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --format both
+# 測点が全部同じ場合
+photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv -s "No.5+10.0"
 
-# キャッシュ使用（再解析スキップ）
-photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --use-cache --format pdf
+# PDF品質を上げたい（印刷用）
+photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv --pdf-quality high
 ```
 
-### 個別実行
+### 2. 区画線工・撤去工など舗装以外
+
+マスタを変えるだけ。使い方は同じ。
 
 ```bash
-# 解析のみ（JSON出力）
-photo-ai-rust analyze ./photos -m master/by_work_type/舗装工.csv
+photo-ai-rust run ./区画線 -m master/by_work_type/区画線工.csv
+photo-ai-rust run ./撤去 -m master/by_work_type/構造物撤去工.csv
+```
 
-# 出力のみ（既存JSONから）
+区画線工で線種リストがある場合:
+```bash
+photo-ai-rust run ./区画線 -m master/by_work_type/区画線工.csv --line-types line_types.json
+```
+
+### 3. 使用機械・安全管理など写真種類が特定
+
+```bash
+# 使用機械写真だけ
+photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv -t 使用機械
+
+# 安全管理写真
+photo-ai-rust run ./安全 -m master/by_work_type/舗装工.csv -t 安全管理写真
+```
+
+### 4. サブフォルダに日付ごとに写真がある
+
+```bash
+# 再帰スキャン: 0211/, 0212/, 0213/ をまとめて解析
+photo-ai-rust run ./写真 -m master/by_work_type/舗装工.csv -r
+```
+
+### 5. 解析結果を手修正してからPDF再生成
+
+```bash
+# Step 1: 解析（JSONが出る）
+photo-ai-rust analyze ./photos -m master/by_work_type/舗装工.csv -o result.json
+
+# Step 2: result.jsonをエディタで手修正（工種・測点・備考など）
+
+# Step 3: 修正済みJSONからPDF/Excel生成
 photo-ai-rust export result.json --format pdf
-
-# 正規化（グループ単位で計測値統一）
-photo-ai-rust normalize result.json -S "No.1"
+photo-ai-rust export result.json --format both
 ```
 
-### 主要オプション
+### 6. 測点・計測値を後から一括設定
+
+```bash
+# 全エントリに測点を一括適用
+photo-ai-rust normalize result.json -S "No.9"
+
+# 出来形管理写真に車線と備考を設定
+photo-ai-rust normalize result.json --lane left --dekigata-remarks "切削基準高"
+
+# 変更前にプレビュー（ドライラン）
+photo-ai-rust normalize result.json -S "No.9" --dry-run
+```
+
+### 7. 前回解析済みのフォルダを再出力（AIコスト節約）
+
+```bash
+# --use-cache: photo-taggerをスキップし、前回のphoto-groups.jsonを再利用
+photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --use-cache
+```
+
+### 8. 着手前・竣工写真のペアリング
+
+```bash
+# 着手前PDF + 竣工写真フォルダ → ペアリング → フォルダ作成 → PDF
+photo-ai-rust pair-completion \
+  --before ./着手前写真帳.pdf \
+  --after ./竣工写真/ \
+  --project-name "南千反畑舗装" \
+  --build
+
+# ペアリングJSONだけ出す（手修正してからPDF化したい場合）
+photo-ai-rust pair-completion --before ./着手前.pdf --after ./竣工/ -o pairing.json
+
+# 手修正済みJSONからPDF生成
+photo-ai-rust pair-pdf --json pairing_manual.json --project-name "南千反畑舗装" ./竣工写真/
+```
+
+### 9. 解析精度を検証したい
+
+```bash
+# GTファイル（手動正解）と比較
+photo-ai-rust evaluate result.json --gt gt.json
+
+# 特定フィールドだけ評価
+photo-ai-rust evaluate result.json --gt gt.json --fields remarks,station
+
+# CI用JSON出力
+photo-ai-rust evaluate result.json --gt gt.json --json
+```
+
+### 10. エイリアスプリセット（ラベル変換）
+
+```bash
+# 舗装工向けラベル変換（例: 種別→打換え工種 等）
+photo-ai-rust export result.json --preset pavement
+
+# 区画線工向け
+photo-ai-rust export result.json --preset marking
+
+# カスタムエイリアスファイル
+photo-ai-rust export result.json --alias my_alias.json
+```
+
+## コマンドリファレンス
+
+### 主要オプション（run / analyze 共通）
 
 | オプション | 説明 | デフォルト |
 |-----------|------|-----------|
 | `-m, --master` | 工種マスタCSV | - |
 | `-f, --format` | 出力形式 (pdf/excel/xml/both) | pdf |
-| `-w, --work-type` | 工種指定 | - |
+| `-w, --work-type` | 工種を限定 | - |
+| `-t, --photo-type` | 写真種類を限定 | - |
+| `--variety` | 種別を限定 | - |
 | `-s, --station` | 測点一括指定 | - |
 | `--pdf-quality` | PDF品質 (high/medium/low) | medium |
-| `--use-cache` | 解析キャッシュ使用 | off |
+| `--use-cache` | 前回のphoto-groups.jsonを再利用 | off |
 | `-r, --recursive` | サブフォルダ再帰スキャン | off |
+| `--include-all` | 「非使用」フォルダも含める | off |
+| `--line-types` | 区画線の線種リストJSON | - |
+| `--folder-rules` | フォルダルールJSON | - |
+
+### export固有オプション
+
+| オプション | 説明 | デフォルト |
+|-----------|------|-----------|
+| `-p, --photos-per-page` | 1ページあたり写真数 (2/3) | 3 |
 | `--preset` | エイリアスプリセット (pavement/marking/general) | - |
+| `--alias` | カスタムエイリアスJSON | - |
+
+### normalize固有オプション
+
+| オプション | 説明 | デフォルト |
+|-----------|------|-----------|
+| `-S, --station` | 測点一括指定 | - |
+| `--lane` | 車線 (left/right) | - |
+| `--dekigata-remarks` | 出来形備考テキスト | - |
+| `--dry-run` | 変更プレビュー | off |
+| `--line-types` | 線種リストJSON | - |
 
 ## 工種マスタ
 
