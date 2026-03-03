@@ -105,13 +105,12 @@ pub fn extract_dimension_mm(text: &str) -> Option<f64> {
 
 /// 温度写真かどうか判定（温度関連のキーワード）
 pub fn is_temperature_photo(text: &str) -> bool {
-    lazy_static::lazy_static! {
-        static ref TEMP_KEYWORDS: Regex = Regex::new(
-            r"(?i)(到着温度|敷均し温度|初期締固め|温度測定|温度計|出荷時|舗設温度|開放温度|舗装日外気温|外気温)"
-        ).unwrap();
-    }
-
-    TEMP_KEYWORDS.is_match(text) || extract_temperature(text).is_some()
+    crate::temperature::TemperatureKind::from_text(text).is_some()
+        || text.contains("温度測定")
+        || text.contains("温度計")
+        || text.contains("出荷時")
+        || text.contains("舗設温度")
+        || extract_temperature(text).is_some()
 }
 
 /// 温度種別
@@ -131,17 +130,30 @@ pub enum TemperatureType {
 
 impl TemperatureType {
     /// テキストから温度種別を判定
+    ///
+    /// TemperatureKindで判定できる場合はそちらを使い、
+    /// 広義マッチ（出荷/舗設等の非公式表記）は温度値検証用に残す。
     pub fn from_text(text: &str) -> Self {
+        if let Some(kind) = crate::temperature::TemperatureKind::from_text(text) {
+            return match kind {
+                crate::temperature::TemperatureKind::Arrival => Self::Arrival,
+                crate::temperature::TemperatureKind::Spreading => Self::Spreading,
+                crate::temperature::TemperatureKind::InitialCompaction => Self::InitialCompaction,
+                crate::temperature::TemperatureKind::Opening => Self::Opening,
+                crate::temperature::TemperatureKind::OutsideAir => Self::Unknown,
+            };
+        }
+        // 広義マッチ（温度値検証用: 出荷/舗設は非公式表記だが温度種別判定が必要）
         if text.contains("到着") || text.contains("出荷") {
-            TemperatureType::Arrival
+            Self::Arrival
         } else if text.contains("敷均") || text.contains("舗設") {
-            TemperatureType::Spreading
+            Self::Spreading
         } else if text.contains("初期") || text.contains("締固め前") {
-            TemperatureType::InitialCompaction
+            Self::InitialCompaction
         } else if text.contains("開放") {
-            TemperatureType::Opening
+            Self::Opening
         } else {
-            TemperatureType::Unknown
+            Self::Unknown
         }
     }
 
@@ -243,8 +255,10 @@ pub fn extract_temperature_for_remarks(detected_text: &str, remarks: &str) -> Op
         .collect();
 
     for name in &names_to_try {
-        // "名前 数値℃" or "名前 数値"
-        let pattern = format!(r"{}[\s:：]*(\d+\.?\d*)\s*[℃度]?", regex::escape(name));
+        // "名前 ... 数値℃" — [^,]*?で非貪欲マッチ、(?:,|$)で区切り位置を固定
+        // 中間に規格値テキスト（"110℃以上"等）があっても、カンマ/末尾直前の最終温度値を捕捉
+        // [℃度]必須で、ラベル名中の数字（"20mm"等）の誤マッチを防止
+        let pattern = format!(r"{}[^,]*?(\d+\.?\d*)\s*[℃度]\s*(?:,|$)", regex::escape(name));
         if let Ok(re) = Regex::new(&pattern) {
             if let Some(cap) = re.captures(detected_text) {
                 return Some(format!("{}℃", &cap[1]));
@@ -252,7 +266,24 @@ pub fn extract_temperature_for_remarks(detected_text: &str, remarks: &str) -> Op
         }
     }
 
-    // 2. 数値のみ（温度計アップ写真）
+    // 2.5. 先頭が温度値（温度計アップ写真: "160.2℃, 会社名, 機器名"）
+    // 2.6. 末尾が温度値（温度計アップ写真: "会社名, 機器名, 153.7℃"）
+    lazy_static::lazy_static! {
+        static ref LEADING_TEMP_RE: Regex = Regex::new(
+            r"^\s*(\d+\.?\d*)\s*[℃度]"
+        ).unwrap();
+        static ref TRAILING_TEMP_RE: Regex = Regex::new(
+            r"(?:,\s*|^)(\d+\.?\d*)\s*[℃度]\s*$"
+        ).unwrap();
+    }
+    if let Some(cap) = LEADING_TEMP_RE.captures(detected_text.trim()) {
+        return Some(format!("{}℃", &cap[1]));
+    }
+    if let Some(cap) = TRAILING_TEMP_RE.captures(detected_text.trim()) {
+        return Some(format!("{}℃", &cap[1]));
+    }
+
+    // 3. 数値のみ（温度計アップ写真）
     if let Some(cap) = NUMBER_ONLY_RE.captures(detected_text.trim()) {
         return Some(format!("{}℃", &cap[1]));
     }

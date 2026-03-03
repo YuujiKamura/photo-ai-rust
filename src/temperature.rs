@@ -11,6 +11,64 @@ use crate::normalizer::measurements::{
 use crate::master_matcher::date_to_month_day;
 use crate::normalizer;
 
+/// 温度管理の測定種別
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TemperatureKind {
+    Arrival,           // 到着温度
+    Spreading,         // 敷均し温度
+    InitialCompaction, // 初期締固め前温度
+    Opening,           // 開放温度
+    OutsideAir,        // 舗装日外気温
+}
+
+impl TemperatureKind {
+    /// 日本語ラベル（「測定」suffix付き）
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Arrival => "到着温度測定",
+            Self::Spreading => "敷均し温度測定",
+            Self::InitialCompaction => "初期締固め前温度測定",
+            Self::Opening => "開放温度測定",
+            Self::OutsideAir => "舗装日外気温測定",
+        }
+    }
+
+    /// テキストから温度種別を判定（focusTarget / detectedText 両対応）
+    pub fn from_text(text: &str) -> Option<Self> {
+        if text.is_empty() {
+            return None;
+        }
+        if text.contains("到着温度") {
+            Some(Self::Arrival)
+        } else if text.contains("敷均し温度") || text.contains("敷きならし") {
+            Some(Self::Spreading)
+        } else if text.contains("初期転圧前") || text.contains("初期締固め前") {
+            Some(Self::InitialCompaction)
+        } else if text.contains("開放温度") || text.contains("解放温度") {
+            Some(Self::Opening)
+        } else if text.contains("舗装日外気温") || text.contains("外気温") {
+            Some(Self::OutsideAir)
+        } else {
+            None
+        }
+    }
+
+    /// 有効な温度種別ラベル一覧（「測定」suffix付き・なし両方）
+    pub fn all_labels() -> &'static [&'static str] {
+        &[
+            "舗装日外気温測定",
+            "到着温度測定",
+            "敷均し温度測定",
+            "初期締固め前温度測定",
+            "開放温度測定",
+            "到着温度",
+            "敷均し温度",
+            "初期締固め前温度",
+            "開放温度",
+        ]
+    }
+}
+
 pub fn apply_temperature_folder_postprocess(result: &mut AnalysisResult, folder_name: &str) {
     if !folder_name.contains("温度管理") {
         return;
@@ -28,40 +86,20 @@ fn classify_temperature_remarks(
     detected_text: &str,
     focus_target: &str,
 ) -> String {
-    let text = format!("{} {}", detected_text, focus_target);
-    let has_open = text.contains("開放温度") || text.contains("解放温度");
-    let has_outside = text.contains("舗装日外気温") || text.contains("外気温");
-    let has_arrival = text.contains("到着温度");
-    let has_spread = text.contains("敷均し温度") || text.contains("敷きならし");
-    let has_initial = text.contains("初期転圧前温度")
-        || text.contains("初期締固め前温度")
-        || text.contains("初期転圧前")
-        || text.contains("初期締固め前");
-
-    let mut mapped = if remarks.contains("舗装厚測定") && focus_target.contains("開放温度") {
-        "開放温度測定".to_string()
-    } else if has_initial {
-        "初期締固め前温度測定".to_string()
-    } else if has_spread {
-        "敷均し温度測定".to_string()
-    } else if has_arrival {
-        "到着温度測定".to_string()
-    } else if has_open {
-        "開放温度測定".to_string()
-    } else if has_outside {
-        "舗装日外気温測定".to_string()
+    // 1. focusTarget（photo-taggerの判定、最優先）
+    if let Some(kind) = TemperatureKind::from_text(focus_target) {
+        return kind.label().to_string();
+    }
+    // 2. detectedText（focusTarget未設定時のフォールバック）
+    if let Some(kind) = TemperatureKind::from_text(detected_text) {
+        return kind.label().to_string();
+    }
+    // 3. 元のremarks（温度種別なら「測定」suffix付きに正規化、それ以外はそのまま）
+    if let Some(kind) = TemperatureKind::from_text(remarks) {
+        kind.label().to_string()
     } else {
         remarks.to_string()
-    };
-
-    // 温度種別が判定できたが「測定」suffixがない場合は付与
-    if matches!(
-        mapped.as_str(),
-        "到着温度" | "敷均し温度" | "初期締固め前温度" | "開放温度" | "舗装日外気温"
-    ) {
-        mapped.push_str("測定");
     }
-    mapped
 }
 
 fn extract_month_day_from_text(text: &str) -> Option<String> {
@@ -89,22 +127,27 @@ fn extract_month_day_from_text(text: &str) -> Option<String> {
     Some(format!("{}月{}日", month, day))
 }
 
+/// フォルダ名から施工日(MMDD)を抽出して「M月D日」形式で返す。
+/// 夜間工事で日付をまたいでも、フォルダ名の施工日（作業開始日）を使う。
 fn extract_month_day_from_folder_context(folder_context: &str) -> Option<String> {
-    let marker = "切削";
-    let marker_pos = folder_context.find(marker)?;
-    let before = &folder_context[..marker_pos];
-    let digits_rev: String = before
-        .chars()
-        .rev()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    if digits_rev.len() < 4 {
-        return None;
-    }
-    let digits: String = digits_rev.chars().rev().collect();
-    let mm = digits[digits.len() - 4..digits.len() - 2].parse::<u32>().ok()?;
-    let dd = digits[digits.len() - 2..].parse::<u32>().ok()?;
+    let (mm, dd) = extract_mmdd_digits(folder_context)?;
     Some(format!("{}月{}日", mm, dd))
+}
+
+/// フォルダ名から最初の有効なMMDD(4桁連続数字)を検出して(month, day)を返す。
+fn extract_mmdd_digits(text: &str) -> Option<(u32, u32)> {
+    let chars: Vec<char> = text.chars().collect();
+    for window in chars.windows(4) {
+        if window.iter().all(|c| c.is_ascii_digit()) {
+            let mmdd: String = window.iter().collect();
+            let mm: u32 = mmdd[0..2].parse().ok()?;
+            let dd: u32 = mmdd[2..4].parse().ok()?;
+            if (1..=12).contains(&mm) && (1..=31).contains(&dd) {
+                return Some((mm, dd));
+            }
+        }
+    }
+    None
 }
 
 fn extract_dump_number_from_station(station: &str) -> Option<String> {
@@ -145,8 +188,8 @@ fn fill_missing_dump_numbers(results: &mut [AnalysisResult]) {
 
 fn rebalance_initial_temperature_labels(results: &mut [AnalysisResult]) {
     use std::collections::BTreeMap;
-    let initial = "初期締固め前温度測定";
-    let spread = "敷均し温度測定";
+    let initial = TemperatureKind::InitialCompaction.label();
+    let spread = TemperatureKind::Spreading.label();
     // stationのみでキー化（ダンプ1台分=station単位のリバランス。groupは撮影イベント単位なので不使用）
     let mut by_station: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (idx, r) in results.iter().enumerate() {
@@ -211,43 +254,43 @@ fn repair_orphan_temperature_entries(results: &mut [AnalysisResult]) {
 
 fn propagate_temperature_measurements(results: &mut [AnalysisResult]) {
     use std::collections::BTreeMap;
-    let valid = [
-        "舗装日外気温測定",
-        "到着温度測定",
-        "敷均し温度測定",
-        "初期締固め前温度測定",
-        "開放温度測定",
-        "到着温度",
-        "敷均し温度",
-        "初期締固め前温度",
-        "開放温度",
-    ];
+    let valid = TemperatureKind::all_labels();
 
     for r in results.iter_mut() {
         if !valid.contains(&r.remarks.as_str()) {
             continue;
         }
-        if let Some(extracted) = extract_temperature_for_remarks(&r.detected_text, &r.remarks) {
+        let key = if !r.focus_target.is_empty() && valid.contains(&r.focus_target.as_str()) {
+            &r.focus_target
+        } else {
+            &r.remarks
+        };
+        if let Some(extracted) = extract_temperature_for_remarks(&r.detected_text, key) {
             r.measurements = extracted;
         }
     }
 
-    // (station, remarks) でグループ化（ダンプ1台分=station単位での値統一）
+    // (station, focus_target) でグループ化（focus_targetはremarksより正確）
     let mut groups: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
     for (idx, r) in results.iter().enumerate() {
-        if valid.contains(&r.remarks.as_str()) {
-            groups
-                .entry((r.station.clone(), r.remarks.clone()))
-                .or_default()
-                .push(idx);
-        }
-    }
-
-    for idxs in groups.values() {
-        let Some(first_idx) = idxs.first().copied() else {
+        let group_key = if !r.focus_target.is_empty() && valid.contains(&r.focus_target.as_str()) {
+            &r.focus_target
+        } else if valid.contains(&r.remarks.as_str()) {
+            &r.remarks
+        } else {
             continue;
         };
-        let group_remarks = results[first_idx].remarks.clone();
+        groups
+            .entry((r.station.clone(), group_key.clone()))
+            .or_default()
+            .push(idx);
+    }
+
+    for ((_, group_key), idxs) in &groups {
+        let Some(_first_idx) = idxs.first().copied() else {
+            continue;
+        };
+        let group_remarks = group_key.clone();
         let mut value_counts: BTreeMap<String, usize> = BTreeMap::new();
         for &i in idxs {
             let m = results[i].measurements.trim();
@@ -258,7 +301,7 @@ fn propagate_temperature_measurements(results: &mut [AnalysisResult]) {
         if value_counts.is_empty() {
             continue;
         }
-        let source_value = if group_remarks == "舗装日外気温測定" {
+        let source_value = if group_remarks == TemperatureKind::OutsideAir.label() {
             value_counts
                 .keys()
                 .filter_map(|v| extract_temperature(v).map(|t| (t, v.clone())))
@@ -315,10 +358,13 @@ pub fn apply_temperature_folder_final_adjustments(
         );
 
         // 黒板に複数温度並記時の到着温度優先ルール
-        let has_arrival = result.detected_text.contains("到着温度");
-        let has_spread = result.detected_text.contains("敷均し温度");
-        if has_arrival && has_spread && result.remarks == "敷均し温度測定" {
-            result.remarks = "到着温度測定".to_string();
+        // focusTargetで温度種別が確定している場合はスキップ（累積記入式黒板対応）
+        if TemperatureKind::from_text(&result.focus_target).is_none() {
+            let has_arrival = result.detected_text.contains("到着温度");
+            let has_spread = result.detected_text.contains("敷均し温度");
+            if has_arrival && has_spread && result.remarks == TemperatureKind::Spreading.label() {
+                result.remarks = TemperatureKind::Arrival.label().to_string();
+            }
         }
     }
 
@@ -388,5 +434,20 @@ mod tests {
         assert_eq!(result.station, "2月12日");           // folder_contextから
         assert_eq!(result.remarks, "到着温度測定");      // 「測定」suffix付き
         assert_eq!(result.measurements, "160.1℃");      // 保持
+    }
+
+    #[test]
+    fn test_extract_mmdd_digits_various_patterns() {
+        // "切削"マーカーなしでもMMDD抽出できる
+        assert_eq!(extract_mmdd_digits("0209_温度管理"), Some((2, 9)));
+        assert_eq!(extract_mmdd_digits("温度管理_0213"), Some((2, 13)));
+        assert_eq!(extract_mmdd_digits("0212切削_温度管理"), Some((2, 12)));
+        // 数字4桁だがMMDDとして無効（月>12）
+        assert_eq!(extract_mmdd_digits("1399_フォルダ"), None);
+        // 数字なし
+        assert_eq!(extract_mmdd_digits("温度管理"), None);
+        // 4桁ちょうど
+        assert_eq!(extract_mmdd_digits("0101"), Some((1, 1)));
+        assert_eq!(extract_mmdd_digits("1231"), Some((12, 31)));
     }
 }

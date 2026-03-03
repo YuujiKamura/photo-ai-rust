@@ -184,7 +184,7 @@ pub const LAYOUT_FIELDS: &[FieldDefinition] = &[
     FieldDefinition { key: FieldKey::Subphase, label: "細別", row_span: 1 },
     FieldDefinition { key: FieldKey::Station, label: "測点", row_span: 1 },
     FieldDefinition { key: FieldKey::Remarks, label: "備考", row_span: 2 },
-    FieldDefinition { key: FieldKey::Measurements, label: "測定値", row_span: 3 },
+    FieldDefinition { key: FieldKey::Measurements, label: "測定値", row_span: 2 },
 ];
 
 // ============================================
@@ -531,8 +531,8 @@ mod tests {
 
     #[test]
     fn test_layout_fields_total_spans() {
-        // layout-config.json準拠: total_spans = 11
+        // layout-config.json準拠: total_spans = 10
         let total: u8 = LAYOUT_FIELDS.iter().map(|f| f.row_span).sum();
-        assert_eq!(total, 11);
+        assert_eq!(total, 10);
     }
 }

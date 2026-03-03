@@ -218,10 +218,15 @@ fn populate_temperature_measurements(results: &[AnalysisResult]) -> Vec<Normaliz
             continue;
         }
 
-        // detected_textから備考に対応する温度値を抽出
+        // detected_textから温度値を抽出（focus_targetを優先、なければremarks）
+        let extraction_key = if crate::temperature::TemperatureKind::from_text(&result.focus_target).is_some() {
+            &result.focus_target
+        } else {
+            &result.remarks
+        };
         if let Some(value) = measurements::extract_temperature_for_remarks(
             &result.detected_text,
-            &result.remarks,
+            extraction_key,
         ) {
             corrections.push(NormalizationCorrection {
                 file_name: result.file_name.clone(),
@@ -389,6 +394,10 @@ fn extract_station_no(text: &str) -> Option<String> {
 }
 
 fn station_hint_from_result(result: &AnalysisResult) -> Option<String> {
+    // 機械系写真は検査番号等を測点と誤認するためスキップ
+    if result.photo_category == "その他" {
+        return None;
+    }
     let merged = format!(
         "{} {} {}",
         result.detected_text, result.description, result.remarks

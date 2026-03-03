@@ -166,6 +166,7 @@ pub fn merge_results(
                 focus_target: String::new(), // TODO: 1ステップ解析では出力される
                 skip: false,
                 group: 0,
+                label_overrides: HashMap::new(),
             }
         })
         .collect()

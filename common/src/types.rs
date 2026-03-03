@@ -5,6 +5,7 @@
 //! - AnalysisResult: 最終出力
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// 工種キーワード定義
 #[derive(Debug, Clone)]
@@ -92,6 +93,10 @@ pub struct AnalysisResult {
     /// photo-taggerのmachine_id由来グループ番号（内部管理用）
     #[serde(default, skip_serializing_if = "is_zero")]
     pub group: u32,
+
+    /// ラベル上書き（例: {"measurements": "測定内容"}）
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub label_overrides: HashMap<String, String>,
 }
 
 fn is_false(v: &bool) -> bool {
@@ -110,9 +115,26 @@ impl AnalysisResult {
     }
 
     /// フィールドキーに対応するラベルを返す
-    /// 機械関連の写真の場合、Station フィールドは「機種」を返す
+    ///
+    /// 優先順位:
+    /// 1. label_overrides に設定があればそれを使う
+    /// 2. 機械関連写真の Station は「機種」
+    /// 3. LAYOUT_FIELDS のデフォルトラベル
     pub fn get_label_for_field(&self, key: crate::layout::FieldKey) -> &str {
         use crate::layout::FieldKey;
+        let key_str = match key {
+            FieldKey::Date => "date",
+            FieldKey::PhotoCategory => "photoCategory",
+            FieldKey::WorkType => "workType",
+            FieldKey::Variety => "variety",
+            FieldKey::Subphase => "subphase",
+            FieldKey::Station => "station",
+            FieldKey::Remarks => "remarks",
+            FieldKey::Measurements => "measurements",
+        };
+        if let Some(label) = self.label_overrides.get(key_str) {
+            return label.as_str();
+        }
         if self.is_machinery_related() && key == FieldKey::Station {
             "機種"
         } else {
@@ -165,6 +187,15 @@ pub trait PhotoData {
         };
         if v.is_empty() { "-" } else { v }
     }
+
+    /// フィールドキーからラベルを取得（デフォルト: LAYOUT_FIELDS定義値）
+    fn get_label_for_field(&self, key: crate::layout::FieldKey) -> &str {
+        crate::layout::LAYOUT_FIELDS
+            .iter()
+            .find(|f| f.key == key)
+            .map(|f| f.label)
+            .unwrap_or("-")
+    }
 }
 
 impl PhotoData for AnalysisResult {
@@ -177,6 +208,10 @@ impl PhotoData for AnalysisResult {
     fn station(&self) -> &str { &self.station }
     fn remarks(&self) -> &str { &self.remarks }
     fn measurements(&self) -> &str { &self.measurements }
+
+    fn get_label_for_field(&self, key: crate::layout::FieldKey) -> &str {
+        AnalysisResult::get_label_for_field(self, key)
+    }
 }
 
 #[cfg(test)]

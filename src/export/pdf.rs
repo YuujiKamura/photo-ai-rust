@@ -146,7 +146,6 @@ pub fn generate_pdf(
     photos_per_page: u8,
     title: &str,
     quality: PdfQuality,
-    hide_measurements: bool,
 ) -> Result<()> {
     let photos_per_page = photos_per_page.clamp(2, 3);
     let layout = PdfLayout::for_photos_per_page(photos_per_page);
@@ -248,7 +247,6 @@ pub fn generate_pdf(
                 row_y_pt,
                 layout_core.photo_height_pt,
                 &fonts,
-                hide_measurements,
             );
         }
 
@@ -668,9 +666,8 @@ fn add_info_field_ops(
     row_y_pt: f32,
     photo_height_pt: f32,
     fonts: &FontSet,
-    hide_measurements: bool,
 ) {
-    let fields = pdf_common::build_pdf_info_fields_opt(result, hide_measurements);
+    let fields = pdf_common::build_pdf_info_fields(result);
     let label_width = 35.0;
 
     // row_spanの合計で1単位あたりの高さを計算

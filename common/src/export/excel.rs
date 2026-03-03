@@ -155,14 +155,15 @@ where
             let mut field_row = start_row;
             for field in LAYOUT_FIELDS.iter() {
                 let value = photo.get_field_value(field.key);
+                let label = photo.get_label_for_field(field.key);
                 let row_span = field.row_span as u32;
 
                 // ラベルセル（B列）
                 if row_span > 1 {
-                    worksheet.merge_range(field_row, 1, field_row + row_span - 1, 1, field.label, &label_format)
+                    worksheet.merge_range(field_row, 1, field_row + row_span - 1, 1, label, &label_format)
                         .map_err(|e| excel_err(format!("ラベルマージ: {}", e)))?;
                 } else {
-                    worksheet.write_string_with_format(field_row, 1, field.label, &label_format)
+                    worksheet.write_string_with_format(field_row, 1, label, &label_format)
                         .map_err(|e| excel_err(format!("ラベル書き込み: {}", e)))?;
                 }
 
