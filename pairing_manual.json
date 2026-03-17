@@ -1,0 +1,156 @@
+[
+  {
+    "before_page": 1,
+    "before_station": "No.0より終点を望む",
+    "before_file": "P0000009.JPG",
+    "after_file": "20260223_125812.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 2,
+    "before_station": "No.0より終点を望む",
+    "before_file": "P0000010.JPG",
+    "after_file": "20260223_125802.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 3,
+    "before_station": "No.1より終点を望む",
+    "before_file": "P0000011.JPG",
+    "after_file": "R0010680.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 4,
+    "before_station": "No.2より終点を望む",
+    "before_file": "P0000012.JPG",
+    "after_file": "R0010681.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 5,
+    "before_station": "No.2+15より起点を望む",
+    "before_file": "",
+    "after_file": "",
+    "confidence": 0.0
+  },
+  {
+    "before_page": 6,
+    "before_station": "No.3より終点を望む",
+    "before_file": "P0000013.JPG",
+    "after_file": "20260223_125115.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 7,
+    "before_station": "No.4より終点を望む",
+    "before_file": "P0000014.JPG",
+    "after_file": "20260223_125053.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 8,
+    "before_station": "No.5より終点を望む",
+    "before_file": "P0000015.JPG",
+    "after_file": "20260223_125031.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 9,
+    "before_station": "No.6より終点を望む",
+    "before_file": "P0000016.JPG",
+    "after_file": "20260223_125007.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 10,
+    "before_station": "No.7より終点を望む",
+    "before_file": "P0000017.JPG",
+    "after_file": "20260223_124903.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 11,
+    "before_station": "No.8より終点を望む",
+    "before_file": "P0000018.JPG",
+    "after_file": "20260223_124807.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 12,
+    "before_station": "No.9より終点を望む",
+    "before_file": "P0000019.JPG",
+    "after_file": "20260223_124725.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 13,
+    "before_station": "No.10より終点を望む",
+    "before_file": "P0000020.JPG",
+    "after_file": "20260223_124703.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 14,
+    "before_station": "No.11より終点を望む",
+    "before_file": "P0000021.JPG",
+    "after_file": "20260223_124540.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 15,
+    "before_station": "No.11+12.3より起点を望む",
+    "before_file": "P0000022.JPG",
+    "after_file": "20260223_124520.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 16,
+    "before_station": "No.11+4.2より起点を望む",
+    "before_file": "",
+    "after_file": "",
+    "confidence": 0.0
+  },
+  {
+    "before_page": 17,
+    "before_station": "東側取付道路No.0",
+    "before_file": "P0000024.JPG",
+    "after_file": "20260223_124421.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 18,
+    "before_station": "東側取付道路No.0+15より起点を望む",
+    "before_file": "P0000025.JPG",
+    "after_file": "20260223_124212.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 19,
+    "before_station": "東側取付道路No.1",
+    "before_file": "P0000026.JPG",
+    "after_file": "20260223_124113.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 20,
+    "before_station": "東側取付道路No.1+8より南を望む",
+    "before_file": "P0000027.JPG",
+    "after_file": "20260223_124053.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 21,
+    "before_station": "東側取付道路速度落せ南側",
+    "before_file": "P0000023.JPG",
+    "after_file": "20260223_124003.jpg",
+    "confidence": 1.0
+  },
+  {
+    "before_page": 22,
+    "before_station": "東側取付道路速度落せ北側",
+    "before_file": "P0000028.JPG",
+    "after_file": "20260223_123827.jpg",
+    "confidence": 1.0
+  }
+]

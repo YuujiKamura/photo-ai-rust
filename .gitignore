@@ -23,3 +23,10 @@ web-wasm/package.json
 /node_modules/
 !package.json
 !package-lock.json
+
+logs/
+pairing_check/
+pairing_thumbs/
+tmp_*.png
+tmp_core/
+.claude/commands/photo-pdf.md

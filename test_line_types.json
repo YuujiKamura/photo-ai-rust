@@ -1,0 +1,18 @@
+{
+  "line_types": [
+    {"name": "外側線", "length_m": 486},
+    {"name": "中央線", "length_m": 230},
+    {"name": "車線分離線", "length_m": 30},
+    {"name": "停止線", "length_m": 43},
+    {"name": "停車禁止枠線", "length_m": 27},
+    {"name": "停車禁止ゼブラ線", "length_m": 22},
+    {"name": "右折標示", "length_m": 24},
+    {"name": "左折標示", "length_m": 24},
+    {"name": "横断歩道線", "length_m": 100},
+    {"name": "交差点標示線", "length_m": 15},
+    {"name": "右・左折禁止標示", "length_m": 38},
+    {"name": "ダイヤモンド標示", "length_m": 132},
+    {"name": "止まれ標示", "length_m": 19},
+    {"name": "速度落せ標示", "length_m": 125}
+  ]
+}

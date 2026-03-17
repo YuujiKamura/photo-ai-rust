@@ -1,0 +1,134 @@
+[
+  {
+    "before_page": 1,
+    "before_station": "測点:No.0より終点を望む備考:着手前測点:No.0より終点を望む備考:着手前測点:No.1より終点を望む備考:着手前測点:No.2より終点を望む備考:着手前測点:No.2+15より起点を望む備考:着手前測点:No.3より終点を望む備考:着手前測点:No.4より終点を望む備考:着手前測点:No.5より終点を望む備考:着手前測点:No.6より終点を望む備考:着手前測点:No.7より終点を望む備考:着手前測点:No.8より終点を望む備考:着手前測点:No.9より終点を望む備考:着手前測点:No.10より終点を望む備考:着手前測点:No.11より終点を望む備考:着手前測点:No.11+12.3より起点を望む備考:着手前測点:No.11+4.2より起点を望む備考:着手前測点:東側取付道路No.0備考:着手前測点:東側取付道路No.0+15より起点を望む備考:着手前測点:東側取付道路No.1備考:着手前測点:東側取付道路No.1+7より南を望む備考:着手前測点:東側取付道路速度落せ南側備考:着手前測点:東側取付道路速度落せ北側備考:着手前",
+    "after_file": "20260223_125606.jpg",
+    "confidence": 0.98
+  },
+  {
+    "before_page": 2,
+    "before_station": "",
+    "after_file": "20260223_124212.jpg",
+    "confidence": 0.95
+  },
+  {
+    "before_page": 3,
+    "before_station": "",
+    "after_file": "20260223_125115.jpg",
+    "confidence": 0.88
+  },
+  {
+    "before_page": 4,
+    "before_station": "",
+    "after_file": "20260223_125849.jpg",
+    "confidence": 0.88
+  },
+  {
+    "before_page": 5,
+    "before_station": "",
+    "after_file": "20260223_125053.jpg",
+    "confidence": 0.95
+  },
+  {
+    "before_page": 6,
+    "before_station": "",
+    "after_file": "20260223_125115.jpg",
+    "confidence": 0.88
+  },
+  {
+    "before_page": 7,
+    "before_station": "",
+    "after_file": "20260223_125053.jpg",
+    "confidence": 0.98
+  },
+  {
+    "before_page": 8,
+    "before_station": "",
+    "after_file": "20260223_125053.jpg",
+    "confidence": 0.85
+  },
+  {
+    "before_page": 9,
+    "before_station": "",
+    "after_file": "20260223_124807.jpg",
+    "confidence": 0.98
+  },
+  {
+    "before_page": 10,
+    "before_station": "",
+    "after_file": "20260223_124903.jpg",
+    "confidence": 0.88
+  },
+  {
+    "before_page": 11,
+    "before_station": "",
+    "after_file": "20260223_124807.jpg",
+    "confidence": 0.98
+  },
+  {
+    "before_page": 12,
+    "before_station": "",
+    "after_file": "20260223_124807.jpg",
+    "confidence": 0.88
+  },
+  {
+    "before_page": 13,
+    "before_station": "",
+    "after_file": "20260223_124212.jpg",
+    "confidence": 0.98
+  },
+  {
+    "before_page": 14,
+    "before_station": "",
+    "after_file": "20260223_124540.jpg",
+    "confidence": 0.88
+  },
+  {
+    "before_page": 15,
+    "before_station": "",
+    "after_file": "20260223_124520.jpg",
+    "confidence": 0.95
+  },
+  {
+    "before_page": 16,
+    "before_station": "",
+    "after_file": "20260223_125053.jpg",
+    "confidence": 0.85
+  },
+  {
+    "before_page": 17,
+    "before_station": "",
+    "after_file": "20260223_124421.jpg",
+    "confidence": 0.98
+  },
+  {
+    "before_page": 18,
+    "before_station": "",
+    "after_file": "20260223_124212.jpg",
+    "confidence": 0.98
+  },
+  {
+    "before_page": 19,
+    "before_station": "",
+    "after_file": "20260223_124113.jpg",
+    "confidence": 0.98
+  },
+  {
+    "before_page": 20,
+    "before_station": "",
+    "after_file": "20260223_124053.jpg",
+    "confidence": 0.98
+  },
+  {
+    "before_page": 21,
+    "before_station": "",
+    "after_file": "20260223_124003.jpg",
+    "confidence": 0.98
+  },
+  {
+    "before_page": 22,
+    "before_station": "",
+    "after_file": "20260223_124003.jpg",
+    "confidence": 0.88
+  }
+]
