@@ -145,6 +145,7 @@ dependencies = [
  "cli-ai-analyzer",
  "folder-watcher",
  "log",
+ "rayon",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
