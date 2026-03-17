@@ -134,14 +134,14 @@ photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --use-cache
 photo-ai-rust pair-completion \
   --before ./着手前写真帳.pdf \
   --after ./竣工写真/ \
-  --project-name "南千反畑舗装" \
+  --project-name "[PLACE_B]舗装" \
   --build
 
 # ペアリングJSONだけ出す（手修正してからPDF化したい場合）
 photo-ai-rust pair-completion --before ./着手前.pdf --after ./竣工/ -o pairing.json
 
 # 手修正済みJSONからPDF生成
-photo-ai-rust pair-pdf --json pairing_manual.json --project-name "南千反畑舗装" ./竣工写真/
+photo-ai-rust pair-pdf --json pairing_manual.json --project-name "[PLACE_B]舗装" ./竣工写真/
 ```
 
 ### 9. 解析精度を検証したい

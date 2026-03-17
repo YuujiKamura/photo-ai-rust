@@ -56,7 +56,7 @@ photo-ai-rust export result.json --format both
 
 ```bash
 # Step 1: Dropboxから新着写真を取得
-dropbox-fetch new "南千反畑" -o ./photos
+dropbox-fetch new "[PLACE_B]" -o ./photos
 
 # Step 2: 取得した写真を一括解析 → PDF出力
 photo-ai-rust run ./photos --format pdf

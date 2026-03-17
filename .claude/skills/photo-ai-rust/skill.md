@@ -25,7 +25,7 @@ Rust製の工事写真AI解析CLIツール。写真をスキャン→photo-tagge
 
 ## リポジトリ・パス
 - GitHub: https://github.com/YuujiKamura/photo-ai-rust
-- ローカル: `C:\Users\yuuji\photo-ai-rust`
+- ローカル: `./`
 - バイナリ: `photo-ai-rust/target/release/photo-ai`
 
 ## ワークスペース構成
@@ -102,7 +102,7 @@ photo-ai review <PATH> [-w]   # -w: 変更監視
 ### 一発で写真台帳を作る
 ```bash
 cd C:/Users/yuuji/photo-ai-rust
-cargo run --release -- run "H:\マイドライブ\〇市道 南千反畑町第１号線舗装補修工事\１５工事写真\Photomanager\20260211" --format both -m master/construction_hierarchy.csv
+cargo run --release -- run "H:\マイドライブ\〇市道 [PLACE_B]町第１号線舗装補修工事\１５工事写真\Photomanager\20260211" --format both -m master/construction_hierarchy.csv
 ```
 
 ### 2段階ワークフロー
