@@ -20,7 +20,7 @@ struct GroundTruthEntry {
     photo_category: String,
 }
 
-const RESULT_PATH: &str = r"H:\マイドライブ\〇市道 南千反畑町第１号線舗装補修工事\１５工事写真\0211切削\施工状況\result_stability_test.json";
+const RESULT_PATH: &str = r"./tests/ground_truth/sample_result.json";
 
 #[test]
 fn gt_0211_cutting() {
