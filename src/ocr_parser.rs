@@ -43,8 +43,8 @@ fn normalize_detected_text(text: &str) -> String {
 ///
 /// photo-taggerのdetected_textは改行区切り・全角コロンまたはスペース区切り:
 /// ```text
-/// 工事名：市道 南千反畑第1号線舗装補修工事\n場所：No.4 L\n路面切削工\n切削・積込状況
-/// 工事名 市道 南千反畑第1号線舗装補修工事\n場所 No. 4 L\n表層工\n乳剤散布状況
+/// 工事名：市道 ○○第1号線舗装補修工事\n場所：No.4 L\n路面切削工\n切削・積込状況
+/// 工事名 市道 ○○第1号線舗装補修工事\n場所 No. 4 L\n表層工\n乳剤散布状況
 /// ```
 ///
 /// キーなし行（"路面切削工"、"切削・積込状況"）は ("", value) として返す
@@ -176,10 +176,10 @@ mod tests {
 
     #[test]
     fn test_extract_kv_from_text_newline_fullwidth_colon() {
-        let text = "工事名：市道 南千反畑第1号線舗装補修工事\n場所：No.4 L\n路面切削工\n切削・積込状況";
+        let text = "工事名：市道 ○○第1号線舗装補修工事\n場所：No.4 L\n路面切削工\n切削・積込状況";
         let kvs = extract_kv_from_text(text);
         assert_eq!(kvs.len(), 4);
-        assert_eq!(kvs[0], ("工事名".to_string(), "市道 南千反畑第1号線舗装補修工事".to_string()));
+        assert_eq!(kvs[0], ("工事名".to_string(), "市道 ○○第1号線舗装補修工事".to_string()));
         assert_eq!(kvs[1], ("場所".to_string(), "No.4 L".to_string()));
         assert_eq!(kvs[2], ("".to_string(), "路面切削工".to_string()));
         assert_eq!(kvs[3], ("".to_string(), "切削・積込状況".to_string()));
@@ -187,10 +187,10 @@ mod tests {
 
     #[test]
     fn test_extract_kv_from_text_space_separator() {
-        let text = "工事名 市道 南千反畑第1号線舗装補修工事\n場所 No. 4 L\n表層工\n乳剤散布状況";
+        let text = "工事名 市道 ○○第1号線舗装補修工事\n場所 No. 4 L\n表層工\n乳剤散布状況";
         let kvs = extract_kv_from_text(text);
         assert_eq!(kvs.len(), 4);
-        assert_eq!(kvs[0], ("工事名".to_string(), "市道 南千反畑第1号線舗装補修工事".to_string()));
+        assert_eq!(kvs[0], ("工事名".to_string(), "市道 ○○第1号線舗装補修工事".to_string()));
         assert_eq!(kvs[1], ("場所".to_string(), "No. 4 L".to_string()));
         assert_eq!(kvs[2], ("".to_string(), "表層工".to_string()));
         assert_eq!(kvs[3], ("".to_string(), "乳剤散布状況".to_string()));
@@ -205,10 +205,10 @@ mod tests {
     #[test]
     fn test_extract_kv_from_text_literal_backslash_n() {
         // リテラル "\n" (2文字: バックスラッシュ + n) を含むケース
-        let text = r"工事名：市道 南千反畑第1号線舗装補修工事\n場所：No.4 L\n路面切削工\n切削・積込状況";
+        let text = r"工事名：市道 ○○第1号線舗装補修工事\n場所：No.4 L\n路面切削工\n切削・積込状況";
         let kvs = extract_kv_from_text(text);
         assert_eq!(kvs.len(), 4);
-        assert_eq!(kvs[0], ("工事名".to_string(), "市道 南千反畑第1号線舗装補修工事".to_string()));
+        assert_eq!(kvs[0], ("工事名".to_string(), "市道 ○○第1号線舗装補修工事".to_string()));
         assert_eq!(kvs[1], ("場所".to_string(), "No.4 L".to_string()));
         assert_eq!(kvs[2], ("".to_string(), "路面切削工".to_string()));
         assert_eq!(kvs[3], ("".to_string(), "切削・積込状況".to_string()));
@@ -216,10 +216,10 @@ mod tests {
 
     #[test]
     fn test_extract_kv_from_text_halfwidth_colon() {
-        let text = "工事名:市道 南千反畑第1号線舗装補修工事\n場所:No.4 L";
+        let text = "工事名:市道 ○○第1号線舗装補修工事\n場所:No.4 L";
         let kvs = extract_kv_from_text(text);
         assert_eq!(kvs.len(), 2);
-        assert_eq!(kvs[0], ("工事名".to_string(), "市道 南千反畑第1号線舗装補修工事".to_string()));
+        assert_eq!(kvs[0], ("工事名".to_string(), "市道 ○○第1号線舗装補修工事".to_string()));
         assert_eq!(kvs[1], ("場所".to_string(), "No.4 L".to_string()));
     }
 

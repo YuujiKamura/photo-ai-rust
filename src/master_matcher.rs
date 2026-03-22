@@ -530,7 +530,7 @@ mod tests {
         let master = HierarchyMaster::from_csv_str(csv).unwrap();
 
         // R0010577: detected_textにコアーキーワードなし、focus_targetに正解あり
-        let text = "市道 南千反畑町第1号線舗装補修工事, 舗装工 表層工, No.8 R";
+        let text = "市道 ○○町第1号線舗装補修工事, 舗装工 表層工, No.8 R";
         let texts = vec![text];
         let result = match_master_from_detected_texts(&master, &texts, "コアNo.8", Some("コアー厚さ測定"));
         assert!(result.is_some(), "focus_target should match コアー厚さ測定 search pattern");
@@ -544,14 +544,14 @@ mod tests {
         assert_eq!(result2.unwrap().remarks, "コアー厚さ測定");
 
         // R0010582: コアー採取前
-        let text3 = "工事名：市道 南千反畑町第1号線舗装補修工事, 場所：No.1 R, 表層工 コアー 採取前";
+        let text3 = "工事名：市道 ○○町第1号線舗装補修工事, 場所：No.1 R, 表層工 コアー 採取前";
         let texts3 = vec![text3];
         let result3 = match_master_from_detected_texts(&master, &texts3, "コアNo.1", Some("コアー採取前"));
         assert!(result3.is_some());
         assert_eq!(result3.unwrap().remarks, "コアー採取前");
 
         // R0010589: コアー復築前
-        let text4 = "工事名 市道 南千反畑第1号線舗装補修工事, 場所 No. 1R, 表層工 コアー 復築前";
+        let text4 = "工事名 市道 ○○第1号線舗装補修工事, 場所 No. 1R, 表層工 コアー 復築前";
         let texts4 = vec![text4];
         let result4 = match_master_from_detected_texts(&master, &texts4, "コアNo.1", Some("コアー復築前"));
         assert!(result4.is_some());
