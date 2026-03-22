@@ -33,3 +33,4 @@ tmp_core/
 .claude/
 tests/ground_truth/pipeline_output/
 tests/ground_truth/rerun_pipeline.sh
+tmp_check.py
