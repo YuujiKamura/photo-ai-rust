@@ -63,13 +63,21 @@ photo-ai-rust/          # CLI本体（メインクレート）
 - `error.rs` - Error合成ハブ（ExportError/HierarchyError/AnalyzerErrorをre-export）
 
 ### 外部依存
-- `photo-tagger` (`C:/Users/yuuji/photo-tagger`) - Gemini AIで写真グループ分け
+- `photo-tagger` (別リポ) - Gemini AIで写真グループ分け
 
 ### 工種マスタ
 ```
 master/
 └── construction_hierarchy.csv  # 工種マスタ（費目,写真区分,工種,種別,細別,備考,検索パターン）
 ```
+
+## 絶対パス禁止
+
+- `C:\Users\`、`/home/`、`/Users/`、`%USERPROFILE%`、ドライブレター付き絶対パスをコード・設定・ドキュメントに書くな
+- 動的解決を使え: Rust=`dirs::home_dir()`, Go=`os.UserHomeDir()`, 相対パス, 環境変数
+- CLAUDE.md内でも絶対パスでローカルディレクトリを参照するな
+- エージェントに作業を委譲する場合もこのルールは適用される
+- `/tmp/` のようなOS依存パスも避けろ。テンポラリは `std::env::temp_dir()` / `os.TempDir()` で解決
 
 ## 設計原則
 

@@ -34,3 +34,11 @@ tmp_core/
 tests/ground_truth/pipeline_output/
 tests/ground_truth/rerun_pipeline.sh
 tmp_check.py
+
+# photo-engine DLL build artifacts
+photo-engine/target/
+photo-engine/Cargo.lock
+
+# Go build artifacts
+photo-ai-go/*.exe
+photo-ai-go/*.dll
