@@ -457,12 +457,8 @@ body {
         <button class="cli-btn" data-cmd="claude" disabled>Claude</button>
         <button class="cli-btn" data-cmd="gemini" disabled>Gemini</button>
         <div class="sidebar-section-title" style="margin-top:8px;">写真フォルダ</div>
-        <div class="folder-input-inline active" id="folderInputInline">
-          <div style="display:flex;gap:4px;align-items:center;">
-            <input type="text" id="folderPathInput" placeholder="D:\photos\0211" style="flex:1">
-            <button class="folder-browse-btn" id="folderBrowseBtn">参照...</button>
-          </div>
-        </div>
+        <button class="cli-btn" id="folderBrowseBtn">フォルダを選択...</button>
+        <input type="text" id="folderPathInput" placeholder="またはパスを直接入力" style="width:100%;padding:5px 8px;background:var(--input-bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;margin-top:3px;outline:none;">
         <div class="sidebar-section-title" style="margin-top:8px;">実行</div>
         <button class="cli-btn primary" id="analyzeBtn" disabled>Analyze</button>
         <button class="cli-btn" id="exportPdfBtn" disabled>Export PDF</button>
