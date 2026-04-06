@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>photo-ai</title>
-<!-- xterm removed: using chat bubble streaming instead -->
 <style>
 :root {
   --bg: #0f0f0f;
@@ -30,11 +29,8 @@ body {
   overflow: hidden;
 }
 
-/* Phase: Master Selection */
+/* Single phase layout */
 .phase-master { display: flex; flex-direction: column; height: 100vh; }
-.phase-chat { display: none; height: 100vh; }
-.phase-chat.active { display: grid; grid-template-columns: 260px 1fr; }
-.phase-master.hidden { display: none; }
 
 /* Header */
 .header {
@@ -52,14 +48,6 @@ body {
   font-size: 16px; font-weight: 700;
 }
 .header h1 { font-size: 18px; font-weight: 600; }
-.header .mode-badge {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  margin-left: auto;
-}
-.header .mode-badge.local { background: #166534; color: var(--green); }
-.header .mode-badge.demo { background: #92400e33; color: var(--yellow); }
 
 /* Master Selection Screen - Left/Right split */
 .master-content {
@@ -142,13 +130,47 @@ body {
   transition: all 0.12s;
 }
 .cli-btn:hover { border-color: var(--accent); color: var(--text); }
+.cli-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.cli-btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .master-left-footer {
   padding: 10px 16px;
   border-top: 1px solid var(--border);
 }
 .master-left-footer .summary-count { font-size: 20px; font-weight: 700; color: var(--accent); }
 .master-left-footer .summary-label { font-size: 11px; color: var(--text-muted); }
-.master-left-footer .proceed-btn {
+
+/* Folder input inline (replaces proceed button) */
+.folder-input-inline {
+  display: none;
+  margin-top: 8px;
+}
+.folder-input-inline.active {
+  display: block;
+}
+.folder-input-inline input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  outline: none;
+  margin-bottom: 6px;
+}
+.folder-input-inline input::placeholder { color: var(--text-muted); }
+.folder-input-inline .hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.proceed-btn {
   width: 100%;
   margin-top: 8px;
   padding: 10px;
@@ -160,8 +182,8 @@ body {
   font-weight: 600;
   cursor: pointer;
 }
-.master-left-footer .proceed-btn:hover { background: var(--accent-hover); }
-.master-left-footer .proceed-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.proceed-btn:hover { background: var(--accent-hover); }
+.proceed-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .master-right {
   display: flex;
@@ -316,229 +338,12 @@ body {
 .ie-save { border-color: var(--accent); color: var(--accent); }
 .ie-save:hover { background: var(--accent); color: #fff; }
 
-/* (summary and proceed are in .master-left-footer now) */
-
-/* Chat Phase - Sidebar */
-.sidebar {
-  background: var(--sidebar-bg);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.sidebar-header {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.sidebar-header .logo-sm {
-  width: 24px; height: 24px;
-  background: var(--accent);
-  border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700;
-}
-.sidebar-header .title { font-size: 14px; font-weight: 600; }
-.back-btn {
-  margin-left: auto;
-  background: none; border: none;
-  color: var(--text-muted);
-  cursor: pointer; font-size: 13px;
-}
-.back-btn:hover { color: var(--text); }
-
 .sidebar-section-title {
   padding: 12px 16px 6px;
   font-size: 11px; font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);
-}
-.sidebar-list { flex: 1; overflow-y: auto; padding: 0 8px; }
-.sidebar-item {
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  display: flex; align-items: center; gap: 8px;
-  color: var(--text-muted);
-}
-.sidebar-item.active { color: var(--green); }
-.sidebar-footer {
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  color: var(--text-muted);
-  display: flex; align-items: center; gap: 6px;
-}
-.dot { width: 6px; height: 6px; border-radius: 50%; }
-.dot.on { background: var(--green); }
-.dot.off { background: var(--red); }
-
-/* Main panel */
-.main { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
-.topbar {
-  padding: 10px 24px;
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; gap: 10px; font-size: 13px;
-}
-.topbar .spacer { flex: 1; }
-.topbar-btn {
-  padding: 5px 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-muted);
-  font-size: 12px; cursor: pointer;
-}
-.topbar-btn:hover { border-color: var(--accent); color: var(--text); }
-.topbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-/* Step indicator */
-.step-indicator {
-  display: flex; align-items: center; gap: 6px;
-  padding: 12px 24px;
-  border-bottom: 1px solid var(--border);
-}
-.step-dot {
-  width: 24px; height: 24px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700;
-  border: 2px solid var(--border);
-  color: var(--text-muted);
-  transition: all 0.2s;
-}
-.step-dot.active { border-color: var(--accent); background: var(--accent); color: #fff; }
-.step-dot.done { border-color: var(--green); background: var(--green); color: #000; }
-.step-label { font-size: 12px; color: var(--text-muted); }
-.step-label.active { color: var(--text); font-weight: 600; }
-.step-sep { width: 20px; height: 1px; background: var(--border); }
-
-/* Step panels */
-.step-panel { display: none; flex: 1; overflow: hidden; flex-direction: column; }
-.step-panel.active { display: flex; }
-
-/* Step 1: Folder input */
-.folder-input-area {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 16px;
-  padding: 24px;
-}
-.folder-input-area .folder-icon { font-size: 48px; color: var(--text-muted); }
-.folder-input-area h2 { font-size: 18px; font-weight: 600; }
-.folder-input-area p { font-size: 13px; color: var(--text-muted); max-width: 400px; text-align: center; }
-.folder-input-row {
-  display: flex; gap: 8px; width: 100%; max-width: 560px;
-}
-.folder-input-row input {
-  flex: 1; background: var(--input-bg); border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px 14px; color: var(--text);
-  font-size: 14px; font-family: inherit; outline: none;
-}
-.folder-input-row input:focus { border-color: var(--accent); }
-.folder-input-row input::placeholder { color: var(--text-muted); }
-.scan-btn {
-  padding: 10px 20px; background: var(--accent); border: none;
-  border-radius: 8px; color: #fff; font-size: 14px; font-weight: 600;
-  cursor: pointer; white-space: nowrap;
-}
-.scan-btn:hover { background: var(--accent-hover); }
-.scan-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-/* Step 2: Running */
-.running-area {
-  flex: 1; display: flex; flex-direction: column; padding: 24px; gap: 16px;
-  overflow: hidden;
-}
-.progress-bar-container {
-  background: var(--surface); border-radius: 6px; height: 8px; overflow: hidden;
-}
-.progress-bar-fill {
-  height: 100%; background: var(--accent); border-radius: 6px;
-  transition: width 0.3s; width: 0%;
-}
-.progress-text { font-size: 13px; color: var(--text-muted); display: flex; justify-content: space-between; }
-.log-area {
-  flex: 1; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; padding: 12px; overflow-y: auto;
-  font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12px;
-  line-height: 1.6; color: var(--text-muted); min-height: 0;
-}
-.log-area .log-line-ok { color: var(--green); }
-.log-area .log-line-warn { color: var(--yellow); }
-.log-area .log-line-err { color: var(--red); }
-.cancel-btn-area { display: flex; justify-content: center; }
-.cancel-btn {
-  padding: 8px 24px; background: var(--surface);
-  border: 1px solid var(--red); border-radius: 8px;
-  color: var(--red); font-size: 13px; cursor: pointer;
-}
-.cancel-btn:hover { background: #7f1d1d33; }
-
-/* Step 3: Results table */
-.results-area {
-  flex: 1; display: flex; flex-direction: column; padding: 16px 24px;
-  overflow: hidden; gap: 12px;
-}
-.results-summary {
-  display: flex; gap: 16px; flex-wrap: wrap;
-}
-.results-summary .stat-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px 16px; min-width: 120px;
-}
-.stat-card .stat-val { font-size: 20px; font-weight: 700; color: var(--accent); }
-.stat-card .stat-label { font-size: 11px; color: var(--text-muted); }
-.results-table-scroll {
-  flex: 1; overflow: auto; min-height: 0;
-}
-.results-table {
-  width: 100%; border-collapse: collapse; font-size: 13px;
-}
-.results-table th {
-  position: sticky; top: 0; background: var(--sidebar-bg);
-  padding: 8px 10px; text-align: left; font-weight: 600;
-  font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px;
-  color: var(--text-muted); border-bottom: 1px solid var(--border);
-}
-.results-table td {
-  padding: 7px 10px; border-bottom: 1px solid var(--border);
-}
-.results-table tr:hover { background: var(--hover); cursor: pointer; }
-.results-table tr.unclassified { background: #92400e22; }
-.results-table tr.unclassified:hover { background: #92400e44; }
-.badge-yes { color: var(--green); font-size: 11px; }
-.badge-no { color: var(--red); font-size: 11px; }
-.results-actions {
-  display: flex; gap: 8px; align-items: center;
-}
-
-/* Step 4: Export */
-.export-area {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 16px; padding: 24px;
-}
-.export-area h2 { font-size: 18px; font-weight: 600; }
-.export-btns { display: flex; gap: 12px; }
-.export-btn {
-  padding: 12px 28px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--surface); color: var(--text); font-size: 14px;
-  font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;
-}
-.export-btn:hover { border-color: var(--accent); }
-.export-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.export-btn.primary:hover { background: var(--accent-hover); }
-.export-log {
-  width: 100%; max-width: 560px; background: var(--surface);
-  border: 1px solid var(--border); border-radius: 8px;
-  padding: 12px; font-family: 'Cascadia Code', monospace;
-  font-size: 12px; color: var(--text-muted); max-height: 200px;
-  overflow-y: auto; display: none;
-}
-.download-links { display: flex; flex-direction: column; gap: 6px; }
-.download-links a {
-  color: var(--accent); text-decoration: underline; font-size: 13px;
 }
 
 /* Add Row Form */
@@ -620,25 +425,15 @@ body {
 }
 .add-row-form .form-actions .submit-btn:hover { background: var(--accent-hover); }
 
-/* Phase 2 terminal pane */
-.phase2-terminal {
-  height: 300px;
-  min-height: 200px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-}
-
 </style>
 </head>
 <body>
 
-<!-- Phase 1: Master Selection -->
+<!-- Single Phase: Master Selection + Terminal -->
 <div class="phase-master" id="phaseMaster">
   <div class="header">
     <div class="logo">P</div>
     <h1>photo-ai</h1>
-    <span class="mode-badge demo" id="modeBadge">demo</span>
   </div>
   <div class="master-content">
     <div class="master-left">
@@ -646,15 +441,20 @@ body {
       <div class="master-card-list" id="masterCardList"></div>
       <div class="cli-shortcuts">
         <div class="sidebar-section-title">CLI</div>
+        <button class="cli-btn primary" id="analyzeBtn">Analyze</button>
+        <button class="cli-btn" id="exportPdfBtn">Export PDF</button>
+        <button class="cli-btn" id="exportExcelBtn">Export Excel</button>
         <button class="cli-btn" data-cmd="claude">Claude</button>
         <button class="cli-btn" data-cmd="gemini">Gemini</button>
-        <button class="cli-btn" data-cmd="ollama run gemma4:e4b">Gemma4</button>
-        <button class="cli-btn" data-cmd="cargo run --release -- --help">photo-ai help</button>
       </div>
       <div class="master-left-footer">
         <div><span class="summary-count" id="summaryCount">0</span> <span class="summary-label">行選択中</span></div>
         <div id="summaryDetail" style="font-size:11px;color:var(--text-muted);margin-top:2px;">工種を選択してください</div>
-        <button class="proceed-btn" id="proceedBtn" disabled>次へ &#8594; 写真を投入</button>
+        <button class="proceed-btn" id="proceedBtn" disabled>写真フォルダを指定</button>
+        <div class="folder-input-inline" id="folderInputInline">
+          <input type="text" id="folderPathInput" placeholder="D:\photos\0211">
+          <div class="hint">フォルダパスを入力してEnterで解析開始</div>
+        </div>
       </div>
     </div>
     <div class="master-right">
@@ -677,131 +477,6 @@ body {
         </div>
       </div>
     </div>
-  </div>
-</div>
-
-<!-- Phase 2: CLI Execution Flow -->
-<div class="phase-chat" id="phaseChat">
-  <div class="sidebar">
-    <div class="sidebar-header">
-      <div class="logo-sm">P</div>
-      <span class="title">photo-ai</span>
-      <button class="back-btn" id="backBtn">&#9664; マスタ</button>
-    </div>
-    <div class="sidebar-section-title">選択中のマスタ</div>
-    <div class="sidebar-list" id="selectedMasterList"></div>
-    <div class="sidebar-section-title">解析履歴</div>
-    <div class="sidebar-list" id="historyList">
-      <div class="sidebar-item" style="font-style:italic;">まだ解析していません</div>
-    </div>
-    <div class="sidebar-footer">
-      <span class="dot" id="wsDot"></span>
-      <span id="wsStatus">checking...</span>
-    </div>
-  </div>
-  <div class="main">
-    <div class="topbar">
-      <span id="topbarContext">マスタ待機中</span>
-      <span class="spacer"></span>
-      <button class="topbar-btn" id="topExportPdf" disabled>Export PDF</button>
-      <button class="topbar-btn" id="topExportExcel" disabled>Export Excel</button>
-    </div>
-
-    <!-- Step indicator -->
-    <div class="step-indicator">
-      <span class="step-dot active" data-step="1">1</span>
-      <span class="step-label active" data-step="1">フォルダ選択</span>
-      <span class="step-sep"></span>
-      <span class="step-dot" data-step="2">2</span>
-      <span class="step-label" data-step="2">解析実行</span>
-      <span class="step-sep"></span>
-      <span class="step-dot" data-step="3">3</span>
-      <span class="step-label" data-step="3">結果確認</span>
-      <span class="step-sep"></span>
-      <span class="step-dot" data-step="4">4</span>
-      <span class="step-label" data-step="4">エクスポート</span>
-    </div>
-
-    <!-- Step 1: Folder selection -->
-    <div class="step-panel active" id="step1">
-      <div class="folder-input-area">
-        <div class="folder-icon">&#128193;</div>
-        <h2>写真フォルダを選択</h2>
-        <p>解析したい写真が入っているフォルダのパスを入力してください。CLIが自動的にスキャン・分類を実行します。</p>
-        <div class="folder-input-row">
-          <input type="text" id="folderPathInput" placeholder="D:\photos\0211">
-          <button class="scan-btn" id="scanBtn">スキャン開始</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Step 2: Running analysis -->
-    <div class="step-panel" id="step2">
-      <div class="running-area">
-        <div>
-          <div class="progress-text">
-            <span id="progressLabel">解析準備中...</span>
-            <span id="progressPercent">0%</span>
-          </div>
-          <div class="progress-bar-container">
-            <div class="progress-bar-fill" id="progressBar"></div>
-          </div>
-        </div>
-        <div class="log-area" id="logArea"></div>
-        <div class="cancel-btn-area">
-          <button class="cancel-btn" id="cancelBtn">キャンセル</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Step 3: Results -->
-    <div class="step-panel" id="step3">
-      <div class="results-area">
-        <div class="results-summary" id="resultsSummary"></div>
-        <div class="results-actions">
-          <button class="topbar-btn" id="backToStep1">&#9664; 別フォルダを解析</button>
-          <span class="spacer" style="flex:1"></span>
-          <button class="topbar-btn" id="goToExport">エクスポート &#9654;</button>
-        </div>
-        <div class="results-table-scroll">
-          <table class="results-table" id="resultsTable">
-            <thead><tr>
-              <th>ファイル名</th>
-              <th>工種</th>
-              <th>種別</th>
-              <th>細別</th>
-              <th>備考</th>
-              <th>測点</th>
-              <th>黒板</th>
-            </tr></thead>
-            <tbody id="resultsBody"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- Step 4: Export -->
-    <div class="step-panel" id="step4">
-      <div class="export-area">
-        <h2>エクスポート</h2>
-        <p style="color:var(--text-muted);font-size:13px;">解析結果をPDFまたはExcelで出力します。</p>
-        <div class="export-btns">
-          <button class="export-btn primary" id="exportPdfBtn">&#128196; PDF出力</button>
-          <button class="export-btn" id="exportExcelBtn">&#128202; Excel出力</button>
-        </div>
-        <div class="export-log" id="exportLog"></div>
-        <div class="download-links" id="downloadLinks"></div>
-        <button class="topbar-btn" id="backToResults" style="margin-top:12px;">&#9664; 結果に戻る</button>
-      </div>
-    </div>
-
-    <!-- Phase 2 Terminal -->
-    <div class="phase2-terminal">
-      <div class="terminal-pane">
-        <iframe src="/terminal.html" id="terminalFrame2"></iframe>
-      </div>
-    </div>
-
   </div>
 </div>
 
@@ -843,11 +518,13 @@ body {
 <script>
 let masterData = {};
 
+// --- Internal state ---
+let selectedFolder = '';
+
 // --- Tree data model ---
-// Each leaf row gets a unique id. Tree nodes track selection via leaf sets.
-let allLeaves = [];      // flat array of {id, row, workTypeName}
+let allLeaves = [];
 let selectedLeafIds = new Set();
-let treeRoot = null;     // hierarchical structure for rendering
+let treeRoot = null;
 
 let selectedWorkTypes = new Set();
 
@@ -909,13 +586,11 @@ function renderRightPanel() {
 function buildTreeModel() {
   allLeaves = [];
   let leafId = 0;
-  // treeRoot is an array of workType-level nodes
   treeRoot = [];
 
   for (const [wtName, rows] of Object.entries(masterData)) {
     const wtNode = { label: wtName, children: [], leafIds: [], depth: 0 };
 
-    // Group by photoType
     const byPhotoType = new Map();
     for (const r of rows) {
       const pt = r.photoType || '';
@@ -924,10 +599,8 @@ function buildTreeModel() {
     }
 
     for (const [pt, ptRows] of byPhotoType) {
-      // Skip empty photoType level? No, always show it.
       const ptNode = { label: pt || '(未分類)', children: [], leafIds: [], depth: 1 };
 
-      // Group by variety
       const byVariety = new Map();
       for (const r of ptRows) {
         const v = r.variety || '';
@@ -936,7 +609,6 @@ function buildTreeModel() {
       }
 
       for (const [v, vRows] of byVariety) {
-        // Group by subphase
         const bySub = new Map();
         for (const r of vRows) {
           const s = r.subphase || '';
@@ -944,7 +616,6 @@ function buildTreeModel() {
           bySub.get(s).push(r);
         }
 
-        // Determine if variety level should be skipped (empty)
         const skipVariety = !v;
         const varietyNode = skipVariety ? null : { label: v, children: [], leafIds: [], depth: 2 };
         const parentForSub = skipVariety ? ptNode : varietyNode;
@@ -982,8 +653,6 @@ function buildTreeModel() {
         if (varietyNode) {
           ptNode.children.push(varietyNode);
           ptNode.leafIds.push(...varietyNode.leafIds);
-        } else {
-          // leafIds already pushed into ptNode via parentForSub
         }
       }
 
@@ -1014,27 +683,23 @@ function renderNodeExpanded(parent, node) {
   const indent = 8 + node.depth * 20;
   row.style.paddingLeft = indent + 'px';
 
-  // Toggle arrow
   const toggle = document.createElement('span');
   toggle.className = 'tree-toggle';
   if (hasChildren) {
-    toggle.textContent = '\u25BC'; // expanded by default
+    toggle.textContent = '\u25BC';
   }
   row.appendChild(toggle);
 
-  // Label
   const label = document.createElement('span');
   label.className = 'tree-label';
   label.textContent = node.label;
   row.appendChild(label);
 
-  // Leaf count
   const count = document.createElement('span');
   count.className = 'tree-count';
   count.textContent = node.leafIds.length;
   row.appendChild(count);
 
-  // Search pattern icon (leaf only)
   if (isLeaf && node.hasPattern) {
     const sp = document.createElement('span');
     sp.className = 'tree-sp-icon';
@@ -1044,7 +709,6 @@ function renderNodeExpanded(parent, node) {
 
   parent.appendChild(row);
 
-  // Children container
   let childrenDiv = null;
   if (hasChildren) {
     childrenDiv = document.createElement('div');
@@ -1055,7 +719,6 @@ function renderNodeExpanded(parent, node) {
     }
   }
 
-  // Toggle click
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!childrenDiv) return;
@@ -1064,7 +727,6 @@ function renderNodeExpanded(parent, node) {
     toggle.textContent = isOpen ? '\u25B6' : '\u25BC';
   });
 
-  // Row click = toggle fold (same as arrow)
   row.addEventListener('click', (e) => {
     if (e.target === toggle) return;
     if (!childrenDiv) return;
@@ -1073,11 +735,10 @@ function renderNodeExpanded(parent, node) {
     toggle.textContent = isOpen ? '\u25B6' : '\u25BC';
   });
 
-  // Double-click on leaf = inline edit
   if (isLeaf) {
     row.addEventListener('dblclick', (e) => {
       e.stopPropagation();
-      if (row.querySelector('.inline-edit')) return; // already editing
+      if (row.querySelector('.inline-edit')) return;
       const leaf = allLeaves[node.leafId];
       const r = leaf.row;
       label.style.display = 'none';
@@ -1100,10 +761,8 @@ function renderNodeExpanded(parent, node) {
         ev.stopPropagation();
         const fields = form.querySelectorAll('.ie-field');
         for (const f of fields) r[f.dataset.key] = f.value;
-        // Find row index in masterData
         const wtRows = masterData[leaf.workTypeName];
         const rowIdx = wtRows.indexOf(r);
-        // Save to server
         try {
           const resp = await fetch('/api/master/update', {
             method: 'POST',
@@ -1114,14 +773,11 @@ function renderNodeExpanded(parent, node) {
         } catch(err) {
           console.error('マスタ保存エラー:', err.message);
         }
-        // Update UI
         label.textContent = r.remarks || '(備考なし)';
         cancel();
       });
 
-      // Focus first input
       form.querySelector('input').focus();
-      // Enter to save
       form.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter') { ev.preventDefault(); form.querySelector('.ie-save').click(); }
         if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
@@ -1130,22 +786,7 @@ function renderNodeExpanded(parent, node) {
   }
 }
 
-function updateCbVisual(cb, node) {
-  const state = getCheckState(node);
-  cb.className = 'tree-cb';
-  if (state === 'checked') {
-    cb.classList.add('checked');
-    cb.textContent = '\u2713';
-  } else if (state === 'indeterminate') {
-    cb.classList.add('indeterminate');
-    cb.textContent = '\u2212';
-  } else {
-    cb.textContent = '\u2713';
-  }
-}
-
 function refreshAllCheckboxes() {
-  // Update card list checkboxes
   const cards = document.querySelectorAll('.wt-card');
   for (const card of cards) {
     if (!card._node) continue;
@@ -1167,7 +808,6 @@ function updateSummary() {
     document.getElementById('summaryDetail').textContent = '工種を選択してください';
     document.getElementById('proceedBtn').disabled = true;
   } else {
-    // Collect work type names
     const wtNames = new Set();
     for (const id of selectedLeafIds) {
       wtNames.add(allLeaves[id].workTypeName);
@@ -1178,11 +818,7 @@ function updateSummary() {
   }
 }
 
-function getSelectedRows() {
-  return [...selectedLeafIds].map(id => allLeaves[id].row);
-}
-
-// Select all / Deselect all
+// Expand all / Collapse all
 document.getElementById('expandAllBtn').addEventListener('click', () => {
   document.querySelectorAll('.tree-children').forEach(el => el.classList.add('open'));
   document.querySelectorAll('.tree-toggle').forEach(el => { if (el.textContent === '\u25B6') el.textContent = '\u25BC'; });
@@ -1192,402 +828,103 @@ document.getElementById('collapseAllBtn').addEventListener('click', () => {
   document.querySelectorAll('.tree-toggle').forEach(el => { if (el.textContent === '\u25BC') el.textContent = '\u25B6'; });
 });
 
-// --- Phase 2: Step-based CLI execution flow ---
-let currentStep = 1;
-let analysisResultData = null;
-let lastResultJsonPath = '';
-let lastFolderPath = '';
-
-function setStep(n) {
-  currentStep = n;
-  for (let i = 1; i <= 4; i++) {
-    const panel = document.getElementById('step' + i);
-    const dot = document.querySelector(`.step-dot[data-step="${i}"]`);
-    const label = document.querySelector(`.step-label[data-step="${i}"]`);
-    panel.classList.toggle('active', i === n);
-    dot.classList.remove('active', 'done');
-    label.classList.remove('active');
-    if (i < n) dot.classList.add('done');
-    else if (i === n) { dot.classList.add('active'); label.classList.add('active'); }
+// --- Proceed button: show folder input ---
+document.getElementById('proceedBtn').addEventListener('click', () => {
+  const inlineInput = document.getElementById('folderInputInline');
+  const btn = document.getElementById('proceedBtn');
+  if (inlineInput.classList.contains('active')) {
+    // Already open, hide it
+    inlineInput.classList.remove('active');
+    btn.textContent = '写真フォルダを指定';
+  } else {
+    inlineInput.classList.add('active');
+    btn.style.display = 'none';
+    document.getElementById('folderPathInput').focus();
   }
-  // Enable export buttons in topbar only when results are available
-  const hasResults = analysisResultData && analysisResultData.length > 0;
-  document.getElementById('topExportPdf').disabled = !hasResults;
-  document.getElementById('topExportExcel').disabled = !hasResults;
-}
+});
 
+// --- Folder path input: Enter to run analyze ---
+document.getElementById('folderPathInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const folder = document.getElementById('folderPathInput').value.trim();
+    if (!folder) return;
+    selectedFolder = folder;
+    runAnalyze(folder);
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    document.getElementById('folderInputInline').classList.remove('active');
+    document.getElementById('proceedBtn').style.display = '';
+  }
+});
+
+// --- Command generation ---
 function buildMasterArgs() {
-  // Build --master arguments from selected work types
   const args = [];
   for (const wtName of selectedWorkTypes) {
     args.push('--master master/by_work_type/' + wtName + '.csv');
   }
+  // Always include common master
+  args.push('--master master/by_work_type/共通.csv');
   return args.join(' ');
 }
 
-document.getElementById('proceedBtn').addEventListener('click', () => {
-  document.getElementById('phaseMaster').classList.add('hidden');
-  document.getElementById('phaseChat').classList.add('active');
-  const list = document.getElementById('selectedMasterList');
-  list.innerHTML = '';
+function buildAnalyzeCommand(folder) {
+  const masterArgs = buildMasterArgs();
+  return `target/release/photo-ai-rust.exe analyze "${folder}" ${masterArgs} --output result.json`;
+}
 
-  const byWt = new Map();
-  for (const id of selectedLeafIds) {
-    const wt = allLeaves[id].workTypeName;
-    if (!byWt.has(wt)) byWt.set(wt, 0);
-    byWt.set(wt, byWt.get(wt) + 1);
-  }
-  for (const [wt, cnt] of byWt) {
-    const d = document.createElement('div');
-    d.className = 'sidebar-item active';
-    d.innerHTML = `\u2611 ${wt} (${cnt})`;
-    list.appendChild(d);
-  }
+function runAnalyze(folder) {
+  const cmd = buildAnalyzeCommand(folder);
+  sendToTerminal(cmd);
+}
 
-  const total = selectedLeafIds.size;
-  const wtNames = [...byWt.keys()].join(' + ');
-  document.getElementById('topbarContext').textContent = wtNames + ` (${total}行)`;
+// --- CLI shortcut buttons ---
 
-  setStep(1);
-});
-
-document.getElementById('backBtn').addEventListener('click', () => {
-  document.getElementById('phaseChat').classList.remove('active');
-  document.getElementById('phaseMaster').classList.remove('hidden');
-});
-
-// Step 1: Scan button
-document.getElementById('scanBtn').addEventListener('click', () => {
-  const folder = document.getElementById('folderPathInput').value.trim();
-  if (!folder) return;
-  lastFolderPath = folder;
-  startAnalysis(folder);
-});
-document.getElementById('folderPathInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('scanBtn').click(); }
-});
-
-function startAnalysis(folder) {
-  if (!wsConnected) {
-    alert('WebSocket未接続。サーバーが起動しているか確認してください。');
+// Analyze button
+document.getElementById('analyzeBtn').addEventListener('click', () => {
+  if (selectedWorkTypes.size === 0) {
+    alert('工種を選択してください');
     return;
   }
-
-  setStep(2);
-  const logArea = document.getElementById('logArea');
-  logArea.innerHTML = '';
-  document.getElementById('progressBar').style.width = '0%';
-  document.getElementById('progressPercent').textContent = '0%';
-  document.getElementById('progressLabel').textContent = '解析準備中...';
-
-  // Build the CLI command
-  const masterArgs = buildMasterArgs();
-  const resultPath = folder.replace(/\\/g, '/') + '/result.json';
-  lastResultJsonPath = resultPath;
-  const cmd = `photo-ai-rust analyze "${folder}" ${masterArgs} --output "${resultPath}"`;
-
-  appendLog('$ ' + cmd, 'ok');
-
-  // Send command via WebSocket with custom handler for progress parsing
-  const origHandler = ws.onmessage;
-  let fullOutput = '';
-
-  ws.onmessage = (e) => {
-    const text = e.data;
-
-    if (text.includes('[exit code:')) {
-      // Command finished
-      const codeMatch = text.match(/\[exit code:\s*(\d+)\]/);
-      const exitCode = codeMatch ? parseInt(codeMatch[1]) : -1;
-      ws.onmessage = origHandler;
-
-      if (exitCode === 0) {
-        appendLog('解析完了 (exit code: 0)', 'ok');
-        document.getElementById('progressBar').style.width = '100%';
-        document.getElementById('progressPercent').textContent = '100%';
-        document.getElementById('progressLabel').textContent = '完了';
-        // Load results
-        loadResults(resultPath);
-      } else {
-        appendLog('解析失敗 (exit code: ' + exitCode + ')', 'err');
-        document.getElementById('progressLabel').textContent = '失敗';
-      }
-      return;
-    }
-
-    fullOutput += text;
-    // Parse progress from CLI output: [n/m] pattern
-    const progressMatch = text.match(/\[(\d+)\/(\d+)\]/);
-    if (progressMatch) {
-      const current = parseInt(progressMatch[1]);
-      const total = parseInt(progressMatch[2]);
-      const pct = Math.round((current / total) * 100);
-      document.getElementById('progressBar').style.width = pct + '%';
-      document.getElementById('progressPercent').textContent = pct + '%';
-      document.getElementById('progressLabel').textContent = `解析中... ${current}/${total}`;
-    }
-
-    // Append to log
-    const lines = text.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      let cls = '';
-      if (trimmed.includes('error') || trimmed.includes('Error') || trimmed.includes('failed')) cls = 'err';
-      else if (trimmed.includes('warn') || trimmed.includes('Warning')) cls = 'warn';
-      else if (trimmed.match(/\[\d+\/\d+\]/) || trimmed.includes('OK') || trimmed.includes('done')) cls = 'ok';
-      appendLog(trimmed, cls);
-    }
-  };
-
-  ws.send(cmd);
-}
-
-function appendLog(text, cls) {
-  const logArea = document.getElementById('logArea');
-  const div = document.createElement('div');
-  if (cls) div.className = 'log-line-' + cls;
-  div.textContent = text;
-  logArea.appendChild(div);
-  logArea.scrollTop = logArea.scrollHeight;
-}
-
-// Cancel button
-document.getElementById('cancelBtn').addEventListener('click', () => {
-  // Send Ctrl+C equivalent - kill the running process
-  if (ws && wsConnected) {
-    // There's no clean way to cancel via this WebSocket protocol;
-    // we send a termination signal by closing and reconnecting
-    appendLog('キャンセル要求を送信中...', 'warn');
-    ws.close();
-    setTimeout(() => {
-      connectWs();
-      setStep(1);
-    }, 500);
+  if (!selectedFolder) {
+    // Show folder input
+    const inlineInput = document.getElementById('folderInputInline');
+    inlineInput.classList.add('active');
+    document.getElementById('proceedBtn').style.display = 'none';
+    document.getElementById('folderPathInput').focus();
+    return;
   }
+  runAnalyze(selectedFolder);
 });
 
-// Load results from API
-async function loadResults(resultPath) {
-  try {
-    // Try to fetch result.json via the Go server
-    // The server serves static files from webDir, but result.json is in the photo folder.
-    // Use WebSocket to cat the file and parse the JSON.
-    const cmd = `type "${resultPath.replace(/\//g, '\\')}"`;
-    let jsonText = '';
+// Export PDF button
+document.getElementById('exportPdfBtn').addEventListener('click', () => {
+  const cmd = 'target/release/photo-ai-rust.exe export result.json --format pdf';
+  sendToTerminal(cmd);
+});
 
-    const origHandler = ws.onmessage;
-    ws.onmessage = (e) => {
-      const text = e.data;
-      if (text.includes('[exit code:')) {
-        ws.onmessage = origHandler;
-        try {
-          // Clean up any trailing exit code text
-          const cleaned = jsonText.trim();
-          analysisResultData = JSON.parse(cleaned);
-          renderResults();
-          setStep(3);
-          addHistoryEntry(lastFolderPath, analysisResultData.length);
-        } catch (parseErr) {
-          appendLog('結果JSONの解析に失敗: ' + parseErr.message, 'err');
-          // Still move to step 3 with empty results
-          analysisResultData = [];
-          renderResults();
-          setStep(3);
-        }
-        return;
-      }
-      jsonText += text;
-    };
-    ws.send(cmd);
-  } catch (err) {
-    appendLog('結果の読み込みに失敗: ' + err.message, 'err');
-  }
-}
+// Export Excel button
+document.getElementById('exportExcelBtn').addEventListener('click', () => {
+  const cmd = 'target/release/photo-ai-rust.exe export result.json --format excel';
+  sendToTerminal(cmd);
+});
 
-function addHistoryEntry(folder, count) {
-  const list = document.getElementById('historyList');
-  // Remove placeholder
-  const placeholder = list.querySelector('.sidebar-item[style]');
-  if (placeholder) placeholder.remove();
-
-  const d = document.createElement('div');
-  d.className = 'sidebar-item';
-  const name = folder.split(/[\\/]/).pop() || folder;
-  const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-  d.innerHTML = `&#128247; ${name} (${count}枚) <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${time}</span>`;
-  d.addEventListener('click', () => {
-    // Re-show these results
-    renderResults();
-    setStep(3);
+// Generic CLI shortcut buttons (Claude, Gemini)
+document.querySelectorAll('.cli-btn[data-cmd]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const cmd = btn.dataset.cmd;
+    sendToTerminal(cmd);
   });
-  list.prepend(d);
-}
+});
 
-function renderResults() {
-  const data = analysisResultData || [];
-  const body = document.getElementById('resultsBody');
-  body.innerHTML = '';
-
-  let totalPhotos = data.length;
-  let classified = 0;
-  let unclassified = 0;
-  let withBoard = 0;
-
-  for (const item of data) {
-    const fileName = item.file_name || item.fileName || '';
-    const workType = item.work_type || item.workType || '';
-    const variety = item.variety || '';
-    const subphase = item.subphase || '';
-    const remarks = item.remarks || '';
-    const station = item.station || item.measurement_point || '';
-    const hasBoard = item.has_blackboard ?? item.hasBlackboard ?? null;
-
-    const isUnclassified = !workType;
-    if (isUnclassified) unclassified++; else classified++;
-    if (hasBoard === true || hasBoard === 'true') withBoard++;
-
-    const tr = document.createElement('tr');
-    if (isUnclassified) tr.className = 'unclassified';
-    tr.innerHTML = `
-      <td>${escHtml(fileName)}</td>
-      <td>${escHtml(workType) || '<span style="color:var(--yellow)">未分類</span>'}</td>
-      <td>${escHtml(variety)}</td>
-      <td>${escHtml(subphase)}</td>
-      <td>${escHtml(remarks)}</td>
-      <td>${escHtml(station)}</td>
-      <td>${hasBoard === true || hasBoard === 'true'
-        ? '<span class="badge-yes">&#9632; あり</span>'
-        : '<span class="badge-no">&#9633; なし</span>'}</td>`;
-    body.appendChild(tr);
-  }
-
-  // Summary cards
-  const summary = document.getElementById('resultsSummary');
-  summary.innerHTML = `
-    <div class="stat-card"><div class="stat-val">${totalPhotos}</div><div class="stat-label">写真総数</div></div>
-    <div class="stat-card"><div class="stat-val">${classified}</div><div class="stat-label">分類済み</div></div>
-    <div class="stat-card"><div class="stat-val" style="color:${unclassified > 0 ? 'var(--yellow)' : 'var(--green)'}">${unclassified}</div><div class="stat-label">未分類</div></div>
-    <div class="stat-card"><div class="stat-val">${withBoard}</div><div class="stat-label">黒板あり</div></div>`;
-}
-
-function escHtml(s) {
-  if (!s) return '';
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-// Step 3 navigation
-document.getElementById('backToStep1').addEventListener('click', () => setStep(1));
-document.getElementById('goToExport').addEventListener('click', () => setStep(4));
-
-// Step 4: Export
-document.getElementById('exportPdfBtn').addEventListener('click', () => runExport('pdf'));
-document.getElementById('exportExcelBtn').addEventListener('click', () => runExport('excel'));
-document.getElementById('backToResults').addEventListener('click', () => setStep(3));
-
-// Topbar export buttons
-document.getElementById('topExportPdf').addEventListener('click', () => { setStep(4); runExport('pdf'); });
-document.getElementById('topExportExcel').addEventListener('click', () => { setStep(4); runExport('excel'); });
-
-function runExport(format) {
-  if (!lastResultJsonPath) return;
-  if (!wsConnected) { alert('WebSocket未接続'); return; }
-
-  const exportLog = document.getElementById('exportLog');
-  exportLog.style.display = 'block';
-  exportLog.innerHTML = '';
-  document.getElementById('downloadLinks').innerHTML = '';
-
-  const ext = format === 'pdf' ? '.pdf' : '.xlsx';
-  const outputPath = lastResultJsonPath.replace(/\.json$/, ext);
-  const cmd = `photo-ai-rust export "${lastResultJsonPath}" --format ${format} --output "${outputPath}"`;
-
-  const logDiv = (text, cls) => {
-    const d = document.createElement('div');
-    if (cls) d.className = 'log-line-' + cls;
-    d.textContent = text;
-    exportLog.appendChild(d);
-    exportLog.scrollTop = exportLog.scrollHeight;
-  };
-
-  logDiv('$ ' + cmd, 'ok');
-
-  const origHandler = ws.onmessage;
-  ws.onmessage = (e) => {
-    const text = e.data;
-    if (text.includes('[exit code:')) {
-      const codeMatch = text.match(/\[exit code:\s*(\d+)\]/);
-      const exitCode = codeMatch ? parseInt(codeMatch[1]) : -1;
-      ws.onmessage = origHandler;
-
-      if (exitCode === 0) {
-        logDiv('エクスポート完了', 'ok');
-        const links = document.getElementById('downloadLinks');
-        const a = document.createElement('a');
-        a.href = '#';
-        a.textContent = outputPath;
-        a.title = 'ファイルパス: ' + outputPath;
-        a.addEventListener('click', (ev) => {
-          ev.preventDefault();
-          // Open the folder in explorer
-          if (wsConnected) ws.send('explorer /select,"' + outputPath.replace(/\//g, '\\') + '"');
-        });
-        links.appendChild(a);
-      } else {
-        logDiv('エクスポート失敗 (exit code: ' + exitCode + ')', 'err');
-      }
-      return;
-    }
-    const lines = text.split('\n');
-    for (const line of lines) {
-      if (line.trim()) logDiv(line.trim(), '');
-    }
-  };
-
-  ws.send(cmd);
-}
-
-// --- WebSocket for CLI execution ---
-let ws = null;
-let wsConnected = false;
-
-function updateWsStatus(state) {
-  const dot = document.getElementById('wsDot');
-  const label = document.getElementById('wsStatus');
-  if (state === 'connected') {
-    if (dot) { dot.className = 'dot on'; }
-    if (label) label.textContent = 'WS connected';
-  } else if (state === 'disconnected') {
-    if (dot) { dot.className = 'dot off'; }
-    if (label) label.textContent = 'WS disconnected';
-  } else {
-    if (dot) { dot.className = 'dot off'; }
-    if (label) label.textContent = 'WS error';
+function sendToTerminal(cmd) {
+  const frame = document.getElementById('terminalFrame1');
+  if (frame && frame.contentWindow) {
+    frame.contentWindow.postMessage({ type: 'command', cmd: cmd }, '*');
   }
 }
-
-function connectWs() {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-  const wsUrl = 'ws://' + window.location.hostname + ':9998/ws/terminal';
-  ws = new WebSocket(wsUrl);
-  ws.onopen = () => {
-    wsConnected = true;
-    updateWsStatus('connected');
-  };
-  ws.onmessage = (e) => {
-    // Default handler - specific callers override this
-  };
-  ws.onclose = () => {
-    wsConnected = false;
-    updateWsStatus('disconnected');
-    setTimeout(connectWs, 3000);
-  };
-  ws.onerror = () => {
-    wsConnected = false;
-    updateWsStatus('error');
-  };
-}
-
 
 // --- Master operation helpers ---
 
@@ -1643,7 +980,6 @@ function applyMasterOperation(op) {
 function refreshTreeAfterMasterChange() {
   buildTreeModel();
   renderCardList();
-  // Re-select work types that were selected
   const cards = document.querySelectorAll('.wt-card');
   for (const card of cards) {
     if (card._node && selectedWorkTypes.has(card._node.label)) {
@@ -1681,7 +1017,6 @@ document.getElementById('addRowBtn').addEventListener('click', () => {
     if (selectedWorkTypes.has(name)) opt.selected = true;
     sel.appendChild(opt);
   }
-  // Clear fields
   document.getElementById('formPhotoType').value = '';
   document.getElementById('formVariety').value = '';
   document.getElementById('formSubphase').value = '';
@@ -1720,23 +1055,7 @@ document.getElementById('formSubmitBtn').addEventListener('click', () => {
   document.getElementById('addRowOverlay').classList.remove('active');
 });
 
-// CLI shortcut buttons → send command to terminal iframe via postMessage
-document.querySelectorAll('.cli-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const cmd = btn.dataset.cmd;
-    sendToTerminal(cmd);
-  });
-});
-
-function sendToTerminal(cmd) {
-  const frame = document.getElementById('terminalFrame1');
-  if (frame && frame.contentWindow) {
-    frame.contentWindow.postMessage({ type: 'command', cmd: cmd }, '*');
-  }
-}
-
 loadMaster();
-connectWs();
 </script>
 </body>
 </html>
