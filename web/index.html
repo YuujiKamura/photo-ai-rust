@@ -452,24 +452,24 @@ body {
       <div class="master-left-header">工種マスタ</div>
       <div class="master-card-list" id="masterCardList"></div>
       <div class="cli-shortcuts">
-        <div class="sidebar-section-title">CLI</div>
-        <button class="cli-btn primary" id="analyzeBtn" disabled>Analyze</button>
-        <button class="cli-btn" id="exportPdfBtn" disabled>Export PDF</button>
-        <button class="cli-btn" id="exportExcelBtn" disabled>Export Excel</button>
+        <div class="sidebar-section-title">Agent</div>
         <button class="cli-btn" data-cmd="claude" disabled>Claude</button>
         <button class="cli-btn" data-cmd="gemini" disabled>Gemini</button>
-      </div>
-      <div class="master-left-footer">
-        <div><span class="summary-count" id="summaryCount">0</span> <span class="summary-label">行選択中</span></div>
-        <div id="summaryDetail" style="font-size:11px;color:var(--text-muted);margin-top:2px;">工種を選択してください</div>
-        <button class="proceed-btn" id="proceedBtn" disabled>写真フォルダを指定</button>
-        <div class="folder-input-inline" id="folderInputInline">
+        <div class="sidebar-section-title" style="margin-top:8px;">写真フォルダ</div>
+        <div class="folder-input-inline active" id="folderInputInline">
           <div style="display:flex;gap:4px;align-items:center;">
             <input type="text" id="folderPathInput" placeholder="D:\photos\0211" style="flex:1">
             <button class="folder-browse-btn" id="folderBrowseBtn">参照...</button>
           </div>
-          <div class="hint">パスを入力 or 参照でフォルダ選択 → Enterで即解析</div>
         </div>
+        <div class="sidebar-section-title" style="margin-top:8px;">実行</div>
+        <button class="cli-btn primary" id="analyzeBtn" disabled>Analyze</button>
+        <button class="cli-btn" id="exportPdfBtn" disabled>Export PDF</button>
+        <button class="cli-btn" id="exportExcelBtn" disabled>Export Excel</button>
+      </div>
+      <div class="master-left-footer">
+        <div><span class="summary-count" id="summaryCount">0</span> <span class="summary-label">行選択中</span></div>
+        <div id="summaryDetail" style="font-size:11px;color:var(--text-muted);margin-top:2px;">工種を選択してください</div>
       </div>
     </div>
     <div class="master-right">
@@ -834,15 +834,13 @@ function updateSummary() {
   document.getElementById('summaryCount').textContent = total;
   if (total === 0) {
     document.getElementById('summaryDetail').textContent = '工種を選択してください';
-    document.getElementById('proceedBtn').disabled = true;
   } else {
     const wtNames = new Set();
     for (const id of selectedLeafIds) {
       wtNames.add(allLeaves[id].workTypeName);
     }
     document.getElementById('summaryDetail').textContent =
-      [...wtNames].join(' + ') + ' で解析します';
-    document.getElementById('proceedBtn').disabled = false;
+      [...wtNames].join(' + ');
   }
   updateButtonStates();
 }
@@ -855,21 +853,6 @@ document.getElementById('expandAllBtn').addEventListener('click', () => {
 document.getElementById('collapseAllBtn').addEventListener('click', () => {
   document.querySelectorAll('.tree-children').forEach(el => el.classList.remove('open'));
   document.querySelectorAll('.tree-toggle').forEach(el => { if (el.textContent === '\u25BC') el.textContent = '\u25B6'; });
-});
-
-// --- Proceed button: show folder input ---
-document.getElementById('proceedBtn').addEventListener('click', () => {
-  const inlineInput = document.getElementById('folderInputInline');
-  const btn = document.getElementById('proceedBtn');
-  if (inlineInput.classList.contains('active')) {
-    // Already open, hide it
-    inlineInput.classList.remove('active');
-    btn.textContent = '写真フォルダを指定';
-  } else {
-    inlineInput.classList.add('active');
-    btn.style.display = 'none';
-    document.getElementById('folderPathInput').focus();
-  }
 });
 
 // --- Folder browse via server-side dialog ---
@@ -900,11 +883,6 @@ document.getElementById('folderPathInput').addEventListener('keydown', (e) => {
     selectedFolder = folder;
     updateButtonStates();
     runAnalyze(folder);
-  }
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    document.getElementById('folderInputInline').classList.remove('active');
-    document.getElementById('proceedBtn').style.display = '';
   }
 });
 
@@ -943,10 +921,7 @@ document.getElementById('analyzeBtn').addEventListener('click', () => {
     return;
   }
   if (!selectedFolder) {
-    // Show folder input
-    const inlineInput = document.getElementById('folderInputInline');
-    inlineInput.classList.add('active');
-    document.getElementById('proceedBtn').style.display = 'none';
+    // Focus folder input
     document.getElementById('folderPathInput').focus();
     return;
   }

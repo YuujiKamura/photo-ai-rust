@@ -304,8 +304,20 @@ func main() {
 	})
 	http.HandleFunc("/api/browse", func(w http.ResponseWriter, r *http.Request) {
 		// Open native folder picker via PowerShell
-		cmd := exec.Command("powershell", "-NoProfile", "-Command",
-			`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = '写真フォルダを選択'; if ($d.ShowDialog() -eq 'OK') { [Console]::WriteLine($d.SelectedPath) } else { [Console]::WriteLine('') }`)
+		cmd := exec.Command("powershell", "-NoProfile", "-Sta", "-Command",
+			`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+$d = New-Object System.Windows.Forms.OpenFileDialog
+$d.ValidateNames = $false
+$d.CheckFileExists = $false
+$d.CheckPathExists = $true
+$d.FileName = 'フォルダを選択'
+$d.Title = '写真フォルダを選択'
+if ($d.ShowDialog() -eq 'OK') {
+  [Console]::WriteLine([System.IO.Path]::GetDirectoryName($d.FileName))
+} else {
+  [Console]::WriteLine('')
+}`)
 		out, err := cmd.Output()
 		if err != nil {
 			http.Error(w, err.Error(), 500)
