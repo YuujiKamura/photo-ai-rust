@@ -909,23 +909,26 @@ document.getElementById('folderPathInput').addEventListener('keydown', (e) => {
 });
 
 // --- Command generation ---
-function buildMasterArgs() {
-  const args = [];
-  for (const wtName of selectedWorkTypes) {
-    args.push('--master master/by_work_type/' + wtName + '.csv');
+async function getMasterPath() {
+  const names = [...selectedWorkTypes];
+  // Always include 共通
+  if (!names.includes('共通')) names.push('共通');
+  if (names.length === 1) {
+    return 'master/by_work_type/' + names[0] + '.csv';
   }
-  // Always include common master
-  args.push('--master master/by_work_type/共通.csv');
-  return args.join(' ');
+  // Multiple: merge via server
+  const r = await fetch('/api/merge-master', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ masterFiles: names })
+  });
+  const j = await r.json();
+  return j.path;
 }
 
-function buildAnalyzeCommand(folder) {
-  const masterArgs = buildMasterArgs();
-  return `target/release/photo-ai-rust.exe analyze "${folder}" ${masterArgs} --output result.json`;
-}
-
-function runAnalyze(folder) {
-  const cmd = buildAnalyzeCommand(folder);
+async function runAnalyze(folder) {
+  const masterPath = await getMasterPath();
+  const cmd = `target/release/photo-ai-rust.exe analyze "${folder}" --master "${masterPath}" --output result.json`;
   sendToTerminal(cmd);
   analyzeRun = true;
   updateButtonStates();

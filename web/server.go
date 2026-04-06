@@ -280,10 +280,32 @@ func main() {
 		http.ServeFile(w, r, absResolved)
 	})
 
+	http.HandleFunc("/api/merge-master", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "POST only", 405)
+			return
+		}
+		var req struct {
+			MasterFiles []string `json:"masterFiles"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		cleanup, masterPath, err := prepareMasterFile(repoDir, req.MasterFiles)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		// Don't cleanup - the caller needs the file. It will be overwritten next time.
+		_ = cleanup
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"path": masterPath})
+	})
 	http.HandleFunc("/api/browse", func(w http.ResponseWriter, r *http.Request) {
 		// Open native folder picker via PowerShell
-		cmd := exec.Command("powershell", "-Command",
-			`Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = '写真フォルダを選択'; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }`)
+		cmd := exec.Command("powershell", "-NoProfile", "-Command",
+			`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = '写真フォルダを選択'; if ($d.ShowDialog() -eq 'OK') { [Console]::WriteLine($d.SelectedPath) } else { [Console]::WriteLine('') }`)
 		out, err := cmd.Output()
 		if err != nil {
 			http.Error(w, err.Error(), 500)
