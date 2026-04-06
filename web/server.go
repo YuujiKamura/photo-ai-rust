@@ -280,6 +280,19 @@ func main() {
 		http.ServeFile(w, r, absResolved)
 	})
 
+	http.HandleFunc("/api/browse", func(w http.ResponseWriter, r *http.Request) {
+		// Open native folder picker via PowerShell
+		cmd := exec.Command("powershell", "-Command",
+			`Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = '写真フォルダを選択'; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }`)
+		out, err := cmd.Output()
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		path := strings.TrimSpace(string(out))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"path": path})
+	})
 	http.Handle("/", http.FileServer(http.Dir(webDir)))
 
 	addr := ":9998"

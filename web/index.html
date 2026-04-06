@@ -464,10 +464,11 @@ body {
         <div id="summaryDetail" style="font-size:11px;color:var(--text-muted);margin-top:2px;">工種を選択してください</div>
         <button class="proceed-btn" id="proceedBtn" disabled>写真フォルダを指定</button>
         <div class="folder-input-inline" id="folderInputInline">
-          <input type="text" id="folderPathInput" placeholder="D:\photos\0211">
-          <input type="file" id="folderPicker" webkitdirectory style="display:none">
-          <button class="folder-browse-btn" id="folderBrowseBtn">参照...</button>
-          <div class="hint">パスを入力してEnter / 参照ボタンでフォルダ選択</div>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <input type="text" id="folderPathInput" placeholder="D:\photos\0211" style="flex:1">
+            <button class="folder-browse-btn" id="folderBrowseBtn">参照...</button>
+          </div>
+          <div class="hint">パスを入力 or 参照でフォルダ選択 → Enterで即解析</div>
         </div>
       </div>
     </div>
@@ -871,19 +872,23 @@ document.getElementById('proceedBtn').addEventListener('click', () => {
   }
 });
 
-// --- Folder browse button ---
-document.getElementById('folderBrowseBtn').addEventListener('click', () => {
-  document.getElementById('folderPicker').click();
+// --- Folder browse via server-side dialog ---
+document.getElementById('folderBrowseBtn').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/browse');
+    const j = await r.json();
+    if (j.path) {
+      document.getElementById('folderPathInput').value = j.path;
+      selectedFolder = j.path;
+      updateButtonStates();
+    }
+  } catch(e) { /* server not running */ }
 });
-document.getElementById('folderPicker').addEventListener('change', (e) => {
-  const files = e.target.files;
-  if (files.length > 0) {
-    // webkitRelativePath gives "foldername/filename" - extract folder
-    const rel = files[0].webkitRelativePath;
-    const folderName = rel.split('/')[0];
-    document.getElementById('folderPathInput').value = folderName;
-    document.getElementById('folderPathInput').focus();
-  }
+
+// --- Folder path input: update state on typing ---
+document.getElementById('folderPathInput').addEventListener('input', () => {
+  selectedFolder = document.getElementById('folderPathInput').value.trim();
+  updateButtonStates();
 });
 
 // --- Folder path input: Enter to run analyze ---
