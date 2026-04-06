@@ -7,8 +7,8 @@ edition = "2024"
 # AI解析ライブラリ
 cli-ai-analyzer = { path = "../deps/cli-ai-analyzer" }
 
-eframe = "0.27"
-egui = "0.27"
+eframe = "0.31"
+egui = "0.31"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rfd = "0.14"
