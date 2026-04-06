@@ -1197,13 +1197,18 @@ document.getElementById('reloadUiBtn').addEventListener('click', async () => {
 
 // Terminal ready detection via postMessage from iframe
 window.addEventListener('message', (e) => {
+  console.log('[main] postMessage received:', e.data);
   if (e.data && e.data.type === 'terminal-ready') {
+    console.log('[main] terminal-ready!');
     terminalReady = true;
     updateButtonStates();
-    // Auto-send cached agent startup command
     const cachedCmd = localStorage.getItem('photoai_agent_cmd');
+    console.log('[main] cached agent cmd:', cachedCmd);
     if (cachedCmd) {
-      setTimeout(() => sendToTerminal(cachedCmd), 300);
+      setTimeout(() => {
+        console.log('[main] sending cached cmd to terminal:', cachedCmd);
+        sendToTerminal(cachedCmd);
+      }, 500);
     }
   }
 });

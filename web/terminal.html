@@ -13,6 +13,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; }
 </head>
 <body>
 <div id="terminal"></div>
+<script>function dbg(){}</script>
 <script type="module">
   // ghostty-web assets served from /dist/ on the demo server (port 8888)
   const GHOSTTY_SERVER = 'http://localhost:8888';
@@ -48,12 +49,14 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; }
   function connect() {
     ws = new WebSocket(wsUrl);
     ws.onopen = () => {
-      // Flush any queued commands
+      dbg('[t] WS connected, pending:', pendingCmds.length);
       while (pendingCmds.length > 0) {
-        ws.send(pendingCmds.shift() + '\r');
+        const cmd = pendingCmds.shift();
+        dbg('[t] flushing queued cmd:', cmd);
+        ws.send(cmd + '\r');
       }
-      // Notify parent that terminal is ready
       if (window.parent !== window) {
+        dbg('[t] sending terminal-ready to parent');
         window.parent.postMessage({ type: 'terminal-ready' }, '*');
       }
     };
@@ -84,9 +87,11 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; }
   // Listen for commands from parent window
   window.addEventListener('message', (e) => {
     if (e.data && e.data.type === 'command') {
+      dbg('[t] received cmd from parent:', e.data.cmd, 'ws ready:', ws?.readyState === WebSocket.OPEN);
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(e.data.cmd + '\r');
       } else {
+        dbg('[t] queuing cmd (ws not ready)');
         pendingCmds.push(e.data.cmd);
       }
     }
