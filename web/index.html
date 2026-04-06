@@ -129,7 +129,19 @@ body {
   cursor: pointer;
   transition: all 0.12s;
 }
-.cli-btn:hover { border-color: var(--accent); color: var(--text); }
+.cli-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.cli-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.folder-browse-btn {
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.folder-browse-btn:hover { border-color: var(--accent); color: var(--text); }
 .cli-btn.primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -441,11 +453,11 @@ body {
       <div class="master-card-list" id="masterCardList"></div>
       <div class="cli-shortcuts">
         <div class="sidebar-section-title">CLI</div>
-        <button class="cli-btn primary" id="analyzeBtn">Analyze</button>
-        <button class="cli-btn" id="exportPdfBtn">Export PDF</button>
-        <button class="cli-btn" id="exportExcelBtn">Export Excel</button>
-        <button class="cli-btn" data-cmd="claude">Claude</button>
-        <button class="cli-btn" data-cmd="gemini">Gemini</button>
+        <button class="cli-btn primary" id="analyzeBtn" disabled>Analyze</button>
+        <button class="cli-btn" id="exportPdfBtn" disabled>Export PDF</button>
+        <button class="cli-btn" id="exportExcelBtn" disabled>Export Excel</button>
+        <button class="cli-btn" data-cmd="claude" disabled>Claude</button>
+        <button class="cli-btn" data-cmd="gemini" disabled>Gemini</button>
       </div>
       <div class="master-left-footer">
         <div><span class="summary-count" id="summaryCount">0</span> <span class="summary-label">行選択中</span></div>
@@ -453,7 +465,9 @@ body {
         <button class="proceed-btn" id="proceedBtn" disabled>写真フォルダを指定</button>
         <div class="folder-input-inline" id="folderInputInline">
           <input type="text" id="folderPathInput" placeholder="D:\photos\0211">
-          <div class="hint">フォルダパスを入力してEnterで解析開始</div>
+          <input type="file" id="folderPicker" webkitdirectory style="display:none">
+          <button class="folder-browse-btn" id="folderBrowseBtn">参照...</button>
+          <div class="hint">パスを入力してEnter / 参照ボタンでフォルダ選択</div>
         </div>
       </div>
     </div>
@@ -520,6 +534,19 @@ let masterData = {};
 
 // --- Internal state ---
 let selectedFolder = '';
+let terminalReady = false;
+let analyzeRun = false;
+
+function updateButtonStates() {
+  const hasFolder = selectedFolder.length > 0;
+  const hasWorkTypes = selectedWorkTypes.size > 0;
+  document.getElementById('analyzeBtn').disabled = !(terminalReady && hasFolder && hasWorkTypes);
+  document.getElementById('exportPdfBtn').disabled = !(terminalReady && analyzeRun);
+  document.getElementById('exportExcelBtn').disabled = !(terminalReady && analyzeRun);
+  document.querySelectorAll('.cli-btn[data-cmd]').forEach(btn => {
+    btn.disabled = !terminalReady;
+  });
+}
 
 // --- Tree data model ---
 let allLeaves = [];
@@ -816,6 +843,7 @@ function updateSummary() {
       [...wtNames].join(' + ') + ' で解析します';
     document.getElementById('proceedBtn').disabled = false;
   }
+  updateButtonStates();
 }
 
 // Expand all / Collapse all
@@ -843,6 +871,21 @@ document.getElementById('proceedBtn').addEventListener('click', () => {
   }
 });
 
+// --- Folder browse button ---
+document.getElementById('folderBrowseBtn').addEventListener('click', () => {
+  document.getElementById('folderPicker').click();
+});
+document.getElementById('folderPicker').addEventListener('change', (e) => {
+  const files = e.target.files;
+  if (files.length > 0) {
+    // webkitRelativePath gives "foldername/filename" - extract folder
+    const rel = files[0].webkitRelativePath;
+    const folderName = rel.split('/')[0];
+    document.getElementById('folderPathInput').value = folderName;
+    document.getElementById('folderPathInput').focus();
+  }
+});
+
 // --- Folder path input: Enter to run analyze ---
 document.getElementById('folderPathInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
@@ -850,6 +893,7 @@ document.getElementById('folderPathInput').addEventListener('keydown', (e) => {
     const folder = document.getElementById('folderPathInput').value.trim();
     if (!folder) return;
     selectedFolder = folder;
+    updateButtonStates();
     runAnalyze(folder);
   }
   if (e.key === 'Escape') {
@@ -878,6 +922,8 @@ function buildAnalyzeCommand(folder) {
 function runAnalyze(folder) {
   const cmd = buildAnalyzeCommand(folder);
   sendToTerminal(cmd);
+  analyzeRun = true;
+  updateButtonStates();
 }
 
 // --- CLI shortcut buttons ---
@@ -1054,6 +1100,15 @@ document.getElementById('formSubmitBtn').addEventListener('click', () => {
   console.log(msg);
   document.getElementById('addRowOverlay').classList.remove('active');
 });
+
+// Terminal ready detection
+const termFrame = document.getElementById('terminalFrame1');
+if (termFrame) {
+  termFrame.addEventListener('load', () => {
+    terminalReady = true;
+    updateButtonStates();
+  });
+}
 
 loadMaster();
 </script>
