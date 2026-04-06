@@ -1014,6 +1014,10 @@ document.getElementById('exportExcelBtn').addEventListener('click', () => {
 document.querySelectorAll('.cli-btn[data-cmd]').forEach(btn => {
   btn.addEventListener('click', () => {
     const cmd = btn.dataset.cmd;
+    // Cache agent startup commands for auto-restore on reload
+    if (cmd === 'claude' || cmd === 'gemini') {
+      localStorage.setItem('photoai_agent_cmd', cmd);
+    }
     sendToTerminal(cmd);
   });
 });
@@ -1188,14 +1192,18 @@ document.getElementById('reloadUiBtn').addEventListener('click', async () => {
   }
 });
 
-// Terminal ready detection
-const termFrame = document.getElementById('terminalFrame1');
-if (termFrame) {
-  termFrame.addEventListener('load', () => {
+// Terminal ready detection via postMessage from iframe
+window.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'terminal-ready') {
     terminalReady = true;
     updateButtonStates();
-  });
-}
+    // Auto-send cached agent startup command
+    const cachedCmd = localStorage.getItem('photoai_agent_cmd');
+    if (cachedCmd) {
+      setTimeout(() => sendToTerminal(cachedCmd), 300);
+    }
+  }
+});
 
 // --- Persistence (localStorage) ---
 function saveState() {
