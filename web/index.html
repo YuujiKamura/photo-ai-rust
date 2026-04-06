@@ -602,6 +602,103 @@ body {
 <script>
 let masterData = {};
 
+// --- PAVEMENT_ALIASES (loaded from aliases.json) ---
+let PAVEMENT_ALIASES = { photoCategory: {}, workType: {}, variety: {}, subphase: {} };
+
+async function loadAliases() {
+  try {
+    const res = await fetch('aliases.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    PAVEMENT_ALIASES = await res.json();
+  } catch (e) {
+    console.warn('aliases.json の読み込みに失敗しました。デフォルト値を使用します:', e);
+  }
+}
+loadAliases(); // fire-and-forget
+
+// --- Alias apply helper ---
+function applyAlias(value, aliases) {
+  if (!value) return value;
+  if (aliases[value]) return aliases[value];
+  let bestMatch = null;
+  for (const [pattern, replacement] of Object.entries(aliases)) {
+    if (value.includes(pattern)) {
+      if (!bestMatch || pattern.length > bestMatch[0].length) {
+        bestMatch = [pattern, replacement];
+      }
+    }
+  }
+  return bestMatch ? bestMatch[1] : value;
+}
+
+// --- Async base64 file handling with progress ---
+async function handleFiles(fileList) {
+  const files = Array.from(fileList);
+  const total = files.length;
+  if (total === 0) return [];
+
+  const progressSection = document.getElementById('progressSection');
+  const progressFill = document.getElementById('progressFill');
+  const progressText = document.getElementById('progressText');
+  if (progressSection) progressSection.style.display = 'block';
+
+  const results = [];
+  const CHUNK_SIZE = 5;
+
+  for (let i = 0; i < total; i += CHUNK_SIZE) {
+    const chunk = files.slice(i, i + CHUNK_SIZE);
+    const chunkResults = await Promise.all(chunk.map(file => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, data: reader.result, file });
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+    }));
+    results.push(...chunkResults);
+
+    // Update progress
+    const done = Math.min(i + CHUNK_SIZE, total);
+    if (progressFill) progressFill.style.width = ((done / total) * 100) + '%';
+    if (progressText) progressText.textContent = `写真を読み込み中... ${done}/${total}`;
+
+    // Incremental rendering
+    if (typeof renderPhotos === 'function') renderPhotos(results);
+
+    // Yield to browser
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  if (progressSection) progressSection.style.display = 'none';
+  return results;
+}
+
+// --- AI analysis result parser with error handling ---
+function parseAnalysisResult(result) {
+  if (!result || !result.text) {
+    const msg = 'AI解析結果が空でした。APIキーやモデルの設定を確認してください。';
+    log(msg);
+    const progressText = document.getElementById('progressText');
+    if (progressText) progressText.textContent = msg;
+    return [];
+  }
+  try {
+    return JSON.parse(result.text);
+  } catch (e) {
+    const msg = 'AI解析結果の読み取りに失敗しました。再試行してください。';
+    log(msg);
+    console.error('JSON parse failed. Raw text:', result.text);
+    const progressText = document.getElementById('progressText');
+    if (progressText) progressText.textContent = msg;
+    return [];
+  }
+}
+
+// --- Log helper (no-op if not defined elsewhere) ---
+if (typeof log === 'undefined') {
+  function log(msg) { console.log('[photo-ai]', msg); }
+}
+
 // --- Internal state ---
 let selectedFolder = '';
 let terminalReady = false;
