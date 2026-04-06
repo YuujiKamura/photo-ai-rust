@@ -42,3 +42,11 @@ photo-engine/Cargo.lock
 # Go build artifacts
 photo-ai-go/*.exe
 photo-ai-go/*.dll
+
+# Web server artifacts
+web/server.exe
+web/master.json
+web/.omc/
+
+# OMC state
+.omc/

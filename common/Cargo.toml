@@ -11,7 +11,7 @@ serde_json = "1"
 csv = "1"
 thiserror = "2"
 rust_xlsxwriter = { version = "0.92", optional = true }
-pdf-analysis-embed = { path = "../../pdf-analysis-embed" }
+pdf-analysis-embed = { path = "../deps/pdf-analysis-embed" }
 
 [features]
 default = ["excel", "pdf"]

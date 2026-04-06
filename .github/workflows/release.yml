@@ -1,30 +1,18 @@
-name: CI
+name: Release
 
 permissions:
-  contents: read
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  contents: write
 
 on:
   push:
-    branches: [master, main]
-    paths:
-      - "src/**"
-      - "common/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/ci.yml"
-  pull_request:
-    branches: [master, main]
-  workflow_dispatch:
+    tags:
+      - "v*"
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  release:
     runs-on: windows-latest
 
     steps:
@@ -51,12 +39,18 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-release-
 
       - name: Build release
         run: cargo build --release
 
-      - name: Run tests
-        run: cargo test
+      - name: Rename artifact
+        shell: bash
+        run: cp target/release/photo-ai-rust.exe target/release/photo-ai-rust-windows-x86_64.exe
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create ${{ github.ref_name }} target/release/photo-ai-rust-windows-x86_64.exe --title "${{ github.ref_name }}" --generate-notes

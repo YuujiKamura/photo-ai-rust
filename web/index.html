@@ -1,582 +1,1742 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>写真台帳AI - Gemini</title>
-  <script type="importmap">
-    {
-      "imports": {
-        "@google/genai": "https://esm.run/@google/genai",
-        "pdf-lib": "https://esm.run/pdf-lib",
-        "xlsx": "https://esm.run/xlsx",
-        "@pdf-lib/fontkit": "https://esm.run/@pdf-lib/fontkit"
-      }
-    }
-  </script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
-    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-    header { background: #1a73e8; color: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
-    header h1 { font-size: 1.5rem; }
-    header p { font-size: 0.9rem; opacity: 0.9; margin-top: 5px; }
-    .settings { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .settings label { display: block; margin-bottom: 5px; font-weight: 500; }
-    .settings input, .settings select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; margin-bottom: 10px; }
-    .settings input[type="password"] { font-family: monospace; }
-    .settings-row { display: flex; gap: 20px; }
-    .settings-row > div { flex: 1; }
-    .upload-area { background: white; border: 2px dashed #ddd; border-radius: 8px; padding: 40px; text-align: center; margin-bottom: 20px; cursor: pointer; transition: border-color 0.3s; }
-    .upload-area:hover { border-color: #1a73e8; }
-    .upload-area.dragover { border-color: #1a73e8; background: #e8f0fe; }
-    .upload-area input { display: none; }
-    .btn { background: #1a73e8; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; }
-    .btn:hover { background: #1557b0; }
-    .btn:disabled { background: #ccc; cursor: not-allowed; }
-    .btn-success { background: #34a853; }
-    .btn-success:hover { background: #2d8a47; }
-    .btn-secondary { background: #666; }
-    .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px; }
-    .photo-card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .photo-card img { width: 100%; height: 150px; object-fit: cover; }
-    .photo-card .info { padding: 10px; font-size: 12px; }
-    .photo-card .info .filename { font-weight: 500; margin-bottom: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .photo-card .info .field { color: #666; margin-bottom: 2px; }
-    .photo-card .info .field span { color: #333; }
-    .photo-card.done { border-left: 4px solid #34a853; }
-    .progress { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .progress-bar { height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; }
-    .progress-bar .fill { height: 100%; background: #1a73e8; transition: width 0.3s; }
-    .progress-text { margin-top: 10px; font-size: 14px; color: #666; }
-    .actions { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
-    .log { background: #263238; color: #aed581; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 12px; max-height: 150px; overflow-y: auto; margin-bottom: 20px; }
-    .log .error { color: #ef5350; }
-    .log .success { color: #66bb6a; }
-    .log .info { color: #42a5f5; }
-    .export-section { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    .export-section h3 { margin-bottom: 15px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>photo-ai</title>
+<!-- xterm removed: using chat bubble streaming instead -->
+<style>
+:root {
+  --bg: #0f0f0f;
+  --sidebar-bg: #171717;
+  --surface: #1e1e1e;
+  --border: #2e2e2e;
+  --text: #ececec;
+  --text-muted: #888;
+  --accent: #7c6fe0;
+  --accent-hover: #9589e8;
+  --green: #4ade80;
+  --yellow: #facc15;
+  --red: #f87171;
+  --input-bg: #2a2a2a;
+  --hover: #252525;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Segoe UI', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Phase: Master Selection */
+.phase-master { display: flex; flex-direction: column; height: 100vh; }
+.phase-chat { display: none; height: 100vh; }
+.phase-chat.active { display: grid; grid-template-columns: 260px 1fr; }
+.phase-master.hidden { display: none; }
+
+/* Header */
+.header {
+  padding: 16px 32px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.header .logo {
+  width: 32px; height: 32px;
+  background: var(--accent);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700;
+}
+.header h1 { font-size: 18px; font-weight: 600; }
+.header .mode-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: auto;
+}
+.header .mode-badge.local { background: #166534; color: var(--green); }
+.header .mode-badge.demo { background: #92400e33; color: var(--yellow); }
+
+/* Master Selection Screen - Left/Right split */
+.master-content {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  overflow: hidden;
+}
+.master-left {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.master-left-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  font-weight: 600;
+}
+.master-card-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+.wt-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  color: var(--text-muted);
+  transition: all 0.12s;
+  border: 1px solid transparent;
+}
+.wt-card:hover { background: var(--hover); color: var(--text); }
+.wt-card.selected {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.wt-card .wt-cb {
+  width: 16px; height: 16px;
+  border: 2px solid var(--border);
+  border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: transparent;
+  transition: all 0.12s;
+}
+.wt-card.selected .wt-cb {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.wt-card .wt-name { flex: 1; }
+.wt-card .wt-count { font-size: 11px; color: var(--text-muted); }
+.cli-shortcuts {
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--border);
+}
+.cli-shortcuts .sidebar-section-title { padding: 6px 8px 4px; }
+.cli-btn {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  margin-bottom: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.cli-btn:hover { border-color: var(--accent); color: var(--text); }
+.master-left-footer {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+}
+.master-left-footer .summary-count { font-size: 20px; font-weight: 700; color: var(--accent); }
+.master-left-footer .summary-label { font-size: 11px; color: var(--text-muted); }
+.master-left-footer .proceed-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.master-left-footer .proceed-btn:hover { background: var(--accent-hover); }
+.master-left-footer .proceed-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.master-right {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.master-right-upper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.master-right-lower {
+  height: 45%;
+  min-height: 300px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.terminal-pane {
+  flex: 1;
+  overflow: hidden;
+  background: #0f0f0f;
+}
+.terminal-pane iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+.master-right-header {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.master-right-header .spacer { flex: 1; }
+.master-right-header button {
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.master-right-header button:hover { border-color: var(--accent); color: var(--text); }
+.add-row-btn {
+  padding: 4px 10px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.add-row-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.master-right-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.master-tree-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Tree List */
+.master-tree-container {
+  /* no border/radius, fits in right panel */
+}
+.tree-node {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding-right: 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 15px;
+  transition: background 0.1s;
+}
+.tree-node:hover { background: var(--hover); }
+.tree-node .tree-toggle {
+  width: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.tree-node .tree-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-node .tree-count {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+.tree-node .tree-sp-icon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--yellow);
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+.tree-node[data-depth="0"] { font-weight: 600; }
+.tree-node[data-depth="0"] .tree-label { color: var(--text); }
+.tree-children { display: none; }
+.tree-children.open { display: block; }
+.inline-edit {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex: 1;
+}
+.ie-field {
+  background: var(--input-bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 2px 6px;
+  height: 22px;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+.ie-field.ie-sm { flex: 0.6; }
+.ie-save, .ie-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  height: 22px;
+  flex-shrink: 0;
+}
+.ie-save { border-color: var(--accent); color: var(--accent); }
+.ie-save:hover { background: var(--accent); color: #fff; }
+
+/* (summary and proceed are in .master-left-footer now) */
+
+/* Chat Phase - Sidebar */
+.sidebar {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sidebar-header .logo-sm {
+  width: 24px; height: 24px;
+  background: var(--accent);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
+.sidebar-header .title { font-size: 14px; font-weight: 600; }
+.back-btn {
+  margin-left: auto;
+  background: none; border: none;
+  color: var(--text-muted);
+  cursor: pointer; font-size: 13px;
+}
+.back-btn:hover { color: var(--text); }
+
+.sidebar-section-title {
+  padding: 12px 16px 6px;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+.sidebar-list { flex: 1; overflow-y: auto; padding: 0 8px; }
+.sidebar-item {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text-muted);
+}
+.sidebar-item.active { color: var(--green); }
+.sidebar-footer {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.dot { width: 6px; height: 6px; border-radius: 50%; }
+.dot.on { background: var(--green); }
+.dot.off { background: var(--red); }
+
+/* Main panel */
+.main { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.topbar {
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; font-size: 13px;
+}
+.topbar .spacer { flex: 1; }
+.topbar-btn {
+  padding: 5px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px; cursor: pointer;
+}
+.topbar-btn:hover { border-color: var(--accent); color: var(--text); }
+.topbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Step indicator */
+.step-indicator {
+  display: flex; align-items: center; gap: 6px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.step-dot {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  border: 2px solid var(--border);
+  color: var(--text-muted);
+  transition: all 0.2s;
+}
+.step-dot.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+.step-dot.done { border-color: var(--green); background: var(--green); color: #000; }
+.step-label { font-size: 12px; color: var(--text-muted); }
+.step-label.active { color: var(--text); font-weight: 600; }
+.step-sep { width: 20px; height: 1px; background: var(--border); }
+
+/* Step panels */
+.step-panel { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+.step-panel.active { display: flex; }
+
+/* Step 1: Folder input */
+.folder-input-area {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  padding: 24px;
+}
+.folder-input-area .folder-icon { font-size: 48px; color: var(--text-muted); }
+.folder-input-area h2 { font-size: 18px; font-weight: 600; }
+.folder-input-area p { font-size: 13px; color: var(--text-muted); max-width: 400px; text-align: center; }
+.folder-input-row {
+  display: flex; gap: 8px; width: 100%; max-width: 560px;
+}
+.folder-input-row input {
+  flex: 1; background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; color: var(--text);
+  font-size: 14px; font-family: inherit; outline: none;
+}
+.folder-input-row input:focus { border-color: var(--accent); }
+.folder-input-row input::placeholder { color: var(--text-muted); }
+.scan-btn {
+  padding: 10px 20px; background: var(--accent); border: none;
+  border-radius: 8px; color: #fff; font-size: 14px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.scan-btn:hover { background: var(--accent-hover); }
+.scan-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Step 2: Running */
+.running-area {
+  flex: 1; display: flex; flex-direction: column; padding: 24px; gap: 16px;
+  overflow: hidden;
+}
+.progress-bar-container {
+  background: var(--surface); border-radius: 6px; height: 8px; overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%; background: var(--accent); border-radius: 6px;
+  transition: width 0.3s; width: 0%;
+}
+.progress-text { font-size: 13px; color: var(--text-muted); display: flex; justify-content: space-between; }
+.log-area {
+  flex: 1; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; overflow-y: auto;
+  font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12px;
+  line-height: 1.6; color: var(--text-muted); min-height: 0;
+}
+.log-area .log-line-ok { color: var(--green); }
+.log-area .log-line-warn { color: var(--yellow); }
+.log-area .log-line-err { color: var(--red); }
+.cancel-btn-area { display: flex; justify-content: center; }
+.cancel-btn {
+  padding: 8px 24px; background: var(--surface);
+  border: 1px solid var(--red); border-radius: 8px;
+  color: var(--red); font-size: 13px; cursor: pointer;
+}
+.cancel-btn:hover { background: #7f1d1d33; }
+
+/* Step 3: Results table */
+.results-area {
+  flex: 1; display: flex; flex-direction: column; padding: 16px 24px;
+  overflow: hidden; gap: 12px;
+}
+.results-summary {
+  display: flex; gap: 16px; flex-wrap: wrap;
+}
+.results-summary .stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 16px; min-width: 120px;
+}
+.stat-card .stat-val { font-size: 20px; font-weight: 700; color: var(--accent); }
+.stat-card .stat-label { font-size: 11px; color: var(--text-muted); }
+.results-table-scroll {
+  flex: 1; overflow: auto; min-height: 0;
+}
+.results-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.results-table th {
+  position: sticky; top: 0; background: var(--sidebar-bg);
+  padding: 8px 10px; text-align: left; font-weight: 600;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+}
+.results-table td {
+  padding: 7px 10px; border-bottom: 1px solid var(--border);
+}
+.results-table tr:hover { background: var(--hover); cursor: pointer; }
+.results-table tr.unclassified { background: #92400e22; }
+.results-table tr.unclassified:hover { background: #92400e44; }
+.badge-yes { color: var(--green); font-size: 11px; }
+.badge-no { color: var(--red); font-size: 11px; }
+.results-actions {
+  display: flex; gap: 8px; align-items: center;
+}
+
+/* Step 4: Export */
+.export-area {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px; padding: 24px;
+}
+.export-area h2 { font-size: 18px; font-weight: 600; }
+.export-btns { display: flex; gap: 12px; }
+.export-btn {
+  padding: 12px 28px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 14px;
+  font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;
+}
+.export-btn:hover { border-color: var(--accent); }
+.export-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.export-btn.primary:hover { background: var(--accent-hover); }
+.export-log {
+  width: 100%; max-width: 560px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; font-family: 'Cascadia Code', monospace;
+  font-size: 12px; color: var(--text-muted); max-height: 200px;
+  overflow-y: auto; display: none;
+}
+.download-links { display: flex; flex-direction: column; gap: 6px; }
+.download-links a {
+  color: var(--accent); text-decoration: underline; font-size: 13px;
+}
+
+/* Add Row Form */
+.add-row-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.add-row-overlay.active { display: flex; }
+.add-row-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  width: 420px;
+  max-width: 90vw;
+}
+.add-row-form h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 14px;
+  color: var(--text);
+}
+.add-row-form .form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.add-row-form .form-row label {
+  width: 100px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  text-align: right;
+}
+.add-row-form .form-row input,
+.add-row-form .form-row select {
+  flex: 1;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+.add-row-form .form-row input:focus,
+.add-row-form .form-row select:focus { border-color: var(--accent); }
+.add-row-form .form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.add-row-form .form-actions button {
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.add-row-form .form-actions .cancel-btn {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+.add-row-form .form-actions .cancel-btn:hover { color: var(--text); }
+.add-row-form .form-actions .submit-btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.add-row-form .form-actions .submit-btn:hover { background: var(--accent-hover); }
+
+/* Phase 2 terminal pane */
+.phase2-terminal {
+  height: 300px;
+  min-height: 200px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+</style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>写真台帳AI - Gemini</h1>
-      <p>写真をアップロード → AI解析 → PDF/Excel写真台帳を出力</p>
-    </header>
 
-    <div class="settings">
-      <div class="settings-row">
-        <div>
-          <label for="apiKey">Gemini API Key</label>
-          <input type="password" id="apiKey" placeholder="AIzaSy..." />
-        </div>
-        <div>
-          <label for="title">写真台帳タイトル</label>
-          <input type="text" id="title" value="工事写真帳" />
-        </div>
-        <div>
-          <label for="photosPerPage">1ページあたりの写真数</label>
-          <select id="photosPerPage">
-            <option value="2">2枚</option>
-            <option value="3" selected>3枚</option>
-          </select>
-        </div>
+<!-- Phase 1: Master Selection -->
+<div class="phase-master" id="phaseMaster">
+  <div class="header">
+    <div class="logo">P</div>
+    <h1>photo-ai</h1>
+    <span class="mode-badge demo" id="modeBadge">demo</span>
+  </div>
+  <div class="master-content">
+    <div class="master-left">
+      <div class="master-left-header">工種マスタ</div>
+      <div class="master-card-list" id="masterCardList"></div>
+      <div class="cli-shortcuts">
+        <div class="sidebar-section-title">CLI</div>
+        <button class="cli-btn" data-cmd="claude">Claude</button>
+        <button class="cli-btn" data-cmd="gemini">Gemini</button>
+        <button class="cli-btn" data-cmd="ollama run gemma4:e4b">Gemma4</button>
+        <button class="cli-btn" data-cmd="cargo run --release -- --help">photo-ai help</button>
+      </div>
+      <div class="master-left-footer">
+        <div><span class="summary-count" id="summaryCount">0</span> <span class="summary-label">行選択中</span></div>
+        <div id="summaryDetail" style="font-size:11px;color:var(--text-muted);margin-top:2px;">工種を選択してください</div>
+        <button class="proceed-btn" id="proceedBtn" disabled>次へ &#8594; 写真を投入</button>
       </div>
     </div>
-
-    <div class="upload-area" id="uploadArea">
-      <p>クリックまたはドラッグ&ドロップで写真を追加</p>
-      <input type="file" id="fileInput" multiple accept="image/*" />
-    </div>
-
-    <div class="actions">
-      <button class="btn" id="analyzeBtn" disabled>AI解析開始</button>
-      <button class="btn btn-secondary" id="clearBtn">クリア</button>
-    </div>
-
-    <div class="progress" id="progressSection" style="display:none;">
-      <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
-      <div class="progress-text" id="progressText">準備中...</div>
-    </div>
-
-    <div class="log" id="log"></div>
-
-    <div class="photos" id="photosGrid"></div>
-
-    <div class="export-section" id="exportSection" style="display:none;">
-      <h3>写真台帳を出力</h3>
-      <div class="actions">
-        <button class="btn btn-success" id="exportPdfBtn">PDF出力</button>
-        <button class="btn btn-success" id="exportExcelBtn">Excel出力</button>
+    <div class="master-right">
+      <div class="master-right-upper">
+        <div class="master-right-header">
+          <span id="rightHeaderLabel">工種を左から選択</span>
+          <span class="spacer"></span>
+          <button class="add-row-btn" id="addRowBtn">+ 行を追加</button>
+          <button id="expandAllBtn">全展開</button>
+          <button id="collapseAllBtn">全折畳</button>
+        </div>
+        <div class="master-tree-scroll">
+          <div class="master-tree-container" id="masterTreeContainer"></div>
+        </div>
+        <div class="master-right-empty" id="masterRightEmpty">左の工種をクリックして展開</div>
+      </div>
+      <div class="master-right-lower">
+        <div class="terminal-pane">
+          <iframe src="/terminal.html" id="terminalFrame1"></iframe>
+        </div>
       </div>
     </div>
   </div>
+</div>
 
-  <script type="module">
-    import { GoogleGenAI } from '@google/genai';
-    import { PDFDocument, rgb } from 'pdf-lib';
-    import fontkit from '@pdf-lib/fontkit';
-    import * as XLSX from 'xlsx';
+<!-- Phase 2: CLI Execution Flow -->
+<div class="phase-chat" id="phaseChat">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-sm">P</div>
+      <span class="title">photo-ai</span>
+      <button class="back-btn" id="backBtn">&#9664; マスタ</button>
+    </div>
+    <div class="sidebar-section-title">選択中のマスタ</div>
+    <div class="sidebar-list" id="selectedMasterList"></div>
+    <div class="sidebar-section-title">解析履歴</div>
+    <div class="sidebar-list" id="historyList">
+      <div class="sidebar-item" style="font-style:italic;">まだ解析していません</div>
+    </div>
+    <div class="sidebar-footer">
+      <span class="dot" id="wsDot"></span>
+      <span id="wsStatus">checking...</span>
+    </div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <span id="topbarContext">マスタ待機中</span>
+      <span class="spacer"></span>
+      <button class="topbar-btn" id="topExportPdf" disabled>Export PDF</button>
+      <button class="topbar-btn" id="topExportExcel" disabled>Export Excel</button>
+    </div>
 
-    // Noto Sans JP フォント (Google Fonts)
-    const FONT_URL = 'https://fonts.gstatic.com/s/notosansjp/v52/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.ttf';
+    <!-- Step indicator -->
+    <div class="step-indicator">
+      <span class="step-dot active" data-step="1">1</span>
+      <span class="step-label active" data-step="1">フォルダ選択</span>
+      <span class="step-sep"></span>
+      <span class="step-dot" data-step="2">2</span>
+      <span class="step-label" data-step="2">解析実行</span>
+      <span class="step-sep"></span>
+      <span class="step-dot" data-step="3">3</span>
+      <span class="step-label" data-step="3">結果確認</span>
+      <span class="step-sep"></span>
+      <span class="step-dot" data-step="4">4</span>
+      <span class="step-label" data-step="4">エクスポート</span>
+    </div>
 
-    // Constants (same as Rust version)
-    const A4_WIDTH = 595.28;
-    const A4_HEIGHT = 841.89;
-    const MARGIN = 40;
-    const HEADER_HEIGHT = 40;
-    const GAP = 5;
-    const IMAGE_RATIO = 0.65;
-    const INFO_RATIO = 0.35;
-    const UNIFIED_FONT_SIZE = 12; // Rust版と統一
+    <!-- Step 1: Folder selection -->
+    <div class="step-panel active" id="step1">
+      <div class="folder-input-area">
+        <div class="folder-icon">&#128193;</div>
+        <h2>写真フォルダを選択</h2>
+        <p>解析したい写真が入っているフォルダのパスを入力してください。CLIが自動的にスキャン・分類を実行します。</p>
+        <div class="folder-input-row">
+          <input type="text" id="folderPathInput" placeholder="D:\photos\0211">
+          <button class="scan-btn" id="scanBtn">スキャン開始</button>
+        </div>
+      </div>
+    </div>
 
-    // エイリアス変換（Rust版 matcher/alias.rs pavement_preset と同一）
-    const PAVEMENT_ALIASES = {
-      photoCategory: {
-        '品質': '品質管理写真',
-        '品質管理': '品質管理写真',
-        '出来形': '出来形管理写真',
-        '出来形管理': '出来形管理写真',
-        '施工状況': '施工状況写真',
-        '施工中': '施工状況写真',
-        '安全': '安全管理写真',
-        '安全管理': '安全管理写真',
-        '材料': '使用材料写真',
-        '使用材料': '使用材料写真'
-      },
-      workType: {
-        '舗装': '舗装工',
-        'As': '舗装工',
-        'アスファルト': '舗装工'
-      },
-      variety: {
-        '打換え': '舗装打換え工',
-        '打換': '舗装打換え工',
-        'オーバーレイ': '舗装オーバーレイ工'
-      },
-      subphase: {
-        '表層': '表層工',
-        '基層': '基層工',
-        '上層路盤': '上層路盤工',
-        '下層路盤': '下層路盤工'
+    <!-- Step 2: Running analysis -->
+    <div class="step-panel" id="step2">
+      <div class="running-area">
+        <div>
+          <div class="progress-text">
+            <span id="progressLabel">解析準備中...</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="progressBar"></div>
+          </div>
+        </div>
+        <div class="log-area" id="logArea"></div>
+        <div class="cancel-btn-area">
+          <button class="cancel-btn" id="cancelBtn">キャンセル</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Results -->
+    <div class="step-panel" id="step3">
+      <div class="results-area">
+        <div class="results-summary" id="resultsSummary"></div>
+        <div class="results-actions">
+          <button class="topbar-btn" id="backToStep1">&#9664; 別フォルダを解析</button>
+          <span class="spacer" style="flex:1"></span>
+          <button class="topbar-btn" id="goToExport">エクスポート &#9654;</button>
+        </div>
+        <div class="results-table-scroll">
+          <table class="results-table" id="resultsTable">
+            <thead><tr>
+              <th>ファイル名</th>
+              <th>工種</th>
+              <th>種別</th>
+              <th>細別</th>
+              <th>備考</th>
+              <th>測点</th>
+              <th>黒板</th>
+            </tr></thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 4: Export -->
+    <div class="step-panel" id="step4">
+      <div class="export-area">
+        <h2>エクスポート</h2>
+        <p style="color:var(--text-muted);font-size:13px;">解析結果をPDFまたはExcelで出力します。</p>
+        <div class="export-btns">
+          <button class="export-btn primary" id="exportPdfBtn">&#128196; PDF出力</button>
+          <button class="export-btn" id="exportExcelBtn">&#128202; Excel出力</button>
+        </div>
+        <div class="export-log" id="exportLog"></div>
+        <div class="download-links" id="downloadLinks"></div>
+        <button class="topbar-btn" id="backToResults" style="margin-top:12px;">&#9664; 結果に戻る</button>
+      </div>
+    </div>
+
+    <!-- Phase 2 Terminal -->
+    <div class="phase2-terminal">
+      <div class="terminal-pane">
+        <iframe src="/terminal.html" id="terminalFrame2"></iframe>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Add Row Form Overlay -->
+<div class="add-row-overlay" id="addRowOverlay">
+  <div class="add-row-form">
+    <h3>マスタ行を追加</h3>
+    <div class="form-row">
+      <label>工種</label>
+      <select id="formWorkType"></select>
+    </div>
+    <div class="form-row">
+      <label>写真区分</label>
+      <input id="formPhotoType" placeholder="施工状況写真">
+    </div>
+    <div class="form-row">
+      <label>種別</label>
+      <input id="formVariety" placeholder="舗装打換え工">
+    </div>
+    <div class="form-row">
+      <label>細別</label>
+      <input id="formSubphase" placeholder="舗装版破砕">
+    </div>
+    <div class="form-row">
+      <label>備考</label>
+      <input id="formRemarks" placeholder="ダンプ積込状況">
+    </div>
+    <div class="form-row">
+      <label>検索パターン</label>
+      <input id="formSearchPatterns" placeholder="ダンプ|積込">
+    </div>
+    <div class="form-actions">
+      <button class="cancel-btn" id="formCancelBtn">キャンセル</button>
+      <button class="submit-btn" id="formSubmitBtn">追加</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let masterData = {};
+
+// --- Tree data model ---
+// Each leaf row gets a unique id. Tree nodes track selection via leaf sets.
+let allLeaves = [];      // flat array of {id, row, workTypeName}
+let selectedLeafIds = new Set();
+let treeRoot = null;     // hierarchical structure for rendering
+
+let selectedWorkTypes = new Set();
+
+async function loadMaster() {
+  try {
+    const res = await fetch('/api/master');
+    masterData = await res.json();
+    buildTreeModel();
+    renderCardList();
+  } catch(e) {
+    console.error('Failed to load master.json:', e);
+  }
+}
+
+function renderCardList() {
+  const list = document.getElementById('masterCardList');
+  list.innerHTML = '';
+  for (const node of treeRoot) {
+    const card = document.createElement('div');
+    card.className = 'wt-card';
+    card.innerHTML = `<span class="wt-cb">\u2713</span><span class="wt-name">${node.label}</span><span class="wt-count">${node.leafIds.length}</span>`;
+    card.addEventListener('click', () => {
+      if (selectedWorkTypes.has(node.label)) {
+        selectedWorkTypes.delete(node.label);
+        card.classList.remove('selected');
+        for (const id of node.leafIds) selectedLeafIds.delete(id);
+      } else {
+        selectedWorkTypes.add(node.label);
+        card.classList.add('selected');
+        for (const id of node.leafIds) selectedLeafIds.add(id);
       }
-    };
+      renderRightPanel();
+      refreshAllCheckboxes();
+      updateSummary();
+    });
+    card._node = node;
+    list.appendChild(card);
+  }
+}
 
-    function applyAlias(value, aliases) {
-      if (!value) return value;
-      if (aliases[value]) return aliases[value];
-      // 部分一致（最長マッチ）
-      let bestMatch = null;
-      for (const [pattern, replacement] of Object.entries(aliases)) {
-        if (value.includes(pattern)) {
-          if (!bestMatch || pattern.length > bestMatch[0].length) {
-            bestMatch = [pattern, replacement];
+function renderRightPanel() {
+  const container = document.getElementById('masterTreeContainer');
+  const empty = document.getElementById('masterRightEmpty');
+  container.innerHTML = '';
+  if (selectedWorkTypes.size === 0) {
+    empty.style.display = 'flex';
+    document.getElementById('rightHeaderLabel').textContent = '工種を左から選択';
+    return;
+  }
+  empty.style.display = 'none';
+  document.getElementById('rightHeaderLabel').textContent =
+    [...selectedWorkTypes].join(' + ');
+  for (const node of treeRoot) {
+    if (!selectedWorkTypes.has(node.label)) continue;
+    renderNodeExpanded(container, node);
+  }
+}
+
+function buildTreeModel() {
+  allLeaves = [];
+  let leafId = 0;
+  // treeRoot is an array of workType-level nodes
+  treeRoot = [];
+
+  for (const [wtName, rows] of Object.entries(masterData)) {
+    const wtNode = { label: wtName, children: [], leafIds: [], depth: 0 };
+
+    // Group by photoType
+    const byPhotoType = new Map();
+    for (const r of rows) {
+      const pt = r.photoType || '';
+      if (!byPhotoType.has(pt)) byPhotoType.set(pt, []);
+      byPhotoType.get(pt).push(r);
+    }
+
+    for (const [pt, ptRows] of byPhotoType) {
+      // Skip empty photoType level? No, always show it.
+      const ptNode = { label: pt || '(未分類)', children: [], leafIds: [], depth: 1 };
+
+      // Group by variety
+      const byVariety = new Map();
+      for (const r of ptRows) {
+        const v = r.variety || '';
+        if (!byVariety.has(v)) byVariety.set(v, []);
+        byVariety.get(v).push(r);
+      }
+
+      for (const [v, vRows] of byVariety) {
+        // Group by subphase
+        const bySub = new Map();
+        for (const r of vRows) {
+          const s = r.subphase || '';
+          if (!bySub.has(s)) bySub.set(s, []);
+          bySub.get(s).push(r);
+        }
+
+        // Determine if variety level should be skipped (empty)
+        const skipVariety = !v;
+        const varietyNode = skipVariety ? null : { label: v, children: [], leafIds: [], depth: 2 };
+        const parentForSub = skipVariety ? ptNode : varietyNode;
+
+        for (const [s, sRows] of bySub) {
+          const skipSub = !s;
+          const subNode = skipSub ? null : {
+            label: s, children: [], leafIds: [],
+            depth: skipVariety ? 2 : 3
+          };
+          const parentForLeaf = skipSub ? parentForSub : subNode;
+
+          for (const r of sRows) {
+            const lid = leafId++;
+            const leafLabel = r.remarks || '(備考なし)';
+            const leaf = {
+              label: leafLabel,
+              leafId: lid,
+              leafIds: [lid],
+              children: [],
+              hasPattern: !!(r.searchPatterns),
+              depth: parentForLeaf.depth + 1
+            };
+            allLeaves.push({ id: lid, row: r, workTypeName: wtName });
+            parentForLeaf.children.push(leaf);
+            parentForLeaf.leafIds.push(lid);
+          }
+
+          if (subNode) {
+            parentForSub.children.push(subNode);
+            parentForSub.leafIds.push(...subNode.leafIds);
           }
         }
-      }
-      return bestMatch ? bestMatch[1] : value;
-    }
 
-    function applyAliases(result) {
-      return {
-        ...result,
-        photoCategory: applyAlias(result.photoCategory, PAVEMENT_ALIASES.photoCategory),
-        workType: applyAlias(result.workType, PAVEMENT_ALIASES.workType),
-        variety: applyAlias(result.variety, PAVEMENT_ALIASES.variety),
-        subphase: applyAlias(result.subphase || result.detail, PAVEMENT_ALIASES.subphase)
-      };
-    }
-
-    // State
-    let photos = [];
-    let genAI = null;
-
-    // Elements
-    const apiKeyInput = document.getElementById('apiKey');
-    const titleInput = document.getElementById('title');
-    const photosPerPageSelect = document.getElementById('photosPerPage');
-    const uploadArea = document.getElementById('uploadArea');
-    const fileInput = document.getElementById('fileInput');
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const photosGrid = document.getElementById('photosGrid');
-    const progressSection = document.getElementById('progressSection');
-    const progressFill = document.getElementById('progressFill');
-    const progressText = document.getElementById('progressText');
-    const logEl = document.getElementById('log');
-    const exportSection = document.getElementById('exportSection');
-    const exportPdfBtn = document.getElementById('exportPdfBtn');
-    const exportExcelBtn = document.getElementById('exportExcelBtn');
-
-    apiKeyInput.addEventListener('change', () => {
-      updateButtons();
-    });
-
-    function log(msg, type = '') {
-      const line = document.createElement('div');
-      line.className = type;
-      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-      logEl.appendChild(line);
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    // File handling
-    uploadArea.addEventListener('click', () => fileInput.click());
-    uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
-    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
-    uploadArea.addEventListener('drop', (e) => {
-      e.preventDefault();
-      uploadArea.classList.remove('dragover');
-      handleFiles(e.dataTransfer.files);
-    });
-    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
-
-    async function handleFiles(files) {
-      for (const file of files) {
-        if (!file.type.startsWith('image/')) continue;
-        const base64 = await fileToBase64(file);
-        photos.push({
-          file,
-          fileName: file.name,
-          base64,
-          mimeType: file.type,
-          result: null
-        });
-      }
-      renderPhotos();
-      updateButtons();
-      log(`${files.length}枚の写真を追加`, 'info');
-    }
-
-    function fileToBase64(file) {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(',')[1]);
-        reader.readAsDataURL(file);
-      });
-    }
-
-    function renderPhotos() {
-      // Clear existing content
-      photosGrid.textContent = '';
-      const fragment = document.createDocumentFragment();
-
-      photos.forEach((p, i) => {
-        const photoCard = document.createElement('div');
-        photoCard.className = 'photo-card' + (p.result ? ' done' : '');
-        photoCard.id = `photo-${i}`;
-
-        const img = document.createElement('img');
-        // Validate mimeType to prevent XSS
-        const safeMimeType = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(p.mimeType)
-          ? p.mimeType : 'image/jpeg';
-        img.src = `data:${safeMimeType};base64,${p.base64}`;
-        img.alt = p.fileName;
-        photoCard.appendChild(img);
-
-        const infoDiv = document.createElement('div');
-        infoDiv.className = 'info';
-        photoCard.appendChild(infoDiv);
-
-        const filenameDiv = document.createElement('div');
-        filenameDiv.className = 'filename';
-        filenameDiv.textContent = p.fileName;
-        infoDiv.appendChild(filenameDiv);
-
-        if (p.result) {
-          const fields = [
-            { label: '区分', value: p.result.photoCategory },
-            { label: '工種', value: p.result.workType },
-            { label: '種別', value: p.result.variety },
-            { label: '測点', value: p.result.station }
-          ];
-
-          for (const field of fields) {
-            const fieldDiv = document.createElement('div');
-            fieldDiv.className = 'field';
-            const span = document.createElement('span');
-            span.textContent = field.value || '-';
-            fieldDiv.append(`${field.label}: `, span);
-            infoDiv.appendChild(fieldDiv);
-          }
+        if (varietyNode) {
+          ptNode.children.push(varietyNode);
+          ptNode.leafIds.push(...varietyNode.leafIds);
         } else {
-          const fieldPending = document.createElement('div');
-          fieldPending.className = 'field';
-          fieldPending.style.color = '#999';
-          fieldPending.textContent = '未解析';
-          infoDiv.appendChild(fieldPending);
+          // leafIds already pushed into ptNode via parentForSub
         }
+      }
 
-        fragment.appendChild(photoCard);
+      wtNode.children.push(ptNode);
+      wtNode.leafIds.push(...ptNode.leafIds);
+    }
+
+    treeRoot.push(wtNode);
+  }
+}
+
+function getCheckState(node) {
+  const total = node.leafIds.length;
+  if (total === 0) return 'unchecked';
+  const checked = node.leafIds.filter(id => selectedLeafIds.has(id)).length;
+  if (checked === 0) return 'unchecked';
+  if (checked === total) return 'checked';
+  return 'indeterminate';
+}
+
+function renderNodeExpanded(parent, node) {
+  const hasChildren = node.children.length > 0;
+  const isLeaf = node.leafId !== undefined;
+
+  const row = document.createElement('div');
+  row.className = 'tree-node';
+  row.setAttribute('data-depth', node.depth);
+  const indent = 8 + node.depth * 20;
+  row.style.paddingLeft = indent + 'px';
+
+  // Toggle arrow
+  const toggle = document.createElement('span');
+  toggle.className = 'tree-toggle';
+  if (hasChildren) {
+    toggle.textContent = '\u25BC'; // expanded by default
+  }
+  row.appendChild(toggle);
+
+  // Label
+  const label = document.createElement('span');
+  label.className = 'tree-label';
+  label.textContent = node.label;
+  row.appendChild(label);
+
+  // Leaf count
+  const count = document.createElement('span');
+  count.className = 'tree-count';
+  count.textContent = node.leafIds.length;
+  row.appendChild(count);
+
+  // Search pattern icon (leaf only)
+  if (isLeaf && node.hasPattern) {
+    const sp = document.createElement('span');
+    sp.className = 'tree-sp-icon';
+    sp.title = '検索パターンあり';
+    row.appendChild(sp);
+  }
+
+  parent.appendChild(row);
+
+  // Children container
+  let childrenDiv = null;
+  if (hasChildren) {
+    childrenDiv = document.createElement('div');
+    childrenDiv.className = 'tree-children open';
+    parent.appendChild(childrenDiv);
+    for (const child of node.children) {
+      renderNodeExpanded(childrenDiv, child);
+    }
+  }
+
+  // Toggle click
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!childrenDiv) return;
+    const isOpen = childrenDiv.classList.contains('open');
+    childrenDiv.classList.toggle('open');
+    toggle.textContent = isOpen ? '\u25B6' : '\u25BC';
+  });
+
+  // Row click = toggle fold (same as arrow)
+  row.addEventListener('click', (e) => {
+    if (e.target === toggle) return;
+    if (!childrenDiv) return;
+    const isOpen = childrenDiv.classList.contains('open');
+    childrenDiv.classList.toggle('open');
+    toggle.textContent = isOpen ? '\u25B6' : '\u25BC';
+  });
+
+  // Double-click on leaf = inline edit
+  if (isLeaf) {
+    row.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      if (row.querySelector('.inline-edit')) return; // already editing
+      const leaf = allLeaves[node.leafId];
+      const r = leaf.row;
+      label.style.display = 'none';
+
+      const form = document.createElement('div');
+      form.className = 'inline-edit';
+      form.innerHTML = `
+        <input class="ie-field" data-key="remarks" value="${(r.remarks||'').replace(/"/g,'&quot;')}" placeholder="備考">
+        <input class="ie-field ie-sm" data-key="subphase" value="${(r.subphase||'').replace(/"/g,'&quot;')}" placeholder="細別">
+        <input class="ie-field ie-sm" data-key="searchPatterns" value="${(r.searchPatterns||'').replace(/"/g,'&quot;')}" placeholder="検索パターン">
+        <button class="ie-save">適用</button>
+        <button class="ie-cancel">✕</button>
+      `;
+      row.insertBefore(form, count);
+
+      const cancel = () => { form.remove(); label.style.display = ''; };
+      form.querySelector('.ie-cancel').addEventListener('click', (ev) => { ev.stopPropagation(); cancel(); });
+
+      form.querySelector('.ie-save').addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const fields = form.querySelectorAll('.ie-field');
+        for (const f of fields) r[f.dataset.key] = f.value;
+        // Find row index in masterData
+        const wtRows = masterData[leaf.workTypeName];
+        const rowIdx = wtRows.indexOf(r);
+        // Save to server
+        try {
+          const resp = await fetch('/api/master/update', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ workTypeName: leaf.workTypeName, rowIndex: rowIdx, row: r })
+          });
+          if (!resp.ok) throw new Error(await resp.text());
+        } catch(err) {
+          console.error('マスタ保存エラー:', err.message);
+        }
+        // Update UI
+        label.textContent = r.remarks || '(備考なし)';
+        cancel();
       });
 
-      photosGrid.appendChild(fragment);
-    }
-
-    function updateButtons() {
-      analyzeBtn.disabled = photos.length === 0 || !apiKeyInput.value;
-      const hasResults = photos.some(p => p.result);
-      exportSection.style.display = hasResults ? 'block' : 'none';
-    }
-
-    clearBtn.addEventListener('click', () => {
-      photos = [];
-      renderPhotos();
-      updateButtons();
-      log('クリアしました', 'info');
+      // Focus first input
+      form.querySelector('input').focus();
+      // Enter to save
+      form.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); form.querySelector('.ie-save').click(); }
+        if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+      });
     });
+  }
+}
 
-    // Analysis
-    analyzeBtn.addEventListener('click', async () => {
-      if (!apiKeyInput.value) {
-        log('APIキーを入力してください', 'error');
+function updateCbVisual(cb, node) {
+  const state = getCheckState(node);
+  cb.className = 'tree-cb';
+  if (state === 'checked') {
+    cb.classList.add('checked');
+    cb.textContent = '\u2713';
+  } else if (state === 'indeterminate') {
+    cb.classList.add('indeterminate');
+    cb.textContent = '\u2212';
+  } else {
+    cb.textContent = '\u2713';
+  }
+}
+
+function refreshAllCheckboxes() {
+  // Update card list checkboxes
+  const cards = document.querySelectorAll('.wt-card');
+  for (const card of cards) {
+    if (!card._node) continue;
+    const state = getCheckState(card._node);
+    if (state === 'checked') {
+      card.classList.add('selected');
+      if (!selectedWorkTypes.has(card._node.label)) selectedWorkTypes.add(card._node.label);
+    } else if (state === 'unchecked') {
+      card.classList.remove('selected');
+      selectedWorkTypes.delete(card._node.label);
+    }
+  }
+}
+
+function updateSummary() {
+  const total = selectedLeafIds.size;
+  document.getElementById('summaryCount').textContent = total;
+  if (total === 0) {
+    document.getElementById('summaryDetail').textContent = '工種を選択してください';
+    document.getElementById('proceedBtn').disabled = true;
+  } else {
+    // Collect work type names
+    const wtNames = new Set();
+    for (const id of selectedLeafIds) {
+      wtNames.add(allLeaves[id].workTypeName);
+    }
+    document.getElementById('summaryDetail').textContent =
+      [...wtNames].join(' + ') + ' で解析します';
+    document.getElementById('proceedBtn').disabled = false;
+  }
+}
+
+function getSelectedRows() {
+  return [...selectedLeafIds].map(id => allLeaves[id].row);
+}
+
+// Select all / Deselect all
+document.getElementById('expandAllBtn').addEventListener('click', () => {
+  document.querySelectorAll('.tree-children').forEach(el => el.classList.add('open'));
+  document.querySelectorAll('.tree-toggle').forEach(el => { if (el.textContent === '\u25B6') el.textContent = '\u25BC'; });
+});
+document.getElementById('collapseAllBtn').addEventListener('click', () => {
+  document.querySelectorAll('.tree-children').forEach(el => el.classList.remove('open'));
+  document.querySelectorAll('.tree-toggle').forEach(el => { if (el.textContent === '\u25BC') el.textContent = '\u25B6'; });
+});
+
+// --- Phase 2: Step-based CLI execution flow ---
+let currentStep = 1;
+let analysisResultData = null;
+let lastResultJsonPath = '';
+let lastFolderPath = '';
+
+function setStep(n) {
+  currentStep = n;
+  for (let i = 1; i <= 4; i++) {
+    const panel = document.getElementById('step' + i);
+    const dot = document.querySelector(`.step-dot[data-step="${i}"]`);
+    const label = document.querySelector(`.step-label[data-step="${i}"]`);
+    panel.classList.toggle('active', i === n);
+    dot.classList.remove('active', 'done');
+    label.classList.remove('active');
+    if (i < n) dot.classList.add('done');
+    else if (i === n) { dot.classList.add('active'); label.classList.add('active'); }
+  }
+  // Enable export buttons in topbar only when results are available
+  const hasResults = analysisResultData && analysisResultData.length > 0;
+  document.getElementById('topExportPdf').disabled = !hasResults;
+  document.getElementById('topExportExcel').disabled = !hasResults;
+}
+
+function buildMasterArgs() {
+  // Build --master arguments from selected work types
+  const args = [];
+  for (const wtName of selectedWorkTypes) {
+    args.push('--master master/by_work_type/' + wtName + '.csv');
+  }
+  return args.join(' ');
+}
+
+document.getElementById('proceedBtn').addEventListener('click', () => {
+  document.getElementById('phaseMaster').classList.add('hidden');
+  document.getElementById('phaseChat').classList.add('active');
+  const list = document.getElementById('selectedMasterList');
+  list.innerHTML = '';
+
+  const byWt = new Map();
+  for (const id of selectedLeafIds) {
+    const wt = allLeaves[id].workTypeName;
+    if (!byWt.has(wt)) byWt.set(wt, 0);
+    byWt.set(wt, byWt.get(wt) + 1);
+  }
+  for (const [wt, cnt] of byWt) {
+    const d = document.createElement('div');
+    d.className = 'sidebar-item active';
+    d.innerHTML = `\u2611 ${wt} (${cnt})`;
+    list.appendChild(d);
+  }
+
+  const total = selectedLeafIds.size;
+  const wtNames = [...byWt.keys()].join(' + ');
+  document.getElementById('topbarContext').textContent = wtNames + ` (${total}行)`;
+
+  setStep(1);
+});
+
+document.getElementById('backBtn').addEventListener('click', () => {
+  document.getElementById('phaseChat').classList.remove('active');
+  document.getElementById('phaseMaster').classList.remove('hidden');
+});
+
+// Step 1: Scan button
+document.getElementById('scanBtn').addEventListener('click', () => {
+  const folder = document.getElementById('folderPathInput').value.trim();
+  if (!folder) return;
+  lastFolderPath = folder;
+  startAnalysis(folder);
+});
+document.getElementById('folderPathInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('scanBtn').click(); }
+});
+
+function startAnalysis(folder) {
+  if (!wsConnected) {
+    alert('WebSocket未接続。サーバーが起動しているか確認してください。');
+    return;
+  }
+
+  setStep(2);
+  const logArea = document.getElementById('logArea');
+  logArea.innerHTML = '';
+  document.getElementById('progressBar').style.width = '0%';
+  document.getElementById('progressPercent').textContent = '0%';
+  document.getElementById('progressLabel').textContent = '解析準備中...';
+
+  // Build the CLI command
+  const masterArgs = buildMasterArgs();
+  const resultPath = folder.replace(/\\/g, '/') + '/result.json';
+  lastResultJsonPath = resultPath;
+  const cmd = `photo-ai-rust analyze "${folder}" ${masterArgs} --output "${resultPath}"`;
+
+  appendLog('$ ' + cmd, 'ok');
+
+  // Send command via WebSocket with custom handler for progress parsing
+  const origHandler = ws.onmessage;
+  let fullOutput = '';
+
+  ws.onmessage = (e) => {
+    const text = e.data;
+
+    if (text.includes('[exit code:')) {
+      // Command finished
+      const codeMatch = text.match(/\[exit code:\s*(\d+)\]/);
+      const exitCode = codeMatch ? parseInt(codeMatch[1]) : -1;
+      ws.onmessage = origHandler;
+
+      if (exitCode === 0) {
+        appendLog('解析完了 (exit code: 0)', 'ok');
+        document.getElementById('progressBar').style.width = '100%';
+        document.getElementById('progressPercent').textContent = '100%';
+        document.getElementById('progressLabel').textContent = '完了';
+        // Load results
+        loadResults(resultPath);
+      } else {
+        appendLog('解析失敗 (exit code: ' + exitCode + ')', 'err');
+        document.getElementById('progressLabel').textContent = '失敗';
+      }
+      return;
+    }
+
+    fullOutput += text;
+    // Parse progress from CLI output: [n/m] pattern
+    const progressMatch = text.match(/\[(\d+)\/(\d+)\]/);
+    if (progressMatch) {
+      const current = parseInt(progressMatch[1]);
+      const total = parseInt(progressMatch[2]);
+      const pct = Math.round((current / total) * 100);
+      document.getElementById('progressBar').style.width = pct + '%';
+      document.getElementById('progressPercent').textContent = pct + '%';
+      document.getElementById('progressLabel').textContent = `解析中... ${current}/${total}`;
+    }
+
+    // Append to log
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let cls = '';
+      if (trimmed.includes('error') || trimmed.includes('Error') || trimmed.includes('failed')) cls = 'err';
+      else if (trimmed.includes('warn') || trimmed.includes('Warning')) cls = 'warn';
+      else if (trimmed.match(/\[\d+\/\d+\]/) || trimmed.includes('OK') || trimmed.includes('done')) cls = 'ok';
+      appendLog(trimmed, cls);
+    }
+  };
+
+  ws.send(cmd);
+}
+
+function appendLog(text, cls) {
+  const logArea = document.getElementById('logArea');
+  const div = document.createElement('div');
+  if (cls) div.className = 'log-line-' + cls;
+  div.textContent = text;
+  logArea.appendChild(div);
+  logArea.scrollTop = logArea.scrollHeight;
+}
+
+// Cancel button
+document.getElementById('cancelBtn').addEventListener('click', () => {
+  // Send Ctrl+C equivalent - kill the running process
+  if (ws && wsConnected) {
+    // There's no clean way to cancel via this WebSocket protocol;
+    // we send a termination signal by closing and reconnecting
+    appendLog('キャンセル要求を送信中...', 'warn');
+    ws.close();
+    setTimeout(() => {
+      connectWs();
+      setStep(1);
+    }, 500);
+  }
+});
+
+// Load results from API
+async function loadResults(resultPath) {
+  try {
+    // Try to fetch result.json via the Go server
+    // The server serves static files from webDir, but result.json is in the photo folder.
+    // Use WebSocket to cat the file and parse the JSON.
+    const cmd = `type "${resultPath.replace(/\//g, '\\')}"`;
+    let jsonText = '';
+
+    const origHandler = ws.onmessage;
+    ws.onmessage = (e) => {
+      const text = e.data;
+      if (text.includes('[exit code:')) {
+        ws.onmessage = origHandler;
+        try {
+          // Clean up any trailing exit code text
+          const cleaned = jsonText.trim();
+          analysisResultData = JSON.parse(cleaned);
+          renderResults();
+          setStep(3);
+          addHistoryEntry(lastFolderPath, analysisResultData.length);
+        } catch (parseErr) {
+          appendLog('結果JSONの解析に失敗: ' + parseErr.message, 'err');
+          // Still move to step 3 with empty results
+          analysisResultData = [];
+          renderResults();
+          setStep(3);
+        }
         return;
       }
-      try {
-        genAI = new GoogleGenAI({ apiKey: apiKeyInput.value });
-        await analyzePhotos();
-      } catch (e) {
-        log(`エラー: ${e.message}`, 'error');
+      jsonText += text;
+    };
+    ws.send(cmd);
+  } catch (err) {
+    appendLog('結果の読み込みに失敗: ' + err.message, 'err');
+  }
+}
+
+function addHistoryEntry(folder, count) {
+  const list = document.getElementById('historyList');
+  // Remove placeholder
+  const placeholder = list.querySelector('.sidebar-item[style]');
+  if (placeholder) placeholder.remove();
+
+  const d = document.createElement('div');
+  d.className = 'sidebar-item';
+  const name = folder.split(/[\\/]/).pop() || folder;
+  const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  d.innerHTML = `&#128247; ${name} (${count}枚) <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${time}</span>`;
+  d.addEventListener('click', () => {
+    // Re-show these results
+    renderResults();
+    setStep(3);
+  });
+  list.prepend(d);
+}
+
+function renderResults() {
+  const data = analysisResultData || [];
+  const body = document.getElementById('resultsBody');
+  body.innerHTML = '';
+
+  let totalPhotos = data.length;
+  let classified = 0;
+  let unclassified = 0;
+  let withBoard = 0;
+
+  for (const item of data) {
+    const fileName = item.file_name || item.fileName || '';
+    const workType = item.work_type || item.workType || '';
+    const variety = item.variety || '';
+    const subphase = item.subphase || '';
+    const remarks = item.remarks || '';
+    const station = item.station || item.measurement_point || '';
+    const hasBoard = item.has_blackboard ?? item.hasBlackboard ?? null;
+
+    const isUnclassified = !workType;
+    if (isUnclassified) unclassified++; else classified++;
+    if (hasBoard === true || hasBoard === 'true') withBoard++;
+
+    const tr = document.createElement('tr');
+    if (isUnclassified) tr.className = 'unclassified';
+    tr.innerHTML = `
+      <td>${escHtml(fileName)}</td>
+      <td>${escHtml(workType) || '<span style="color:var(--yellow)">未分類</span>'}</td>
+      <td>${escHtml(variety)}</td>
+      <td>${escHtml(subphase)}</td>
+      <td>${escHtml(remarks)}</td>
+      <td>${escHtml(station)}</td>
+      <td>${hasBoard === true || hasBoard === 'true'
+        ? '<span class="badge-yes">&#9632; あり</span>'
+        : '<span class="badge-no">&#9633; なし</span>'}</td>`;
+    body.appendChild(tr);
+  }
+
+  // Summary cards
+  const summary = document.getElementById('resultsSummary');
+  summary.innerHTML = `
+    <div class="stat-card"><div class="stat-val">${totalPhotos}</div><div class="stat-label">写真総数</div></div>
+    <div class="stat-card"><div class="stat-val">${classified}</div><div class="stat-label">分類済み</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:${unclassified > 0 ? 'var(--yellow)' : 'var(--green)'}">${unclassified}</div><div class="stat-label">未分類</div></div>
+    <div class="stat-card"><div class="stat-val">${withBoard}</div><div class="stat-label">黒板あり</div></div>`;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Step 3 navigation
+document.getElementById('backToStep1').addEventListener('click', () => setStep(1));
+document.getElementById('goToExport').addEventListener('click', () => setStep(4));
+
+// Step 4: Export
+document.getElementById('exportPdfBtn').addEventListener('click', () => runExport('pdf'));
+document.getElementById('exportExcelBtn').addEventListener('click', () => runExport('excel'));
+document.getElementById('backToResults').addEventListener('click', () => setStep(3));
+
+// Topbar export buttons
+document.getElementById('topExportPdf').addEventListener('click', () => { setStep(4); runExport('pdf'); });
+document.getElementById('topExportExcel').addEventListener('click', () => { setStep(4); runExport('excel'); });
+
+function runExport(format) {
+  if (!lastResultJsonPath) return;
+  if (!wsConnected) { alert('WebSocket未接続'); return; }
+
+  const exportLog = document.getElementById('exportLog');
+  exportLog.style.display = 'block';
+  exportLog.innerHTML = '';
+  document.getElementById('downloadLinks').innerHTML = '';
+
+  const ext = format === 'pdf' ? '.pdf' : '.xlsx';
+  const outputPath = lastResultJsonPath.replace(/\.json$/, ext);
+  const cmd = `photo-ai-rust export "${lastResultJsonPath}" --format ${format} --output "${outputPath}"`;
+
+  const logDiv = (text, cls) => {
+    const d = document.createElement('div');
+    if (cls) d.className = 'log-line-' + cls;
+    d.textContent = text;
+    exportLog.appendChild(d);
+    exportLog.scrollTop = exportLog.scrollHeight;
+  };
+
+  logDiv('$ ' + cmd, 'ok');
+
+  const origHandler = ws.onmessage;
+  ws.onmessage = (e) => {
+    const text = e.data;
+    if (text.includes('[exit code:')) {
+      const codeMatch = text.match(/\[exit code:\s*(\d+)\]/);
+      const exitCode = codeMatch ? parseInt(codeMatch[1]) : -1;
+      ws.onmessage = origHandler;
+
+      if (exitCode === 0) {
+        logDiv('エクスポート完了', 'ok');
+        const links = document.getElementById('downloadLinks');
+        const a = document.createElement('a');
+        a.href = '#';
+        a.textContent = outputPath;
+        a.title = 'ファイルパス: ' + outputPath;
+        a.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          // Open the folder in explorer
+          if (wsConnected) ws.send('explorer /select,"' + outputPath.replace(/\//g, '\\') + '"');
+        });
+        links.appendChild(a);
+      } else {
+        logDiv('エクスポート失敗 (exit code: ' + exitCode + ')', 'err');
       }
-    });
-
-    async function analyzePhotos() {
-      const batchSize = 5;
-      const batches = [];
-      for (let i = 0; i < photos.length; i += batchSize) {
-        batches.push(photos.slice(i, i + batchSize));
-      }
-
-      progressSection.style.display = 'block';
-
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        const progress = ((i + 1) / batches.length) * 100;
-        progressFill.style.width = `${progress}%`;
-        progressText.textContent = `バッチ ${i + 1}/${batches.length} (${batch.length}枚) 処理中...`;
-
-        log(`バッチ ${i + 1} 解析中...`, 'info');
-
-        try {
-          const batchResults = await analyzeBatch(batch);
-          for (const result of batchResults) {
-            const photo = photos.find(p => p.fileName === result.fileName);
-            if (photo) photo.result = applyAliases(result); // エイリアス変換適用
-          }
-          renderPhotos();
-          log(`バッチ ${i + 1} 完了`, 'success');
-        } catch (e) {
-          log(`バッチ ${i + 1} エラー: ${e.message}`, 'error');
-        }
-      }
-
-      progressText.textContent = `完了: ${photos.filter(p => p.result).length}枚`;
-      updateButtons();
-      log('全解析完了', 'success');
+      return;
     }
+    const lines = text.split('\n');
+    for (const line of lines) {
+      if (line.trim()) logDiv(line.trim(), '');
+    }
+  };
 
-    async function analyzeBatch(batch) {
-      const inputs = batch.map(p => ({
-        inlineData: { data: p.base64, mimeType: p.mimeType }
-      }));
+  ws.send(cmd);
+}
 
-      const systemPrompt = `あなたは工事写真の解析AIです。各写真を解析して以下の情報を抽出してください：
-- photoCategory: 写真区分（施工状況, 品質管理, 出来形管理, 材料検収, 安全管理, 使用材料 など）
-- workType: 工種（舗装工, 区画線工 など）
-- variety: 種別（アスファルト舗装, 溶融式区画線 など）
-- subphase: 作業段階
-- station: 測点（NO.10+5.0 など）
-- remarks: 備考
-- description: 写真の説明
-- reasoning: 判定根拠
+// --- WebSocket for CLI execution ---
+let ws = null;
+let wsConnected = false;
 
-入力順序と同じ順序でJSON配列を返してください。`;
+function updateWsStatus(state) {
+  const dot = document.getElementById('wsDot');
+  const label = document.getElementById('wsStatus');
+  if (state === 'connected') {
+    if (dot) { dot.className = 'dot on'; }
+    if (label) label.textContent = 'WS connected';
+  } else if (state === 'disconnected') {
+    if (dot) { dot.className = 'dot off'; }
+    if (label) label.textContent = 'WS disconnected';
+  } else {
+    if (dot) { dot.className = 'dot off'; }
+    if (label) label.textContent = 'WS error';
+  }
+}
 
-      const prompt = `${batch.length}枚の写真を解析してください。
-各写真について fileName, photoCategory, workType, variety, subphase, station, remarks, description, reasoning を含むJSONオブジェクトの配列を返してください。
-入力順序と同じ順序で出力してください。
+function connectWs() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  const wsUrl = 'ws://' + window.location.hostname + ':9998/ws/terminal';
+  ws = new WebSocket(wsUrl);
+  ws.onopen = () => {
+    wsConnected = true;
+    updateWsStatus('connected');
+  };
+  ws.onmessage = (e) => {
+    // Default handler - specific callers override this
+  };
+  ws.onclose = () => {
+    wsConnected = false;
+    updateWsStatus('disconnected');
+    setTimeout(connectWs, 3000);
+  };
+  ws.onerror = () => {
+    wsConnected = false;
+    updateWsStatus('error');
+  };
+}
 
-ファイル名: ${batch.map(p => p.fileName).join(', ')}`;
 
-      const result = await genAI.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: [{ role: 'user', parts: [...inputs, { text: prompt }] }],
-        config: {
-          systemInstruction: systemPrompt,
-          responseMimeType: 'application/json',
-          temperature: 0.1
-        }
-      });
+// --- Master operation helpers ---
 
-      const text = result.text || '[]';
-      try {
-        const parsed = JSON.parse(text);
-        return Array.isArray(parsed) ? parsed : parsed.results || [];
-      } catch {
-        log('JSONパースエラー', 'error');
-        return [];
+function applyMasterOperation(op) {
+  const wt = op.workType;
+  if (!wt) return null;
+
+  if (op.action === 'add') {
+    if (!masterData[wt]) masterData[wt] = [];
+    const newRow = {
+      division: '',
+      photoType: op.photoType || '',
+      workType: wt,
+      variety: op.variety || '',
+      subphase: op.subphase || '',
+      remarks: op.remarks || '',
+      searchPatterns: op.searchPatterns || ''
+    };
+    masterData[wt].push(newRow);
+    const path = [wt, op.photoType, op.variety, op.subphase, op.remarks].filter(Boolean).join(' > ');
+    return `追加しました: ${path}`;
+  }
+
+  if (op.action === 'delete') {
+    if (!masterData[wt]) return `工種 "${wt}" が見つかりません`;
+    const before = masterData[wt].length;
+    masterData[wt] = masterData[wt].filter(r => r.remarks !== op.remarks);
+    const after = masterData[wt].length;
+    if (before === after) return `削除対象が見つかりません: ${wt} > ${op.remarks}`;
+    return `削除しました: ${wt} > ${op.remarks} (${before - after}行)`;
+  }
+
+  if (op.action === 'edit') {
+    if (!masterData[wt]) return `工種 "${wt}" が見つかりません`;
+    let edited = 0;
+    for (const r of masterData[wt]) {
+      if (r.remarks === op.target) {
+        if (op.newRemarks !== undefined) r.remarks = op.newRemarks;
+        if (op.newPhotoType !== undefined) r.photoType = op.newPhotoType;
+        if (op.newVariety !== undefined) r.variety = op.newVariety;
+        if (op.newSubphase !== undefined) r.subphase = op.newSubphase;
+        if (op.newSearchPatterns !== undefined) r.searchPatterns = op.newSearchPatterns;
+        edited++;
       }
     }
+    if (edited === 0) return `編集対象が見つかりません: ${wt} > ${op.target}`;
+    return `編集しました: ${wt} > ${op.target} → ${op.newRemarks || op.target} (${edited}行)`;
+  }
 
-    // PDF Export
-    exportPdfBtn.addEventListener('click', async () => {
-      log('PDF生成中...', 'info');
-      try {
-        const blob = await generatePdf();
-        downloadBlob(blob, '工事写真帳.pdf');
-        log('PDF出力完了', 'success');
-      } catch (e) {
-        log(`PDF生成エラー: ${e.message}`, 'error');
-      }
-    });
+  return `不明なアクション: ${op.action}`;
+}
 
-    async function generatePdf() {
-      const photosPerPage = parseInt(photosPerPageSelect.value);
-      const title = titleInput.value || '工事写真帳';
-      const pdfDoc = await PDFDocument.create();
-
-      // 日本語フォント埋め込み
-      pdfDoc.registerFontkit(fontkit);
-      const fontBytes = await fetch(FONT_URL).then(r => r.arrayBuffer());
-      const japaneseFont = await pdfDoc.embedFont(fontBytes);
-
-      const usableHeight = A4_HEIGHT - MARGIN * 2 - HEADER_HEIGHT;
-      const photoRowHeight = usableHeight / photosPerPage;
-      const photoHeight = photoRowHeight - GAP * 2;
-      const usableWidth = A4_WIDTH - MARGIN * 2;
-      const photoWidth = usableWidth * IMAGE_RATIO;
-      const infoWidth = usableWidth * INFO_RATIO;
-      const totalPages = Math.ceil(photos.length / photosPerPage);
-
-      for (let pageNum = 0; pageNum < totalPages; pageNum++) {
-        const page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-        const pagePhotos = photos.slice(pageNum * photosPerPage, (pageNum + 1) * photosPerPage);
-
-        // Header
-        page.drawText(title, { x: MARGIN, y: A4_HEIGHT - MARGIN - 20, size: UNIFIED_FONT_SIZE, font: japaneseFont, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(`Page ${pageNum + 1} / ${totalPages}`, { x: A4_WIDTH - MARGIN - 80, y: A4_HEIGHT - MARGIN - 20, size: UNIFIED_FONT_SIZE, font: japaneseFont, color: rgb(0.5, 0.5, 0.5) });
-
-        for (let i = 0; i < pagePhotos.length; i++) {
-          const photo = pagePhotos[i];
-          const rowY = A4_HEIGHT - MARGIN - HEADER_HEIGHT - (i + 1) * photoRowHeight + GAP;
-
-          // Embed image
-          if (photo.base64) {
-            try {
-              const imageBytes = Uint8Array.from(atob(photo.base64), c => c.charCodeAt(0));
-              const embeddedImage = photo.mimeType.includes('png')
-                ? await pdfDoc.embedPng(imageBytes)
-                : await pdfDoc.embedJpg(imageBytes);
-
-              const imgAspect = embeddedImage.width / embeddedImage.height;
-              const boxAspect = photoWidth / photoHeight;
-              const [drawWidth, drawHeight] = imgAspect > boxAspect
-                ? [photoWidth, photoWidth / imgAspect]
-                : [photoHeight * imgAspect, photoHeight];
-
-              page.drawImage(embeddedImage, {
-                x: MARGIN + (photoWidth - drawWidth) / 2,
-                y: rowY + (photoHeight - drawHeight) / 2,
-                width: drawWidth,
-                height: drawHeight
-              });
-            } catch (e) {
-              console.warn('Image embed error:', e);
-            }
-          }
-
-          // Photo border
-          page.drawRectangle({ x: MARGIN, y: rowY, width: photoWidth, height: photoHeight, borderColor: rgb(0.7, 0.7, 0.7), borderWidth: 0.5 });
-
-          // Info panel
-          const infoX = MARGIN + photoWidth + GAP;
-          const r = photo.result || {};
-          const infoLines = [
-            { label: '写真区分', value: r.photoCategory || '-' },
-            { label: '工種', value: r.workType || '-' },
-            { label: '種別', value: r.variety || '-' },
-            { label: '作業段階', value: r.subphase || r.detail || '-' },
-            { label: '測点', value: r.station || '-' },
-            { label: '備考', value: r.remarks || '-' }
-          ];
-
-          page.drawRectangle({ x: infoX, y: rowY, width: infoWidth, height: photoHeight, borderColor: rgb(0.7, 0.7, 0.7), borderWidth: 0.5 });
-
-          infoLines.forEach((line, idx) => {
-            const y = rowY + photoHeight - 15 - idx * 16;
-            if (y > rowY + 5) {
-              page.drawText(`${line.label}: ${(line.value || '-').substring(0, 25)}`, {
-                x: infoX + 5, y, size: UNIFIED_FONT_SIZE, font: japaneseFont, color: rgb(0.2, 0.2, 0.2)
-              });
-            }
-          });
-
-          page.drawText(photo.fileName, { x: infoX + 5, y: rowY + 5, size: UNIFIED_FONT_SIZE, font: japaneseFont, color: rgb(0.5, 0.5, 0.5) });
-        }
-      }
-
-      pdfDoc.setTitle(title);
-      pdfDoc.setCreator('Photo AI Analyzer');
-      return new Blob([await pdfDoc.save()], { type: 'application/pdf' });
+function refreshTreeAfterMasterChange() {
+  buildTreeModel();
+  renderCardList();
+  // Re-select work types that were selected
+  const cards = document.querySelectorAll('.wt-card');
+  for (const card of cards) {
+    if (card._node && selectedWorkTypes.has(card._node.label)) {
+      card.classList.add('selected');
+      for (const id of card._node.leafIds) selectedLeafIds.add(id);
     }
+  }
+  renderRightPanel();
+  refreshAllCheckboxes();
+  updateSummary();
+}
 
-    // Excel Export
-    exportExcelBtn.addEventListener('click', () => {
-      log('Excel生成中...', 'info');
-      try {
-        generateExcel();
-        log('Excel出力完了', 'success');
-      } catch (e) {
-        log(`Excel生成エラー: ${e.message}`, 'error');
-      }
-    });
+function handleMasterOps(ops) {
+  const results = [];
+  for (const op of ops) {
+    const msg = applyMasterOperation(op);
+    if (msg) results.push(msg);
+  }
+  if (results.length > 0) {
+    refreshTreeAfterMasterChange();
+    console.log('Master ops:', results.join('; '));
+  }
+  return results.length;
+}
 
-    function generateExcel() {
-      const data = photos.map((p, i) => ({
-        'No': i + 1,
-        'ファイル名': p.fileName,
-        '写真区分': p.result?.photoCategory || '',
-        '工種': p.result?.workType || '',
-        '種別': p.result?.variety || '',
-        '作業段階': p.result?.subphase || p.result?.detail || '',
-        '測点': p.result?.station || '',
-        '備考': p.result?.remarks || '',
-        '説明': p.result?.description || ''
-      }));
+// --- Add Row Form ---
+document.getElementById('addRowBtn').addEventListener('click', () => {
+  const sel = document.getElementById('formWorkType');
+  sel.innerHTML = '';
+  const wtNames = Object.keys(masterData);
+  for (const name of wtNames) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    if (selectedWorkTypes.has(name)) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  // Clear fields
+  document.getElementById('formPhotoType').value = '';
+  document.getElementById('formVariety').value = '';
+  document.getElementById('formSubphase').value = '';
+  document.getElementById('formRemarks').value = '';
+  document.getElementById('formSearchPatterns').value = '';
+  document.getElementById('addRowOverlay').classList.add('active');
+});
 
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, '写真台帳');
+document.getElementById('formCancelBtn').addEventListener('click', () => {
+  document.getElementById('addRowOverlay').classList.remove('active');
+});
 
-      // Set column widths
-      ws['!cols'] = [
-        { wch: 5 },  // No
-        { wch: 25 }, // ファイル名
-        { wch: 12 }, // 写真区分
-        { wch: 15 }, // 工種
-        { wch: 15 }, // 種別
-        { wch: 15 }, // 作業段階
-        { wch: 12 }, // 測点
-        { wch: 20 }, // 備考
-        { wch: 30 }  // 説明
-      ];
+document.getElementById('addRowOverlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('addRowOverlay')) {
+    document.getElementById('addRowOverlay').classList.remove('active');
+  }
+});
 
-      XLSX.writeFile(wb, '工事写真帳.xlsx');
-    }
+document.getElementById('formSubmitBtn').addEventListener('click', () => {
+  const wt = document.getElementById('formWorkType').value;
+  const photoType = document.getElementById('formPhotoType').value.trim();
+  const variety = document.getElementById('formVariety').value.trim();
+  const subphase = document.getElementById('formSubphase').value.trim();
+  const remarks = document.getElementById('formRemarks').value.trim();
+  const searchPatterns = document.getElementById('formSearchPatterns').value.trim();
 
-    function downloadBlob(blob, filename) {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
+  if (!wt || !remarks) {
+    alert('工種と備考は必須です');
+    return;
+  }
 
-    updateButtons();
-    log('写真台帳AI 起動', 'info');
-  </script>
+  const op = { action: 'add', workType: wt, photoType, variety, subphase, remarks, searchPatterns };
+  const msg = applyMasterOperation(op);
+  refreshTreeAfterMasterChange();
+  console.log(msg);
+  document.getElementById('addRowOverlay').classList.remove('active');
+});
+
+// CLI shortcut buttons → send command to terminal iframe via postMessage
+document.querySelectorAll('.cli-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const cmd = btn.dataset.cmd;
+    sendToTerminal(cmd);
+  });
+});
+
+function sendToTerminal(cmd) {
+  const frame = document.getElementById('terminalFrame1');
+  if (frame && frame.contentWindow) {
+    frame.contentWindow.postMessage({ type: 'command', cmd: cmd }, '*');
+  }
+}
+
+loadMaster();
+connectWs();
+</script>
 </body>
 </html>

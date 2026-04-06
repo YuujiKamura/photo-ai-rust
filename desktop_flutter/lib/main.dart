@@ -511,10 +511,10 @@ class _ViewerScreenState extends State<ViewerScreen>
         runInShell: false,
       );
       _analyzeProcess = process;
-      process.stdout.listen((line) {
+      process.stdout.transform(utf8.decoder).listen((line) {
         appendLog(line);
       });
-      process.stderr.listen((line) {
+      process.stderr.transform(utf8.decoder).listen((line) {
         appendLog(line);
       });
 
@@ -643,8 +643,8 @@ class _ViewerScreenState extends State<ViewerScreen>
         runInShell: false,
       );
       _analyzeProcess = process;
-      process.stdout.listen(appendLog);
-      process.stderr.listen(appendLog);
+      process.stdout.transform(utf8.decoder).listen(appendLog);
+      process.stderr.transform(utf8.decoder).listen(appendLog);
 
       final exitCode = await process.exitCode;
       if (_analyzeCancelRequested) {
@@ -873,8 +873,8 @@ class _ViewerScreenState extends State<ViewerScreen>
         workingDirectory: resolveRepoRoot(),
         runInShell: true,
       );
-      process.stdout.listen(appendLog);
-      process.stderr.listen(appendLog);
+      process.stdout.transform(utf8.decoder).listen(appendLog);
+      process.stderr.transform(utf8.decoder).listen(appendLog);
 
       final exitCode = await process.exitCode;
       if (exitCode != 0) {

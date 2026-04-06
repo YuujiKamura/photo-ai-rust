@@ -1,0 +1,18 @@
+[submodule "deps/pdf-analysis-embed"]
+	path = deps/pdf-analysis-embed
+	url = https://github.com/YuujiKamura/pdf-analysis-embed.git
+[submodule "deps/cli-ai-analyzer"]
+	path = deps/cli-ai-analyzer
+	url = https://github.com/YuujiKamura/cli-ai-analyzer.git
+[submodule "deps/photo-tagger"]
+	path = deps/photo-tagger
+	url = https://github.com/YuujiKamura/photo-tagger.git
+[submodule "deps/ai-code-review"]
+	path = deps/ai-code-review
+	url = https://github.com/YuujiKamura/ai-code-review.git
+[submodule "deps/folder-watcher"]
+	path = deps/folder-watcher
+	url = https://github.com/YuujiKamura/folder-watcher.git
+[submodule "deps/tauri-gui-shell"]
+	path = deps/tauri-gui-shell
+	url = https://github.com/YuujiKamura/tauri-gui-shell.git

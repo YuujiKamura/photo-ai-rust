@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>terminal</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; }
+#terminal { width: 100%; height: 100%; }
+#terminal canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="terminal"></div>
+<script type="module">
+  // ghostty-web assets served from /dist/ on the demo server (port 8888)
+  const GHOSTTY_SERVER = 'http://localhost:8888';
+
+  // Dynamic import from the demo server
+  const { init, Terminal, FitAddon } = await import(GHOSTTY_SERVER + '/dist/ghostty-web.js');
+
+  await init();
+  const term = new Terminal({
+    fontFamily: "'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
+    fontSize: 14,
+    theme: {
+      background: '#0f0f0f',
+      foreground: '#ececec',
+    },
+  });
+
+  const fitAddon = new FitAddon();
+  term.loadAddon(fitAddon);
+
+  const container = document.getElementById('terminal');
+  await term.open(container);
+  fitAddon.fit();
+  fitAddon.observeResize();
+
+  // Connect to the PTY WebSocket on the demo server
+  const wsUrl = 'ws://localhost:8888/ws?cols=' + term.cols + '&rows=' + term.rows;
+  let ws;
+
+  function connect() {
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => {};
+    ws.onmessage = (e) => term.write(e.data);
+    ws.onclose = () => {
+      term.write('\r\n\x1b[31mDisconnected. Reconnecting...\x1b[0m\r\n');
+      setTimeout(connect, 2000);
+    };
+    ws.onerror = () => {};
+  }
+
+  term.onData((data) => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
+  });
+
+  term.onResize(({ cols, rows }) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+    }
+  });
+
+  connect();
+
+  // Auto-focus terminal on click and on load
+  container.addEventListener('click', () => term.focus());
+  term.focus();
+
+  // Listen for commands from parent window
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'command' && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(e.data.cmd + '\r');
+    }
+  });
+</script>
+</body>
+</html>
