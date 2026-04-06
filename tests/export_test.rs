@@ -30,6 +30,7 @@ fn create_test_result(index: usize) -> AnalysisResult {
         focus_target: String::new(),
         skip: false,
         group: 0,
+        label_overrides: std::collections::HashMap::new(),
     }
 }
 
@@ -201,6 +202,7 @@ fn test_excel_data_consistency() {
             focus_target: String::new(),
             skip: false,
             group: 0,
+            label_overrides: std::collections::HashMap::new(),
         },
     ];
 
@@ -269,6 +271,7 @@ fn test_excel_japanese_text() {
             focus_target: String::new(),
             skip: false,
             group: 0,
+            label_overrides: std::collections::HashMap::new(),
         },
     ];
 
