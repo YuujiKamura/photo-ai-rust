@@ -610,12 +610,15 @@ let analyzeRun = false;
 function updateButtonStates() {
   const hasFolder = selectedFolder.length > 0;
   const hasWorkTypes = selectedWorkTypes.size > 0;
-  document.getElementById('analyzeBtn').disabled = !(terminalReady && hasFolder && hasWorkTypes);
-  document.getElementById('exportPdfBtn').disabled = !(terminalReady && analyzeRun);
-  document.getElementById('exportExcelBtn').disabled = !(terminalReady && analyzeRun);
+  // Agent buttons always enabled (commands queue if terminal not ready)
   document.querySelectorAll('.cli-btn[data-cmd]').forEach(btn => {
-    btn.disabled = !terminalReady;
+    btn.disabled = false;
   });
+  // Analyze needs folder + master
+  document.getElementById('analyzeBtn').disabled = !(hasFolder && hasWorkTypes);
+  // Export needs prior analyze
+  document.getElementById('exportPdfBtn').disabled = !analyzeRun;
+  document.getElementById('exportExcelBtn').disabled = !analyzeRun;
 }
 
 // --- Tree data model ---
