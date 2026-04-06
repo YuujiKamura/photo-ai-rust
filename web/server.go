@@ -170,6 +170,61 @@ func main() {
 		w.Write(data)
 	})
 
+	http.HandleFunc("/api/result/update", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "POST only", 405)
+			return
+		}
+		var req struct {
+			Path    string `json:"path"`
+			Updates []struct {
+				FileName string `json:"fileName"`
+				Field    string `json:"field"`
+				Value    string `json:"value"`
+			} `json:"updates"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if req.Path == "" {
+			http.Error(w, "path is required", 400)
+			return
+		}
+		resolved := resolvePath(repoDir, req.Path)
+		raw, err := os.ReadFile(resolved)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to read %s: %v", resolved, err), 404)
+			return
+		}
+		var data []map[string]interface{}
+		if err := json.Unmarshal(raw, &data); err != nil {
+			http.Error(w, fmt.Sprintf("failed to parse JSON: %v", err), 400)
+			return
+		}
+		updated := 0
+		for _, u := range req.Updates {
+			for _, record := range data {
+				if fn, ok := record["fileName"].(string); ok && fn == u.FileName {
+					record[u.Field] = u.Value
+					updated++
+					break
+				}
+			}
+		}
+		out, err := json.MarshalIndent(data, "", "  ")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to marshal JSON: %v", err), 500)
+			return
+		}
+		if err := os.WriteFile(resolved, out, 0644); err != nil {
+			http.Error(w, fmt.Sprintf("failed to write %s: %v", resolved, err), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "updated": updated})
+	})
+
 	http.HandleFunc("/api/analyze", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "POST only", 405)

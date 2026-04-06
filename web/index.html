@@ -437,6 +437,65 @@ body {
 }
 .add-row-form .form-actions .submit-btn:hover { background: var(--accent-hover); }
 
+/* Review Panel - Tab Bar */
+.right-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); }
+.right-tab { padding:8px 16px; font-size:13px; color:var(--text-muted); cursor:pointer; border-bottom:2px solid transparent; background:none; border-top:none; border-left:none; border-right:none; }
+.right-tab.active { color:var(--text); border-bottom-color:var(--accent); }
+.right-tab:hover { color:var(--text); }
+
+/* Review Panel Container */
+.review-panel { display:none; flex-direction:column; flex:1; overflow:hidden; }
+.review-panel.active { display:flex; }
+
+/* Review Summary Header */
+.review-summary { padding:10px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; font-size:13px; flex-shrink:0; }
+.review-summary .badge { padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+.review-summary .badge-ok { background:rgba(74,222,128,0.15); color:var(--green); }
+.review-summary .badge-warn { background:rgba(250,204,21,0.15); color:var(--yellow); }
+.review-summary .spacer { flex:1; }
+.review-save-btn { padding:5px 14px; background:var(--accent); border:none; border-radius:6px; color:#fff; font-size:12px; font-weight:600; cursor:pointer; }
+.review-save-btn:hover { background:var(--accent-hover); }
+.review-save-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* Review Scroll Area */
+.review-scroll { flex:1; overflow-y:auto; padding:8px 12px; }
+
+/* Group Card */
+.review-group { background:var(--surface); border:1px solid var(--border); border-radius:10px; margin-bottom:10px; overflow:hidden; }
+.review-group-header { padding:10px 14px; display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+.review-group-header:hover { background:var(--hover); }
+.review-group-toggle { color:var(--text-muted); font-size:14px; width:18px; text-align:center; }
+.review-group-title { flex:1; font-size:14px; font-weight:600; }
+.review-group-category { font-size:11px; padding:2px 8px; background:var(--input-bg); border-radius:8px; color:var(--text-muted); }
+.review-group-body { padding:0 14px 12px; display:none; }
+.review-group.open .review-group-body { display:block; }
+.review-group.open .review-group-toggle { transform:rotate(90deg); }
+
+/* Photo thumbnails row */
+.review-photos { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+.review-photo-chip { font-size:11px; padding:3px 8px; background:var(--input-bg); border-radius:5px; color:var(--text-muted); display:flex; align-items:center; gap:4px; }
+.review-photo-chip .board-icon { color:var(--yellow); }
+
+/* Field rows */
+.review-field { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.review-field-label { width:56px; font-size:12px; color:var(--text-muted); text-align:right; flex-shrink:0; }
+.review-field-input { flex:1; padding:5px 8px; background:var(--input-bg); border:1px solid var(--border); border-radius:5px; color:var(--text); font-size:13px; outline:none; }
+.review-field-input:focus { border-color:var(--accent); }
+.review-field-input.empty { border-color:var(--yellow); }
+.review-field-status { width:18px; font-size:13px; text-align:center; flex-shrink:0; }
+
+/* Board / Candidates */
+.review-board { margin-top:6px; padding:8px 10px; background:var(--hover); border-radius:6px; font-size:12px; }
+.review-board-label { color:var(--text-muted); margin-bottom:4px; }
+.review-board-text { color:var(--text); font-family:'Cascadia Code',monospace; white-space:pre-wrap; word-break:break-all; }
+.review-candidates { display:flex; gap:4px; margin-top:6px; flex-wrap:wrap; }
+.review-candidate-chip { padding:3px 10px; background:rgba(124,111,224,0.15); border:1px solid var(--accent); border-radius:12px; color:var(--accent); font-size:11px; cursor:pointer; }
+.review-candidate-chip:hover { background:var(--accent); color:#fff; }
+
+/* Load result button */
+.cli-btn.load-result { border-color:var(--green); color:var(--green); }
+.cli-btn.load-result:hover { background:rgba(74,222,128,0.1); }
+
 </style>
 </head>
 <body>
@@ -463,6 +522,7 @@ body {
         <button class="cli-btn primary" id="analyzeBtn" disabled>Analyze</button>
         <button class="cli-btn" id="exportPdfBtn" disabled>Export PDF</button>
         <button class="cli-btn" id="exportExcelBtn" disabled>Export Excel</button>
+        <button class="cli-btn load-result" id="loadResultBtn" disabled>結果読み込み</button>
       </div>
       <div class="master-left-footer">
         <div><span class="summary-count" id="summaryCount">0</span> <span class="summary-label">行選択中</span></div>
@@ -471,17 +531,29 @@ body {
     </div>
     <div class="master-right">
       <div class="master-right-upper">
-        <div class="master-right-header">
-          <span id="rightHeaderLabel">工種を左から選択</span>
-          <span class="spacer"></span>
-          <button class="add-row-btn" id="addRowBtn">+ 行を追加</button>
-          <button id="expandAllBtn">全展開</button>
-          <button id="collapseAllBtn">全折畳</button>
+        <div class="right-tabs">
+          <button class="right-tab active" id="tabMaster">マスタツリー</button>
+          <button class="right-tab" id="tabReview">問診票</button>
         </div>
-        <div class="master-tree-scroll">
-          <div class="master-tree-container" id="masterTreeContainer"></div>
+        <!-- Master Tree Panel (existing) -->
+        <div id="panelMaster" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+          <div class="master-right-header">
+            <span id="rightHeaderLabel">工種を左から選択</span>
+            <span class="spacer"></span>
+            <button class="add-row-btn" id="addRowBtn">+ 行を追加</button>
+            <button id="expandAllBtn">全展開</button>
+            <button id="collapseAllBtn">全折畳</button>
+          </div>
+          <div class="master-tree-scroll">
+            <div class="master-tree-container" id="masterTreeContainer"></div>
+          </div>
+          <div class="master-right-empty" id="masterRightEmpty">左の工種をクリックして展開</div>
         </div>
-        <div class="master-right-empty" id="masterRightEmpty">左の工種をクリックして展開</div>
+        <!-- Review Panel (new) -->
+        <div class="review-panel" id="panelReview">
+          <div class="review-summary" id="reviewSummary"></div>
+          <div class="review-scroll" id="reviewScroll"></div>
+        </div>
       </div>
       <div class="master-right-lower">
         <div class="terminal-pane">
@@ -1173,6 +1245,244 @@ const origFolderInput = document.getElementById('folderPathInput');
 origFolderInput.addEventListener('change', saveState);
 
 loadMaster();
+
+// === Review Panel (問診票) ===
+
+let reviewData = null; // loaded result.json data
+let reviewDirty = false; // track unsaved changes
+
+// Tab switching
+document.getElementById('tabMaster').addEventListener('click', () => switchTab('master'));
+document.getElementById('tabReview').addEventListener('click', () => switchTab('review'));
+
+function switchTab(tab) {
+  const isReview = tab === 'review';
+  document.getElementById('tabMaster').classList.toggle('active', !isReview);
+  document.getElementById('tabReview').classList.toggle('active', isReview);
+  document.getElementById('panelMaster').style.display = isReview ? 'none' : 'flex';
+  document.getElementById('panelReview').classList.toggle('active', isReview);
+}
+
+// Load result button
+document.getElementById('loadResultBtn').addEventListener('click', loadReviewData);
+
+async function loadReviewData() {
+  try {
+    const r = await fetch('/api/result?path=result.json');
+    if (!r.ok) { alert('result.json が見つかりません。先にAnalyzeを実行してください。'); return; }
+    reviewData = await r.json();
+    reviewDirty = false;
+    renderReviewPanel();
+    switchTab('review');
+  } catch (e) {
+    alert('結果の読み込みに失敗: ' + e.message);
+  }
+}
+
+function renderReviewPanel() {
+  if (!reviewData || !reviewData.length) return;
+
+  // Group by group number
+  const groups = new Map();
+  reviewData.forEach((item, idx) => {
+    const gid = item.group || idx;
+    if (!groups.has(gid)) groups.set(gid, []);
+    groups.get(gid).push(item);
+  });
+
+  // Summary stats
+  const total = reviewData.length;
+  const emptyStation = reviewData.filter(r => !r.station).length;
+  const emptyWorkType = reviewData.filter(r => !r.workType).length;
+
+  const summary = document.getElementById('reviewSummary');
+  summary.innerHTML = `
+    <span class="badge badge-ok">${total}枚</span>
+    ${emptyStation > 0 ? `<span class="badge badge-warn">測点未設定: ${emptyStation}</span>` : ''}
+    ${emptyWorkType > 0 ? `<span class="badge badge-warn">工種未設定: ${emptyWorkType}</span>` : ''}
+    <span class="spacer"></span>
+    <button class="review-save-btn" id="reviewSaveBtn" ${reviewDirty ? '' : 'disabled'}>全保存</button>
+  `;
+  document.getElementById('reviewSaveBtn').addEventListener('click', saveReviewData);
+
+  // Render group cards
+  const scroll = document.getElementById('reviewScroll');
+  scroll.innerHTML = '';
+
+  for (const [gid, items] of groups) {
+    const representative = items[0];
+    const category = representative.photoCategory || '未分類';
+    const groupLabel = representative.remarks || representative.focusTarget || `グループ${gid}`;
+    const boardItem = items.find(i => i.hasBoard && i.detectedText);
+
+    // Extract station candidates from board text
+    const candidates = boardItem ? extractStationCandidates(boardItem.detectedText) : [];
+
+    const card = document.createElement('div');
+    card.className = 'review-group open';
+    card.innerHTML = `
+      <div class="review-group-header">
+        <span class="review-group-toggle">&#9654;</span>
+        <span class="review-group-title">${escHtml(groupLabel)} (${items.length}枚)</span>
+        <span class="review-group-category">${escHtml(category)}</span>
+      </div>
+      <div class="review-group-body">
+        <div class="review-photos">
+          ${items.map(i => `<span class="review-photo-chip">${i.hasBoard ? '<span class="board-icon">&#9635;</span>' : ''}${escHtml(i.fileName)}</span>`).join('')}
+        </div>
+        ${renderFieldRow('工種', 'workType', representative.workType, items)}
+        ${renderFieldRow('種別', 'variety', representative.variety, items)}
+        ${renderFieldRow('細別', 'subphase', representative.subphase, items)}
+        ${renderFieldRow('測点', 'station', representative.station, items)}
+        ${renderFieldRow('備考', 'remarks', representative.remarks, items)}
+        ${boardItem ? `
+          <div class="review-board">
+            <div class="review-board-label">黒板テキスト</div>
+            <div class="review-board-text">${escHtml(boardItem.detectedText)}</div>
+          </div>
+        ` : ''}
+        ${representative.measurements ? `
+          <div class="review-board" style="margin-top:4px;">
+            <div class="review-board-label">計測値</div>
+            <div class="review-board-text">${escHtml(representative.measurements)}</div>
+          </div>
+        ` : ''}
+        ${candidates.length > 0 ? `
+          <div class="review-candidates" data-group="${gid}" data-field="station">
+            <span style="font-size:11px;color:var(--text-muted);">測点候補:</span>
+            ${candidates.map(c => `<span class="review-candidate-chip" data-value="${escAttr(c)}">${escHtml(c)}</span>`).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    // Toggle open/close
+    card.querySelector('.review-group-header').addEventListener('click', () => {
+      card.classList.toggle('open');
+    });
+
+    // Candidate chip click → apply to station field
+    card.querySelectorAll('.review-candidate-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const val = chip.dataset.value;
+        const input = card.querySelector('input[data-field="station"]');
+        if (input) {
+          input.value = val;
+          input.classList.toggle('empty', !val);
+          input.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+
+    scroll.appendChild(card);
+  }
+}
+
+function renderFieldRow(label, field, value, groupItems) {
+  const isEmpty = !value;
+  const status = isEmpty ? '<span style="color:var(--yellow);">&#9888;</span>' : '<span style="color:var(--green);">&#10003;</span>';
+  const fileNames = groupItems.map(i => i.fileName);
+  return `
+    <div class="review-field">
+      <span class="review-field-label">${label}</span>
+      <input class="review-field-input ${isEmpty ? 'empty' : ''}"
+             type="text"
+             value="${escAttr(value || '')}"
+             data-field="${field}"
+             data-files='${JSON.stringify(fileNames)}'>
+      <span class="review-field-status">${status}</span>
+    </div>
+  `;
+}
+
+function extractStationCandidates(text) {
+  if (!text) return [];
+  const candidates = new Set();
+  // No.X pattern
+  const noPattern = /[Nn][Oo][\.\s]*(\d+)/g;
+  let m;
+  while ((m = noPattern.exec(text)) !== null) {
+    candidates.add('No.' + m[1]);
+  }
+  // 場所: or 測点: key-value
+  const kvPattern = /(?:場所|測点)[:\uff1a\s]*([^\s,\u3001]+)/g;
+  while ((m = kvPattern.exec(text)) !== null) {
+    candidates.add(m[1]);
+  }
+  // Date pattern for safety photos
+  const datePattern = /(\d{1,2})\u6708(\d{1,2})\u65e5/g;
+  while ((m = datePattern.exec(text)) !== null) {
+    candidates.add(m[0]);
+  }
+  return [...candidates];
+}
+
+// Track changes on review field inputs
+document.addEventListener('change', (e) => {
+  if (e.target.matches('.review-field-input')) {
+    const field = e.target.dataset.field;
+    const value = e.target.value;
+    const fileNames = JSON.parse(e.target.dataset.files);
+    // Update reviewData in memory
+    fileNames.forEach(fn => {
+      const rec = reviewData.find(r => r.fileName === fn);
+      if (rec) rec[field] = value;
+    });
+    e.target.classList.toggle('empty', !value);
+    // Update status icon
+    const statusEl = e.target.parentElement.querySelector('.review-field-status');
+    if (statusEl) {
+      statusEl.innerHTML = value ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>';
+    }
+    reviewDirty = true;
+    const saveBtn = document.getElementById('reviewSaveBtn');
+    if (saveBtn) saveBtn.disabled = false;
+  }
+});
+
+async function saveReviewData() {
+  if (!reviewData || !reviewDirty) return;
+  // Build updates array: one entry per {fileName, field, value}
+  const fields = ['station', 'workType', 'variety', 'subphase', 'remarks'];
+  const updates = [];
+  reviewData.forEach(r => {
+    fields.forEach(f => {
+      updates.push({ fileName: r.fileName, field: f, value: r[f] || '' });
+    });
+  });
+  try {
+    const r = await fetch('/api/result/update', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ path: 'result.json', updates })
+    });
+    if (!r.ok) throw new Error(await r.text());
+    reviewDirty = false;
+    const saveBtn = document.getElementById('reviewSaveBtn');
+    if (saveBtn) saveBtn.disabled = true;
+    // Re-render to update summary
+    renderReviewPanel();
+  } catch (e) {
+    alert('保存に失敗: ' + e.message);
+  }
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+function escAttr(s) {
+  return (s || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Update loadResultBtn state
+const origUpdateButtonStates = updateButtonStates;
+updateButtonStates = function() {
+  origUpdateButtonStates();
+  document.getElementById('loadResultBtn').disabled = !analyzeRun;
+};
 </script>
 </body>
 </html>

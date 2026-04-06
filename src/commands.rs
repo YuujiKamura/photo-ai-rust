@@ -27,7 +27,7 @@ pub struct AnalyzeCommandArgs {
     pub folder: PathBuf,
     pub output: Option<PathBuf>,
     pub batch_size: usize,
-    pub master: Option<PathBuf>,
+    pub master: Vec<PathBuf>,
     pub work_type: Option<String>,
     pub photo_type: Option<String>,
     pub variety: Option<String>,
@@ -47,7 +47,7 @@ pub struct RunCommandArgs {
     pub output: Option<PathBuf>,
     pub format: ExportFormat,
     pub batch_size: usize,
-    pub master: Option<PathBuf>,
+    pub master: Vec<PathBuf>,
     pub work_type: Option<String>,
     pub photo_type: Option<String>,
     pub variety: Option<String>,
@@ -189,7 +189,7 @@ pub fn resolve_output_paths(folder: &Path, output: Option<&PathBuf>) -> OutputPa
 struct CommonAnalysisParams {
     folder: PathBuf,
     batch_size: usize,
-    master: Option<PathBuf>,
+    master: Vec<PathBuf>,
     work_type: Option<String>,
     photo_type: Option<String>,
     variety: Option<String>,
@@ -204,20 +204,39 @@ struct CommonAnalysisParams {
 }
 
 /// CLIで指定されたマスタパスからMasterSelectionを解決（純粋ロジック、UI無し）
-fn resolve_master_from_cli(master: Option<PathBuf>) -> Option<master_selector::MasterSelection> {
-    let path = master?;
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    if stem == "construction_hierarchy" {
-        // 共通マスタ指定 → 全工種マージ読み込み
-        let all_paths = master_selector::collect_all_master_paths();
-        Some(master_selector::MasterSelection { path, work_type: None, all_paths })
+fn resolve_master_from_cli(masters: Vec<PathBuf>) -> Option<master_selector::MasterSelection> {
+    if masters.is_empty() {
+        return None;
+    }
+    if masters.len() == 1 {
+        let path = masters.into_iter().next().unwrap();
+        // by_work_type/ ディレクトリ内のファイルのみ stem を work_type として使う
+        // それ以外（construction_hierarchy, merged-master-*, 外部マージ済み等）はフィルタなし
+        let is_by_work_type = path.parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|n| n == "by_work_type")
+            .unwrap_or(false);
+        if is_by_work_type {
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            let work_type = Some(stem.to_string());
+            Some(master_selector::MasterSelection { path, work_type, all_paths: None })
+        } else {
+            let all_paths = master_selector::collect_all_master_paths();
+            Some(master_selector::MasterSelection { path, work_type: None, all_paths })
+        }
     } else {
-        let work_type = Some(stem.to_string());
-        Some(master_selector::MasterSelection { path, work_type, all_paths: None })
+        // 複数マスタ指定 → マージ読み込み
+        let first = masters[0].clone();
+        Some(master_selector::MasterSelection {
+            path: first,
+            work_type: None,
+            all_paths: Some(masters),
+        })
     }
 }
 
-fn resolve_master_path(master: Option<PathBuf>, interactive: bool) -> Option<master_selector::MasterSelection> {
+fn resolve_master_path(master: Vec<PathBuf>, interactive: bool) -> Option<master_selector::MasterSelection> {
     // 1. CLI指定があればそれを使う
     if let Some(selection) = resolve_master_from_cli(master) {
         return Some(selection);

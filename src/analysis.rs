@@ -77,13 +77,13 @@ pub struct MasterConfig {
 
 /// マスタ選択と検証を行う共通関数
 pub fn prepare_analysis(
-    master: Option<PathBuf>,
+    master: Vec<PathBuf>,
     work_type: Option<String>,
     variety: Option<&String>,
-    resolve_master_path: impl FnOnce(Option<PathBuf>, bool) -> Option<crate::master_selector::MasterSelection>,
+    resolve_master_path: impl FnOnce(Vec<PathBuf>, bool) -> Option<crate::master_selector::MasterSelection>,
 ) -> Result<MasterConfig> {
     // マスタ選択（対話式または引数から）
-    let has_master_arg = master.is_some();
+    let has_master_arg = !master.is_empty();
     let selection = resolve_master_path(master, !has_master_arg && work_type.is_none());
 
     // work_type: CLI引数優先、なければ選択結果から

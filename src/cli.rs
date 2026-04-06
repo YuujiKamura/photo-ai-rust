@@ -30,9 +30,9 @@ pub enum Commands {
         #[arg(short, long, default_value = "5")]
         batch_size: usize,
 
-        /// 工種マスタJSONファイル
+        /// 工種マスタCSVファイル（複数指定可）
         #[arg(short, long)]
-        master: Option<PathBuf>,
+        master: Vec<PathBuf>,
 
         /// 工種を指定（1ステップ解析モード）
         #[arg(short = 'w', long)]
@@ -126,9 +126,9 @@ pub enum Commands {
         #[arg(short, long, default_value = "5")]
         batch_size: usize,
 
-        /// 工種マスタJSONファイル
+        /// 工種マスタCSVファイル（複数指定可）
         #[arg(short, long)]
-        master: Option<PathBuf>,
+        master: Vec<PathBuf>,
 
         /// 工種を指定（1ステップ解析モード）
         #[arg(short = 'w', long)]
