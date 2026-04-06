@@ -860,6 +860,7 @@ document.getElementById('folderBrowseBtn').addEventListener('click', async () =>
     if (j.path) {
       document.getElementById('folderPathInput').value = j.path;
       selectedFolder = j.path;
+      saveState();
       updateButtonStates();
     }
   } catch(e) { /* server not running */ }
@@ -1123,6 +1124,53 @@ if (termFrame) {
     updateButtonStates();
   });
 }
+
+// --- Persistence (localStorage) ---
+function saveState() {
+  localStorage.setItem('photoai_workTypes', JSON.stringify([...selectedWorkTypes]));
+  localStorage.setItem('photoai_folder', selectedFolder);
+}
+function restoreState() {
+  const wt = localStorage.getItem('photoai_workTypes');
+  if (wt) {
+    try {
+      const names = JSON.parse(wt);
+      for (const n of names) selectedWorkTypes.add(n);
+    } catch(e) {}
+  }
+  const f = localStorage.getItem('photoai_folder');
+  if (f) {
+    selectedFolder = f;
+    document.getElementById('folderPathInput').value = f;
+  }
+}
+
+// Restore after master load
+const origLoadMaster = loadMaster;
+loadMaster = async function() {
+  await origLoadMaster();
+  restoreState();
+  // Re-select cards
+  document.querySelectorAll('.wt-card').forEach(card => {
+    if (card._node && selectedWorkTypes.has(card._node.label)) {
+      card.classList.add('selected');
+      for (const id of card._node.leafIds) selectedLeafIds.add(id);
+    }
+  });
+  renderRightPanel();
+  refreshAllCheckboxes();
+  updateSummary();
+  updateButtonStates();
+};
+
+// Save on changes
+const origUpdateSummary = updateSummary;
+updateSummary = function() {
+  origUpdateSummary();
+  saveState();
+};
+const origFolderInput = document.getElementById('folderPathInput');
+origFolderInput.addEventListener('change', saveState);
 
 loadMaster();
 </script>
