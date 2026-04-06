@@ -446,6 +446,7 @@ body {
   <div class="header">
     <div class="logo">P</div>
     <h1>photo-ai</h1>
+    <button id="reloadUiBtn" style="margin-left:auto;padding:3px 10px;background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text-muted);font-size:11px;cursor:pointer;" title="ターミナルを維持したままUIを再読み込み">UI更新</button>
   </div>
   <div class="master-content">
     <div class="master-left">
@@ -1082,6 +1083,40 @@ document.getElementById('formSubmitBtn').addEventListener('click', () => {
   refreshTreeAfterMasterChange();
   console.log(msg);
   document.getElementById('addRowOverlay').classList.remove('active');
+});
+
+// UI reload without killing terminal
+document.getElementById('reloadUiBtn').addEventListener('click', async () => {
+  // Save terminal iframe element
+  const frame = document.getElementById('terminalFrame1');
+  const parent = frame.parentElement;
+  parent.removeChild(frame);
+
+  // Fetch fresh page
+  const r = await fetch('/index.html?t=' + Date.now());
+  const html = await r.text();
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+
+  // Replace style
+  document.querySelector('style').textContent = doc.querySelector('style').textContent;
+
+  // Replace body content except we need to re-insert terminal
+  const newBody = doc.querySelector('body');
+  document.querySelector('body').innerHTML = newBody.innerHTML;
+
+  // Find terminal pane and re-insert saved iframe
+  const newPane = document.querySelector('.terminal-pane');
+  if (newPane) {
+    newPane.innerHTML = '';
+    newPane.appendChild(frame);
+  }
+
+  // Re-run scripts by evaluating the script content
+  const scriptEl = doc.querySelector('script');
+  if (scriptEl) {
+    eval(scriptEl.textContent);
+  }
 });
 
 // Terminal ready detection
