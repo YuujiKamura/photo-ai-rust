@@ -16,3 +16,6 @@
 [submodule "deps/tauri-gui-shell"]
 	path = deps/tauri-gui-shell
 	url = https://github.com/YuujiKamura/tauri-gui-shell.git
+[submodule "web/deckpilot"]
+	path = web/deckpilot
+	url = https://github.com/YuujiKamura/deckpilot.git

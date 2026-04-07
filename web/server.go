@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/YuujiKamura/deckpilot/daemon"
 	"golang.org/x/net/websocket"
 )
 
@@ -88,6 +89,15 @@ func loadMasterCSVs(repoDir string) (map[string][]MasterRow, error) {
 }
 
 func main() {
+	// Start deckpilot daemon in background
+	go func() {
+		log.Printf("Starting deckpilot daemon...")
+		d := daemon.New()
+		if err := d.Run(); err != nil {
+			log.Printf("deckpilot daemon error: %v", err)
+		}
+	}()
+
 	// Serve static files from the directory where server.go lives
 	exe, err := os.Executable()
 	if err != nil {
