@@ -443,6 +443,41 @@ body {
 .right-tab.active { color:var(--text); border-bottom-color:var(--accent); }
 .right-tab:hover { color:var(--text); }
 
+.terminal-header {
+  padding: 4px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.terminal-header select {
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  outline: none;
+}
+.terminal-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+}
+.status-dot.online {
+  background: var(--green);
+}
+
 /* Review Panel Container */
 .review-panel { display:none; flex-direction:column; flex:1; overflow:hidden; }
 .review-panel.active { display:flex; }
@@ -556,8 +591,15 @@ body {
         </div>
       </div>
       <div class="master-right-lower">
+        <div class="terminal-header">
+          <div class="terminal-status"><span class="status-dot" id="dpStatusDot"></span> Deckpilot</div>
+          <select id="dpSessionSelectTerminal"><option value="">-- Session --</option></select>
+          <button id="dpRefreshBtn" style="padding:2px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text-muted);font-size:10px;cursor:pointer;margin-left:4px;">Refresh</button>
+          <span class="spacer"></span>
+          <span id="terminalModeLabel" style="font-size:10px;opacity:0.6;">Connecting...</span>
+        </div>
         <div class="terminal-pane">
-          <iframe src="/terminal.html" id="terminalFrame1"></iframe>
+          <iframe src="terminal.html" id="terminalFrame1"></iframe>
         </div>
       </div>
     </div>
@@ -602,6 +644,26 @@ body {
 <script>
 let masterData = {};
 
+// --- Demo Mode Sample Data ---
+const SAMPLE_MASTER = {
+  "共通": [
+    { "division": "共通", "photoType": "共通", "workType": "共通", "variety": "共通", "subphase": "共通", "remarks": "着工前", "searchPatterns": "着工前" },
+    { "division": "共通", "photoType": "共通", "workType": "共通", "variety": "共通", "subphase": "共通", "remarks": "着工中", "searchPatterns": "着工中" },
+    { "division": "共通", "photoType": "共通", "workType": "共通", "variety": "共通", "subphase": "共通", "remarks": "完成", "searchPatterns": "完成" }
+  ],
+  "舗装工": [
+    { "division": "舗装工", "photoType": "施工状況写真", "workType": "舗装工", "variety": "舗装打換え工", "subphase": "不陸整正", "remarks": "整正状況", "searchPatterns": "整正" },
+    { "division": "舗装工", "photoType": "施工状況写真", "workType": "舗装工", "variety": "舗装打換え工", "subphase": "表層", "remarks": "敷きならし状況", "searchPatterns": "敷きならし" },
+    { "division": "舗装工", "photoType": "施工状況写真", "workType": "舗装工", "variety": "舗装打換え工", "subphase": "表層", "remarks": "転圧状況", "searchPatterns": "転圧" }
+  ]
+};
+
+const SAMPLE_RESULT = [
+  { "fileName": "IMG_001.jpg", "group": 0, "photoCategory": "施工状況写真", "workType": "舗装工", "variety": "舗装打換え工", "subphase": "不陸整正", "remarks": "整正状況", "station": "No.1", "hasBoard": true, "detectedText": "場所: No.1\n工種: 舗装工\n種別: 不陸整正\n備考: 整正状況" },
+  { "fileName": "IMG_002.jpg", "group": 0, "photoCategory": "施工状況写真", "workType": "舗装工", "variety": "舗装打換え工", "subphase": "不陸整正", "remarks": "整正状況", "station": "No.1", "hasBoard": false },
+  { "fileName": "IMG_003.jpg", "group": 1, "photoCategory": "施工状況写真", "workType": "舗装工", "variety": "舗装打換え工", "subphase": "表層", "remarks": "敷きならし状況", "station": "No.2", "hasBoard": true, "detectedText": "場所: No.2\n工種: 舗装工\n種別: 表層\n備考: 敷きならし" }
+];
+
 // --- PAVEMENT_ALIASES (loaded from aliases.json) ---
 let PAVEMENT_ALIASES = { photoCategory: {}, workType: {}, variety: {}, subphase: {} };
 
@@ -631,74 +693,6 @@ function applyAlias(value, aliases) {
   return bestMatch ? bestMatch[1] : value;
 }
 
-// --- Async base64 file handling with progress ---
-async function handleFiles(fileList) {
-  const files = Array.from(fileList);
-  const total = files.length;
-  if (total === 0) return [];
-
-  const progressSection = document.getElementById('progressSection');
-  const progressFill = document.getElementById('progressFill');
-  const progressText = document.getElementById('progressText');
-  if (progressSection) progressSection.style.display = 'block';
-
-  const results = [];
-  const CHUNK_SIZE = 5;
-
-  for (let i = 0; i < total; i += CHUNK_SIZE) {
-    const chunk = files.slice(i, i + CHUNK_SIZE);
-    const chunkResults = await Promise.all(chunk.map(file => {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({ name: file.name, data: reader.result, file });
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
-    }));
-    results.push(...chunkResults);
-
-    // Update progress
-    const done = Math.min(i + CHUNK_SIZE, total);
-    if (progressFill) progressFill.style.width = ((done / total) * 100) + '%';
-    if (progressText) progressText.textContent = `写真を読み込み中... ${done}/${total}`;
-
-    // Incremental rendering
-    if (typeof renderPhotos === 'function') renderPhotos(results);
-
-    // Yield to browser
-    await new Promise(r => setTimeout(r, 0));
-  }
-
-  if (progressSection) progressSection.style.display = 'none';
-  return results;
-}
-
-// --- AI analysis result parser with error handling ---
-function parseAnalysisResult(result) {
-  if (!result || !result.text) {
-    const msg = 'AI解析結果が空でした。APIキーやモデルの設定を確認してください。';
-    log(msg);
-    const progressText = document.getElementById('progressText');
-    if (progressText) progressText.textContent = msg;
-    return [];
-  }
-  try {
-    return JSON.parse(result.text);
-  } catch (e) {
-    const msg = 'AI解析結果の読み取りに失敗しました。再試行してください。';
-    log(msg);
-    console.error('JSON parse failed. Raw text:', result.text);
-    const progressText = document.getElementById('progressText');
-    if (progressText) progressText.textContent = msg;
-    return [];
-  }
-}
-
-// --- Log helper (no-op if not defined elsewhere) ---
-if (typeof log === 'undefined') {
-  function log(msg) { console.log('[photo-ai]', msg); }
-}
-
 // --- Internal state ---
 let selectedFolder = '';
 let terminalReady = false;
@@ -707,33 +701,45 @@ let analyzeRun = false;
 function updateButtonStates() {
   const hasFolder = selectedFolder.length > 0;
   const hasWorkTypes = selectedWorkTypes.size > 0;
-  // Agent buttons always enabled (commands queue if terminal not ready)
   document.querySelectorAll('.cli-btn[data-cmd]').forEach(btn => {
     btn.disabled = false;
   });
-  // Analyze needs folder + master
   document.getElementById('analyzeBtn').disabled = !(hasFolder && hasWorkTypes);
-  // Export needs prior analyze
   document.getElementById('exportPdfBtn').disabled = !analyzeRun;
   document.getElementById('exportExcelBtn').disabled = !analyzeRun;
+  document.getElementById('loadResultBtn').disabled = !analyzeRun;
 }
 
 // --- Tree data model ---
 let allLeaves = [];
 let selectedLeafIds = new Set();
 let treeRoot = null;
-
 let selectedWorkTypes = new Set();
 
 async function loadMaster() {
   try {
     const res = await fetch('/api/master');
+    if (!res.ok) throw new Error('API server unreachable');
     masterData = await res.json();
-    buildTreeModel();
-    renderCardList();
   } catch(e) {
-    console.error('Failed to load master.json:', e);
+    console.warn('Failed to load master.json from API, using sample data:', e);
+    masterData = SAMPLE_MASTER;
   }
+  buildTreeModel();
+  renderCardList();
+  
+  // Restore state after master load
+  restoreState();
+  document.querySelectorAll('.wt-card').forEach(card => {
+    if (card._node && selectedWorkTypes.has(card._node.label)) {
+      card.classList.add('selected');
+      for (const id of card._node.leafIds) selectedLeafIds.add(id);
+    }
+  });
+  renderRightPanel();
+  refreshAllCheckboxes();
+  updateSummary();
+  updateButtonStates();
 }
 
 function renderCardList() {
@@ -772,8 +778,7 @@ function renderRightPanel() {
     return;
   }
   empty.style.display = 'none';
-  document.getElementById('rightHeaderLabel').textContent =
-    [...selectedWorkTypes].join(' + ');
+  document.getElementById('rightHeaderLabel').textContent = [...selectedWorkTypes].join(' + ');
   for (const node of treeRoot) {
     if (!selectedWorkTypes.has(node.label)) continue;
     renderNodeExpanded(container, node);
@@ -787,24 +792,20 @@ function buildTreeModel() {
 
   for (const [wtName, rows] of Object.entries(masterData)) {
     const wtNode = { label: wtName, children: [], leafIds: [], depth: 0 };
-
     const byPhotoType = new Map();
     for (const r of rows) {
       const pt = r.photoType || '';
       if (!byPhotoType.has(pt)) byPhotoType.set(pt, []);
       byPhotoType.get(pt).push(r);
     }
-
     for (const [pt, ptRows] of byPhotoType) {
       const ptNode = { label: pt || '(未分類)', children: [], leafIds: [], depth: 1 };
-
       const byVariety = new Map();
       for (const r of ptRows) {
         const v = r.variety || '';
         if (!byVariety.has(v)) byVariety.set(v, []);
         byVariety.get(v).push(r);
       }
-
       for (const [v, vRows] of byVariety) {
         const bySub = new Map();
         for (const r of vRows) {
@@ -812,51 +813,33 @@ function buildTreeModel() {
           if (!bySub.has(s)) bySub.set(s, []);
           bySub.get(s).push(r);
         }
-
         const skipVariety = !v;
         const varietyNode = skipVariety ? null : { label: v, children: [], leafIds: [], depth: 2 };
         const parentForSub = skipVariety ? ptNode : varietyNode;
-
         for (const [s, sRows] of bySub) {
           const skipSub = !s;
-          const subNode = skipSub ? null : {
-            label: s, children: [], leafIds: [],
-            depth: skipVariety ? 2 : 3
-          };
+          const subNode = skipSub ? null : { label: s, children: [], leafIds: [], depth: skipVariety ? 2 : 3 };
           const parentForLeaf = skipSub ? parentForSub : subNode;
-
           for (const r of sRows) {
             const lid = leafId++;
-            const leafLabel = r.remarks || '(備考なし)';
-            const leaf = {
-              label: leafLabel,
-              leafId: lid,
-              leafIds: [lid],
-              children: [],
-              hasPattern: !!(r.searchPatterns),
-              depth: parentForLeaf.depth + 1
-            };
+            const leaf = { label: r.remarks || '(備考なし)', leafId: lid, leafIds: [lid], children: [], hasPattern: !!(r.searchPatterns), depth: parentForLeaf.depth + 1 };
             allLeaves.push({ id: lid, row: r, workTypeName: wtName });
             parentForLeaf.children.push(leaf);
             parentForLeaf.leafIds.push(lid);
           }
-
           if (subNode) {
             parentForSub.children.push(subNode);
             parentForSub.leafIds.push(...subNode.leafIds);
           }
         }
-
         if (varietyNode) {
           ptNode.children.push(varietyNode);
           ptNode.leafIds.push(...varietyNode.leafIds);
         }
       }
-
       wtNode.children.push(ptNode);
       wtNode.leafIds.push(...ptNode.leafIds);
     }
-
     treeRoot.push(wtNode);
   }
 }
@@ -873,18 +856,14 @@ function getCheckState(node) {
 function renderNodeExpanded(parent, node) {
   const hasChildren = node.children.length > 0;
   const isLeaf = node.leafId !== undefined;
-
   const row = document.createElement('div');
   row.className = 'tree-node';
   row.setAttribute('data-depth', node.depth);
-  const indent = 8 + node.depth * 20;
-  row.style.paddingLeft = indent + 'px';
+  row.style.paddingLeft = (8 + node.depth * 20) + 'px';
 
   const toggle = document.createElement('span');
   toggle.className = 'tree-toggle';
-  if (hasChildren) {
-    toggle.textContent = '\u25BC';
-  }
+  if (hasChildren) toggle.textContent = '\u25BC';
   row.appendChild(toggle);
 
   const label = document.createElement('span');
@@ -911,9 +890,7 @@ function renderNodeExpanded(parent, node) {
     childrenDiv = document.createElement('div');
     childrenDiv.className = 'tree-children open';
     parent.appendChild(childrenDiv);
-    for (const child of node.children) {
-      renderNodeExpanded(childrenDiv, child);
-    }
+    for (const child of node.children) renderNodeExpanded(childrenDiv, child);
   }
 
   toggle.addEventListener('click', (e) => {
@@ -939,7 +916,6 @@ function renderNodeExpanded(parent, node) {
       const leaf = allLeaves[node.leafId];
       const r = leaf.row;
       label.style.display = 'none';
-
       const form = document.createElement('div');
       form.className = 'inline-edit';
       form.innerHTML = `
@@ -950,52 +926,40 @@ function renderNodeExpanded(parent, node) {
         <button class="ie-cancel">✕</button>
       `;
       row.insertBefore(form, count);
-
       const cancel = () => { form.remove(); label.style.display = ''; };
       form.querySelector('.ie-cancel').addEventListener('click', (ev) => { ev.stopPropagation(); cancel(); });
-
       form.querySelector('.ie-save').addEventListener('click', async (ev) => {
         ev.stopPropagation();
         const fields = form.querySelectorAll('.ie-field');
         for (const f of fields) r[f.dataset.key] = f.value;
-        const wtRows = masterData[leaf.workTypeName];
-        const rowIdx = wtRows.indexOf(r);
         try {
           const resp = await fetch('/api/master/update', {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ workTypeName: leaf.workTypeName, rowIndex: rowIdx, row: r })
+            body: JSON.stringify({ workTypeName: leaf.workTypeName, rowIndex: masterData[leaf.workTypeName].indexOf(r), row: r })
           });
           if (!resp.ok) throw new Error(await resp.text());
-        } catch(err) {
-          console.error('マスタ保存エラー:', err.message);
-        }
+        } catch(err) { console.error('マスタ保存エラー:', err.message); }
         label.textContent = r.remarks || '(備考なし)';
         cancel();
       });
-
       form.querySelector('input').focus();
-      form.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') { ev.preventDefault(); form.querySelector('.ie-save').click(); }
-        if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
-      });
     });
   }
 }
 
 function refreshAllCheckboxes() {
-  const cards = document.querySelectorAll('.wt-card');
-  for (const card of cards) {
-    if (!card._node) continue;
+  document.querySelectorAll('.wt-card').forEach(card => {
+    if (!card._node) return;
     const state = getCheckState(card._node);
     if (state === 'checked') {
       card.classList.add('selected');
-      if (!selectedWorkTypes.has(card._node.label)) selectedWorkTypes.add(card._node.label);
+      selectedWorkTypes.add(card._node.label);
     } else if (state === 'unchecked') {
       card.classList.remove('selected');
       selectedWorkTypes.delete(card._node.label);
     }
-  }
+  });
 }
 
 function updateSummary() {
@@ -1005,16 +969,13 @@ function updateSummary() {
     document.getElementById('summaryDetail').textContent = '工種を選択してください';
   } else {
     const wtNames = new Set();
-    for (const id of selectedLeafIds) {
-      wtNames.add(allLeaves[id].workTypeName);
-    }
-    document.getElementById('summaryDetail').textContent =
-      [...wtNames].join(' + ');
+    for (const id of selectedLeafIds) wtNames.add(allLeaves[id].workTypeName);
+    document.getElementById('summaryDetail').textContent = [...wtNames].join(' + ');
   }
   updateButtonStates();
+  saveState();
 }
 
-// Expand all / Collapse all
 document.getElementById('expandAllBtn').addEventListener('click', () => {
   document.querySelectorAll('.tree-children').forEach(el => el.classList.add('open'));
   document.querySelectorAll('.tree-toggle').forEach(el => { if (el.textContent === '\u25B6') el.textContent = '\u25BC'; });
@@ -1024,7 +985,6 @@ document.getElementById('collapseAllBtn').addEventListener('click', () => {
   document.querySelectorAll('.tree-toggle').forEach(el => { if (el.textContent === '\u25BC') el.textContent = '\u25B6'; });
 });
 
-// --- Folder browse via server-side dialog ---
 document.getElementById('folderBrowseBtn').addEventListener('click', async () => {
   try {
     const r = await fetch('/api/browse');
@@ -1035,459 +995,205 @@ document.getElementById('folderBrowseBtn').addEventListener('click', async () =>
       saveState();
       updateButtonStates();
     }
-  } catch(e) { /* server not running */ }
+  } catch(e) {}
 });
 
-// --- Folder path input: update state on typing ---
 document.getElementById('folderPathInput').addEventListener('input', () => {
   selectedFolder = document.getElementById('folderPathInput').value.trim();
   updateButtonStates();
+  saveState();
 });
 
-// --- Folder path input: Enter to run analyze ---
-document.getElementById('folderPathInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    const folder = document.getElementById('folderPathInput').value.trim();
-    if (!folder) return;
-    selectedFolder = folder;
-    updateButtonStates();
-    runAnalyze(folder);
-  }
-});
-
-// --- Command generation ---
-async function getMasterPath() {
+async function runAnalyze(folder) {
   const names = [...selectedWorkTypes];
-  // Always include 共通
   if (!names.includes('共通')) names.push('共通');
-  if (names.length === 1) {
-    return 'master/by_work_type/' + names[0] + '.csv';
-  }
-  // Multiple: merge via server
-  const r = await fetch('/api/merge-master', {
+  const res = await fetch('/api/merge-master', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ masterFiles: names })
   });
-  const j = await r.json();
-  return j.path;
-}
-
-async function runAnalyze(folder) {
-  const masterPath = await getMasterPath();
-  const cmd = `target/release/photo-ai-rust.exe analyze "${folder}" --master "${masterPath}" --output result.json`;
+  const j = await res.json();
+  const cmd = `target/release/photo-ai-rust.exe analyze "${folder}" --master "${j.path}" --output result.json`;
   sendToTerminal(cmd);
   analyzeRun = true;
   updateButtonStates();
 }
 
-// --- CLI shortcut buttons ---
-
-// Analyze button
 document.getElementById('analyzeBtn').addEventListener('click', () => {
-  if (selectedWorkTypes.size === 0) {
-    alert('工種を選択してください');
-    return;
-  }
-  if (!selectedFolder) {
-    // Focus folder input
-    document.getElementById('folderPathInput').focus();
-    return;
-  }
+  if (selectedWorkTypes.size === 0) return alert('工種を選択してください');
+  if (!selectedFolder) return document.getElementById('folderPathInput').focus();
   runAnalyze(selectedFolder);
 });
 
-// Export PDF button
-document.getElementById('exportPdfBtn').addEventListener('click', () => {
-  const cmd = 'target/release/photo-ai-rust.exe export result.json --format pdf';
-  sendToTerminal(cmd);
-});
-
-// Export Excel button
-document.getElementById('exportExcelBtn').addEventListener('click', () => {
-  const cmd = 'target/release/photo-ai-rust.exe export result.json --format excel';
-  sendToTerminal(cmd);
-});
-
-// Generic CLI shortcut buttons (Claude, Gemini)
+document.getElementById('exportPdfBtn').addEventListener('click', () => sendToTerminal('target/release/photo-ai-rust.exe export result.json --format pdf'));
+document.getElementById('exportExcelBtn').addEventListener('click', () => sendToTerminal('target/release/photo-ai-rust.exe export result.json --format excel'));
 document.querySelectorAll('.cli-btn[data-cmd]').forEach(btn => {
   btn.addEventListener('click', () => {
     const cmd = btn.dataset.cmd;
-    // Cache agent startup commands for auto-restore on reload
-    if (cmd === 'claude' || cmd === 'gemini') {
-      localStorage.setItem('photoai_agent_cmd', cmd);
-    }
+    if (cmd === 'claude' || cmd === 'gemini') localStorage.setItem('photoai_agent_cmd', cmd);
     sendToTerminal(cmd);
   });
 });
 
 function sendToTerminal(cmd) {
   const frame = document.getElementById('terminalFrame1');
-  if (frame && frame.contentWindow) {
-    frame.contentWindow.postMessage({ type: 'command', cmd: cmd }, '*');
-  }
+  if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'command', cmd: cmd }, '*');
 }
 
-// --- Master operation helpers ---
-
-function applyMasterOperation(op) {
-  const wt = op.workType;
-  if (!wt) return null;
-
-  if (op.action === 'add') {
-    if (!masterData[wt]) masterData[wt] = [];
-    const newRow = {
-      division: '',
-      photoType: op.photoType || '',
-      workType: wt,
-      variety: op.variety || '',
-      subphase: op.subphase || '',
-      remarks: op.remarks || '',
-      searchPatterns: op.searchPatterns || ''
-    };
-    masterData[wt].push(newRow);
-    const path = [wt, op.photoType, op.variety, op.subphase, op.remarks].filter(Boolean).join(' > ');
-    return `追加しました: ${path}`;
-  }
-
-  if (op.action === 'delete') {
-    if (!masterData[wt]) return `工種 "${wt}" が見つかりません`;
-    const before = masterData[wt].length;
-    masterData[wt] = masterData[wt].filter(r => r.remarks !== op.remarks);
-    const after = masterData[wt].length;
-    if (before === after) return `削除対象が見つかりません: ${wt} > ${op.remarks}`;
-    return `削除しました: ${wt} > ${op.remarks} (${before - after}行)`;
-  }
-
-  if (op.action === 'edit') {
-    if (!masterData[wt]) return `工種 "${wt}" が見つかりません`;
-    let edited = 0;
-    for (const r of masterData[wt]) {
-      if (r.remarks === op.target) {
-        if (op.newRemarks !== undefined) r.remarks = op.newRemarks;
-        if (op.newPhotoType !== undefined) r.photoType = op.newPhotoType;
-        if (op.newVariety !== undefined) r.variety = op.newVariety;
-        if (op.newSubphase !== undefined) r.subphase = op.newSubphase;
-        if (op.newSearchPatterns !== undefined) r.searchPatterns = op.newSearchPatterns;
-        edited++;
-      }
-    }
-    if (edited === 0) return `編集対象が見つかりません: ${wt} > ${op.target}`;
-    return `編集しました: ${wt} > ${op.target} → ${op.newRemarks || op.target} (${edited}行)`;
-  }
-
-  return `不明なアクション: ${op.action}`;
-}
-
-function refreshTreeAfterMasterChange() {
-  buildTreeModel();
-  renderCardList();
-  const cards = document.querySelectorAll('.wt-card');
-  for (const card of cards) {
-    if (card._node && selectedWorkTypes.has(card._node.label)) {
-      card.classList.add('selected');
-      for (const id of card._node.leafIds) selectedLeafIds.add(id);
-    }
-  }
-  renderRightPanel();
-  refreshAllCheckboxes();
-  updateSummary();
-}
-
-function handleMasterOps(ops) {
-  const results = [];
-  for (const op of ops) {
-    const msg = applyMasterOperation(op);
-    if (msg) results.push(msg);
-  }
-  if (results.length > 0) {
-    refreshTreeAfterMasterChange();
-    console.log('Master ops:', results.join('; '));
-  }
-  return results.length;
-}
-
-// --- Add Row Form ---
 document.getElementById('addRowBtn').addEventListener('click', () => {
   const sel = document.getElementById('formWorkType');
   sel.innerHTML = '';
-  const wtNames = Object.keys(masterData);
-  for (const name of wtNames) {
+  Object.keys(masterData).forEach(name => {
     const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
+    opt.value = name; opt.textContent = name;
     if (selectedWorkTypes.has(name)) opt.selected = true;
     sel.appendChild(opt);
-  }
-  document.getElementById('formPhotoType').value = '';
-  document.getElementById('formVariety').value = '';
-  document.getElementById('formSubphase').value = '';
-  document.getElementById('formRemarks').value = '';
-  document.getElementById('formSearchPatterns').value = '';
+  });
+  ['formPhotoType','formVariety','formSubphase','formRemarks','formSearchPatterns'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('addRowOverlay').classList.add('active');
 });
 
-document.getElementById('formCancelBtn').addEventListener('click', () => {
-  document.getElementById('addRowOverlay').classList.remove('active');
-});
-
-document.getElementById('addRowOverlay').addEventListener('click', (e) => {
-  if (e.target === document.getElementById('addRowOverlay')) {
-    document.getElementById('addRowOverlay').classList.remove('active');
-  }
-});
-
-document.getElementById('formSubmitBtn').addEventListener('click', () => {
+document.getElementById('formSubmitBtn').addEventListener('click', async () => {
   const wt = document.getElementById('formWorkType').value;
-  const photoType = document.getElementById('formPhotoType').value.trim();
-  const variety = document.getElementById('formVariety').value.trim();
-  const subphase = document.getElementById('formSubphase').value.trim();
   const remarks = document.getElementById('formRemarks').value.trim();
-  const searchPatterns = document.getElementById('formSearchPatterns').value.trim();
-
-  if (!wt || !remarks) {
-    alert('工種と備考は必須です');
-    return;
-  }
-
-  const op = { action: 'add', workType: wt, photoType, variety, subphase, remarks, searchPatterns };
-  const msg = applyMasterOperation(op);
-  refreshTreeAfterMasterChange();
-  console.log(msg);
+  if (!wt || !remarks) return alert('工種と備考は必須です');
+  const row = { division: '', photoType: document.getElementById('formPhotoType').value, workType: wt, variety: document.getElementById('formVariety').value, subphase: document.getElementById('formSubphase').value, remarks, searchPatterns: document.getElementById('formSearchPatterns').value };
+  if (!masterData[wt]) masterData[wt] = [];
+  masterData[wt].push(row);
+  buildTreeModel();
+  renderCardList();
+  renderRightPanel();
   document.getElementById('addRowOverlay').classList.remove('active');
 });
 
-// UI reload without killing terminal
 document.getElementById('reloadUiBtn').addEventListener('click', async () => {
-  // Save terminal iframe element
   const frame = document.getElementById('terminalFrame1');
   const parent = frame.parentElement;
   parent.removeChild(frame);
-
-  // Fetch fresh page
   const r = await fetch('/index.html?t=' + Date.now());
   const html = await r.text();
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-
-  // Replace style
+  const doc = new DOMParser().parseFromString(html, 'text/html');
   document.querySelector('style').textContent = doc.querySelector('style').textContent;
-
-  // Replace body content except we need to re-insert terminal
-  const newBody = doc.querySelector('body');
-  document.querySelector('body').innerHTML = newBody.innerHTML;
-
-  // Find terminal pane and re-insert saved iframe
+  document.querySelector('body').innerHTML = doc.querySelector('body').innerHTML;
   const newPane = document.querySelector('.terminal-pane');
-  if (newPane) {
-    newPane.innerHTML = '';
-    newPane.appendChild(frame);
-  }
-
-  // Re-run scripts by evaluating the script content
-  const scriptEl = doc.querySelector('script');
-  if (scriptEl) {
-    eval(scriptEl.textContent);
-  }
+  if (newPane) { newPane.innerHTML = ''; newPane.appendChild(frame); }
+  eval(doc.querySelector('script').textContent);
 });
 
-// Terminal ready detection via postMessage from iframe
 window.addEventListener('message', (e) => {
-  console.log('[main] postMessage received:', e.data);
   if (e.data && e.data.type === 'terminal-ready') {
-    console.log('[main] terminal-ready!');
     terminalReady = true;
+    document.getElementById('terminalModeLabel').textContent = (e.data.mode === 'deckpilot' ? 'Deckpilot Mode' : 'PTY Mode');
+    document.getElementById('dpStatusDot').classList.toggle('online', e.data.mode === 'deckpilot');
     updateButtonStates();
-    const cachedCmd = localStorage.getItem('photoai_agent_cmd');
-    console.log('[main] cached agent cmd:', cachedCmd);
-    if (cachedCmd) {
-      setTimeout(() => {
-        console.log('[main] sending cached cmd to terminal:', cachedCmd);
-        sendToTerminal(cachedCmd);
-      }, 500);
-    }
+    const cached = localStorage.getItem('photoai_agent_cmd');
+    if (cached) setTimeout(() => sendToTerminal(cached), 500);
+  } else if (e.data && e.data.type === 'dp-sessions') {
+    updateDpSessions(e.data.sessions);
   }
 });
 
-// --- Persistence (localStorage) ---
+function updateDpSessions(sessions) {
+  const sel = document.getElementById('dpSessionSelectTerminal');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">-- Session --</option>';
+  sessions.forEach(s => {
+    const name = typeof s === 'string' ? s : (s.name || s.Session);
+    if (!name) return;
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    if (name === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+document.getElementById('dpSessionSelectTerminal').addEventListener('change', (e) => {
+  const frame = document.getElementById('terminalFrame1');
+  if (frame && frame.contentWindow) {
+    frame.contentWindow.postMessage({ type: 'set-session', session: e.target.value }, '*');
+  }
+});
+
+document.getElementById('dpRefreshBtn').addEventListener('click', () => {
+  const frame = document.getElementById('terminalFrame1');
+  if (frame && frame.contentWindow) {
+    frame.contentWindow.postMessage({ type: 'refresh-sessions' }, '*');
+  }
+});
+
 function saveState() {
   localStorage.setItem('photoai_workTypes', JSON.stringify([...selectedWorkTypes]));
   localStorage.setItem('photoai_folder', selectedFolder);
 }
 function restoreState() {
-  const wt = localStorage.getItem('photoai_workTypes');
-  if (wt) {
-    try {
-      const names = JSON.parse(wt);
-      for (const n of names) selectedWorkTypes.add(n);
-    } catch(e) {}
-  }
-  const f = localStorage.getItem('photoai_folder');
-  if (f) {
-    selectedFolder = f;
-    document.getElementById('folderPathInput').value = f;
-  }
+  try {
+    const wt = JSON.parse(localStorage.getItem('photoai_workTypes'));
+    if (wt) wt.forEach(n => selectedWorkTypes.add(n));
+  } catch(e) {}
+  selectedFolder = localStorage.getItem('photoai_folder') || '';
+  document.getElementById('folderPathInput').value = selectedFolder;
 }
 
-// Restore after master load
-const origLoadMaster = loadMaster;
-loadMaster = async function() {
-  await origLoadMaster();
-  restoreState();
-  // Re-select cards
-  document.querySelectorAll('.wt-card').forEach(card => {
-    if (card._node && selectedWorkTypes.has(card._node.label)) {
-      card.classList.add('selected');
-      for (const id of card._node.leafIds) selectedLeafIds.add(id);
-    }
-  });
-  renderRightPanel();
-  refreshAllCheckboxes();
-  updateSummary();
-  updateButtonStates();
-};
-
-// Save on changes
-const origUpdateSummary = updateSummary;
-updateSummary = function() {
-  origUpdateSummary();
-  saveState();
-};
-const origFolderInput = document.getElementById('folderPathInput');
-origFolderInput.addEventListener('change', saveState);
-
-loadMaster();
-
 // === Review Panel (問診票) ===
+let reviewData = null;
+let reviewDirty = false;
 
-let reviewData = null; // loaded result.json data
-let reviewDirty = false; // track unsaved changes
-
-// Tab switching
 document.getElementById('tabMaster').addEventListener('click', () => switchTab('master'));
 document.getElementById('tabReview').addEventListener('click', () => switchTab('review'));
 
 function switchTab(tab) {
-  const isReview = tab === 'review';
-  document.getElementById('tabMaster').classList.toggle('active', !isReview);
-  document.getElementById('tabReview').classList.toggle('active', isReview);
-  document.getElementById('panelMaster').style.display = isReview ? 'none' : 'flex';
-  document.getElementById('panelReview').classList.toggle('active', isReview);
+  ['Master','Review'].forEach(t => {
+    const el = document.getElementById('panel' + t);
+    if (el) el.style.display = (tab.toLowerCase() === t.toLowerCase()) ? 'flex' : 'none';
+    const btn = document.getElementById('tab' + t);
+    if (btn) btn.classList.toggle('active', tab.toLowerCase() === t.toLowerCase());
+  });
 }
 
-// Load result button
 document.getElementById('loadResultBtn').addEventListener('click', loadReviewData);
 
 async function loadReviewData() {
   try {
     const r = await fetch('/api/result?path=result.json');
-    if (!r.ok) { alert('result.json が見つかりません。先にAnalyzeを実行してください。'); return; }
+    if (!r.ok) throw new Error('Result file not found');
     reviewData = await r.json();
-    reviewDirty = false;
-    renderReviewPanel();
-    switchTab('review');
   } catch (e) {
-    alert('結果の読み込みに失敗: ' + e.message);
+    console.warn('result.json が見つかりません。デモ用サンプルを使用します:', e.message);
+    reviewData = SAMPLE_RESULT;
   }
+  reviewDirty = false;
+  renderReviewPanel();
+  switchTab('review');
 }
 
 function renderReviewPanel() {
   if (!reviewData || !reviewData.length) return;
-
-  // Group by group number
   const groups = new Map();
   reviewData.forEach((item, idx) => {
     const gid = item.group || idx;
     if (!groups.has(gid)) groups.set(gid, []);
     groups.get(gid).push(item);
   });
-
-  // Summary stats
   const total = reviewData.length;
   const emptyStation = reviewData.filter(r => !r.station).length;
   const emptyWorkType = reviewData.filter(r => !r.workType).length;
-
   const summary = document.getElementById('reviewSummary');
-  summary.innerHTML = `
-    <span class="badge badge-ok">${total}枚</span>
-    ${emptyStation > 0 ? `<span class="badge badge-warn">測点未設定: ${emptyStation}</span>` : ''}
-    ${emptyWorkType > 0 ? `<span class="badge badge-warn">工種未設定: ${emptyWorkType}</span>` : ''}
-    <span class="spacer"></span>
-    <button class="review-save-btn" id="reviewSaveBtn" ${reviewDirty ? '' : 'disabled'}>全保存</button>
-  `;
+  summary.innerHTML = `<span class="badge badge-ok">${total}枚</span>${emptyStation > 0 ? `<span class="badge badge-warn">測点未設定: ${emptyStation}</span>` : ''}${emptyWorkType > 0 ? `<span class="badge badge-warn">工種未設定: ${emptyWorkType}</span>` : ''}<span class="spacer"></span><button class="review-save-btn" id="reviewSaveBtn" ${reviewDirty ? '' : 'disabled'}>全保存</button>`;
   document.getElementById('reviewSaveBtn').addEventListener('click', saveReviewData);
 
-  // Render group cards
   const scroll = document.getElementById('reviewScroll');
   scroll.innerHTML = '';
-
   for (const [gid, items] of groups) {
     const representative = items[0];
     const category = representative.photoCategory || '未分類';
     const groupLabel = representative.remarks || representative.focusTarget || `グループ${gid}`;
     const boardItem = items.find(i => i.hasBoard && i.detectedText);
-
-    // Extract station candidates from board text
     const candidates = boardItem ? extractStationCandidates(boardItem.detectedText) : [];
-
     const card = document.createElement('div');
     card.className = 'review-group open';
-    card.innerHTML = `
-      <div class="review-group-header">
-        <span class="review-group-toggle">&#9654;</span>
-        <span class="review-group-title">${escHtml(groupLabel)} (${items.length}枚)</span>
-        <span class="review-group-category">${escHtml(category)}</span>
-      </div>
-      <div class="review-group-body">
-        <div class="review-photos">
-          ${items.map(i => `<span class="review-photo-chip">${i.hasBoard ? '<span class="board-icon">&#9635;</span>' : ''}${escHtml(i.fileName)}</span>`).join('')}
-        </div>
-        ${renderFieldRow('工種', 'workType', representative.workType, items)}
-        ${renderFieldRow('種別', 'variety', representative.variety, items)}
-        ${renderFieldRow('細別', 'subphase', representative.subphase, items)}
-        ${renderFieldRow('測点', 'station', representative.station, items)}
-        ${renderFieldRow('備考', 'remarks', representative.remarks, items)}
-        ${boardItem ? `
-          <div class="review-board">
-            <div class="review-board-label">黒板テキスト</div>
-            <div class="review-board-text">${escHtml(boardItem.detectedText)}</div>
-          </div>
-        ` : ''}
-        ${representative.measurements ? `
-          <div class="review-board" style="margin-top:4px;">
-            <div class="review-board-label">計測値</div>
-            <div class="review-board-text">${escHtml(representative.measurements)}</div>
-          </div>
-        ` : ''}
-        ${candidates.length > 0 ? `
-          <div class="review-candidates" data-group="${gid}" data-field="station">
-            <span style="font-size:11px;color:var(--text-muted);">測点候補:</span>
-            ${candidates.map(c => `<span class="review-candidate-chip" data-value="${escAttr(c)}">${escHtml(c)}</span>`).join('')}
-          </div>
-        ` : ''}
-      </div>
-    `;
-
-    // Toggle open/close
-    card.querySelector('.review-group-header').addEventListener('click', () => {
-      card.classList.toggle('open');
-    });
-
-    // Candidate chip click → apply to station field
-    card.querySelectorAll('.review-candidate-chip').forEach(chip => {
-      chip.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const val = chip.dataset.value;
-        const input = card.querySelector('input[data-field="station"]');
-        if (input) {
-          input.value = val;
-          input.classList.toggle('empty', !val);
-          input.dispatchEvent(new Event('change'));
-        }
-      });
-    });
-
+    card.innerHTML = `<div class="review-group-header"><span class="review-group-toggle">&#9654;</span><span class="review-group-title">${escHtml(groupLabel)} (${items.length}枚)</span><span class="review-group-category">${escHtml(category)}</span></div><div class="review-group-body"><div class="review-photos">${items.map(i => `<span class="review-photo-chip">${i.hasBoard ? '<span class="board-icon">&#9635;</span>' : ''}${escHtml(i.fileName)}</span>`).join('')}</div>${['workType','variety','subphase','station','remarks'].map(f => renderFieldRow(f==='workType'?'工種':f==='variety'?'種別':f==='subphase'?'細別':f==='station'?'測点':'備考', f, representative[f], items)).join('')}${boardItem ? `<div class="review-board"><div class="review-board-label">黒板テキスト</div><div class="review-board-text">${escHtml(boardItem.detectedText)}</div></div>` : ''}${representative.measurements ? `<div class="review-board" style="margin-top:4px;"><div class="review-board-label">計測値</div><div class="review-board-text">${escHtml(representative.measurements)}</div></div>` : ''}${candidates.length > 0 ? `<div class="review-candidates" data-group="${gid}" data-field="station"><span style="font-size:11px;color:var(--text-muted);">測点候補:</span>${candidates.map(c => `<span class="review-candidate-chip" data-value="${escAttr(c)}">${escHtml(c)}</span>`).join('')}</div>` : ''}</div>`;
+    card.querySelector('.review-group-header').addEventListener('click', () => card.classList.toggle('open'));
+    card.querySelectorAll('.review-candidate-chip').forEach(chip => chip.addEventListener('click', (e) => { e.stopPropagation(); const input = card.querySelector('input[data-field="station"]'); if (input) { input.value = chip.dataset.value; input.dispatchEvent(new Event('change')); } }));
     scroll.appendChild(card);
   }
 }
@@ -1495,107 +1201,48 @@ function renderReviewPanel() {
 function renderFieldRow(label, field, value, groupItems) {
   const isEmpty = !value;
   const status = isEmpty ? '<span style="color:var(--yellow);">&#9888;</span>' : '<span style="color:var(--green);">&#10003;</span>';
-  const fileNames = groupItems.map(i => i.fileName);
-  return `
-    <div class="review-field">
-      <span class="review-field-label">${label}</span>
-      <input class="review-field-input ${isEmpty ? 'empty' : ''}"
-             type="text"
-             value="${escAttr(value || '')}"
-             data-field="${field}"
-             data-files='${JSON.stringify(fileNames)}'>
-      <span class="review-field-status">${status}</span>
-    </div>
-  `;
+  return `<div class="review-field"><span class="review-field-label">${label}</span><input class="review-field-input ${isEmpty ? 'empty' : ''}" type="text" value="${escAttr(value || '')}" data-field="${field}" data-files='${JSON.stringify(groupItems.map(i => i.fileName))}'> <span class="review-field-status">${status}</span></div>`;
 }
 
 function extractStationCandidates(text) {
   if (!text) return [];
   const candidates = new Set();
-  // No.X pattern
-  const noPattern = /[Nn][Oo][\.\s]*(\d+)/g;
-  let m;
-  while ((m = noPattern.exec(text)) !== null) {
-    candidates.add('No.' + m[1]);
-  }
-  // 場所: or 測点: key-value
+  const noPattern = /[Nn][Oo][\.\s]*(\d+)/g; let m;
+  while ((m = noPattern.exec(text)) !== null) candidates.add('No.' + m[1]);
   const kvPattern = /(?:場所|測点)[:\uff1a\s]*([^\s,\u3001]+)/g;
-  while ((m = kvPattern.exec(text)) !== null) {
-    candidates.add(m[1]);
-  }
-  // Date pattern for safety photos
+  while ((m = kvPattern.exec(text)) !== null) candidates.add(m[1]);
   const datePattern = /(\d{1,2})\u6708(\d{1,2})\u65e5/g;
-  while ((m = datePattern.exec(text)) !== null) {
-    candidates.add(m[0]);
-  }
+  while ((m = datePattern.exec(text)) !== null) candidates.add(m[0]);
   return [...candidates];
 }
 
-// Track changes on review field inputs
 document.addEventListener('change', (e) => {
   if (e.target.matches('.review-field-input')) {
-    const field = e.target.dataset.field;
-    const value = e.target.value;
-    const fileNames = JSON.parse(e.target.dataset.files);
-    // Update reviewData in memory
-    fileNames.forEach(fn => {
-      const rec = reviewData.find(r => r.fileName === fn);
-      if (rec) rec[field] = value;
-    });
+    const field = e.target.dataset.field; const value = e.target.value; const fileNames = JSON.parse(e.target.dataset.files);
+    fileNames.forEach(fn => { const rec = reviewData.find(r => r.fileName === fn); if (rec) rec[field] = value; });
     e.target.classList.toggle('empty', !value);
-    // Update status icon
     const statusEl = e.target.parentElement.querySelector('.review-field-status');
-    if (statusEl) {
-      statusEl.innerHTML = value ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>';
-    }
-    reviewDirty = true;
-    const saveBtn = document.getElementById('reviewSaveBtn');
-    if (saveBtn) saveBtn.disabled = false;
+    if (statusEl) statusEl.innerHTML = value ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>';
+    reviewDirty = true; document.getElementById('reviewSaveBtn').disabled = false;
   }
 });
 
 async function saveReviewData() {
   if (!reviewData || !reviewDirty) return;
-  // Build updates array: one entry per {fileName, field, value}
-  const fields = ['station', 'workType', 'variety', 'subphase', 'remarks'];
   const updates = [];
-  reviewData.forEach(r => {
-    fields.forEach(f => {
-      updates.push({ fileName: r.fileName, field: f, value: r[f] || '' });
-    });
-  });
+  reviewData.forEach(r => ['station', 'workType', 'variety', 'subphase', 'remarks'].forEach(f => updates.push({ fileName: r.fileName, field: f, value: r[f] || '' })));
   try {
-    const r = await fetch('/api/result/update', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ path: 'result.json', updates })
-    });
+    const r = await fetch('/api/result/update', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: 'result.json', updates }) });
     if (!r.ok) throw new Error(await r.text());
-    reviewDirty = false;
-    const saveBtn = document.getElementById('reviewSaveBtn');
-    if (saveBtn) saveBtn.disabled = true;
-    // Re-render to update summary
+    reviewDirty = false; document.getElementById('reviewSaveBtn').disabled = true;
     renderReviewPanel();
-  } catch (e) {
-    alert('保存に失敗: ' + e.message);
-  }
+  } catch (e) { alert('保存に失敗: ' + e.message); }
 }
 
-function escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s || '';
-  return d.innerHTML;
-}
-function escAttr(s) {
-  return (s || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function escAttr(s) { return (s || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
-// Update loadResultBtn state
-const origUpdateButtonStates = updateButtonStates;
-updateButtonStates = function() {
-  origUpdateButtonStates();
-  document.getElementById('loadResultBtn').disabled = !analyzeRun;
-};
+loadMaster();
 </script>
 </body>
 </html>

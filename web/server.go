@@ -118,8 +118,22 @@ func main() {
 	log.Printf("Serving static files from: %s", webDir)
 	log.Printf("Repo root: %s", repoDir)
 
-	http.Handle("/ws/terminal", websocket.Handler(handleTerminal))
-	http.HandleFunc("/api/master", func(w http.ResponseWriter, r *http.Request) {
+	// CORS Middleware
+	cors := func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			h.ServeHTTP(w, r)
+		})
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/ws/terminal", websocket.Handler(handleTerminal))
+	mux.HandleFunc("/api/master", func(w http.ResponseWriter, r *http.Request) {
 		data, err := loadMasterCSVs(repoDir)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
@@ -128,7 +142,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(data)
 	})
-	http.HandleFunc("/api/master/update", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/master/update", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "POST only", 405)
 			return
@@ -150,7 +164,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
-	http.HandleFunc("/api/result", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/result", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			http.Error(w, "GET only", 405)
 			return
@@ -170,7 +184,7 @@ func main() {
 		w.Write(data)
 	})
 
-	http.HandleFunc("/api/result/update", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/result/update", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "POST only", 405)
 			return
@@ -225,7 +239,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "updated": updated})
 	})
 
-	http.HandleFunc("/api/analyze", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/analyze", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "POST only", 405)
 			return
@@ -290,7 +304,7 @@ func main() {
 		})
 	})
 
-	http.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			http.Error(w, "GET only", 405)
 			return
@@ -335,7 +349,7 @@ func main() {
 		http.ServeFile(w, r, absResolved)
 	})
 
-	http.HandleFunc("/api/merge-master", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/merge-master", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "POST only", 405)
 			return
@@ -357,7 +371,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"path": masterPath})
 	})
-	http.HandleFunc("/api/browse", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/browse", func(w http.ResponseWriter, r *http.Request) {
 		// Open native folder picker via PowerShell
 		cmd := exec.Command("powershell", "-NoProfile", "-Sta", "-Command",
 			`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -382,11 +396,11 @@ if ($d.ShowDialog() -eq 'OK') {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"path": path})
 	})
-	http.Handle("/", http.FileServer(http.Dir(webDir)))
+	mux.Handle("/", http.FileServer(http.Dir(webDir)))
 
 	addr := ":9998"
 	log.Printf("Starting server on http://localhost%s", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	if err := http.ListenAndServe(addr, cors(mux)); err != nil {
 		log.Fatal(err)
 	}
 }
