@@ -45,6 +45,8 @@ photo-ai-go/*.dll
 
 # Web server artifacts
 web/server.exe
+web/webserver.exe
+web/webserver-windows-x86_64.exe
 web/master.json
 web/.omc/
 
