@@ -128,8 +128,15 @@ func startGhosttyWeb(webDir string) (*exec.Cmd, func()) {
 		}
 	}
 
+	// Use bundled node.exe if present, otherwise fall back to system node
+	nodeCmd := "node"
+	bundledNode := filepath.Join(webDir, "node.exe")
+	if _, err := os.Stat(bundledNode); err == nil {
+		nodeCmd = bundledNode
+	}
+
 	// Start demo server
-	cmd := exec.Command("node", "bin/demo.js")
+	cmd := exec.Command(nodeCmd, "bin/demo.js")
 	cmd.Dir = demoDir
 	cmd.Env = append(os.Environ(), "PORT="+ghosttyPort)
 	cmd.Stdout = os.Stdout

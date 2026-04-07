@@ -85,6 +85,10 @@ jobs:
           cp target/release/photo-ai-rust.exe "$DIST/"
           cp web/webserver-windows-x86_64.exe "$DIST/web/webserver.exe"
           cp web/deckpilot/deckpilot-windows-x86_64.exe "$DIST/web/deckpilot.exe"
+          # Bundle node.exe from CI runner (same version as setup-node)
+          NODE_EXE="$(which node)"
+          cp "$NODE_EXE" "$DIST/web/node.exe"
+          echo "Bundled Node.js $(node --version)"
           # Web assets
           cp web/*.html "$DIST/web/"
           cp -r web/ghostty-web/demo "$DIST/web/ghostty-web/demo"
@@ -102,12 +106,10 @@ jobs:
           ## 使い方
 
           1. zipを展開
-          2. `web\webserver.exe` を実行（Node.js必須）
+          2. `web\webserver.exe` を実行
           3. ブラウザで http://localhost:9998 を開く
 
-          ### 必要な環境
-          - Windows 10/11
-          - [Node.js](https://nodejs.org/) v18以上
+          Node.js同梱済み。追加インストール不要。
 
           ### CLI単体で使う場合
           ```
