@@ -3,146 +3,320 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>photo-ai - AI-powered construction photo analysis</title>
+    <title>photo-ai | 工事写真AI解析・写真台帳自動生成</title>
     <style>
         :root {
-            --bg-color: #1a1a2e;
-            --text-color: #e0e0e0;
-            --accent-color: #4fc3f7;
-            --card-bg: #2a2a4e;
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --accent: #6366f1;
+            --accent-hover: #818cf8;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --success: #22c55e;
         }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif, 'Meiryo', 'MS PGothic';
-            margin: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
             line-height: 1.6;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 2rem;
         }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        /* Hero Section */
         header {
+            padding: 4rem 0;
+            text-align: center;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 9999px;
+            color: var(--accent);
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            letter-spacing: -0.025em;
+        }
+        .hero-desc {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 700px;
+            margin: 0 auto 2rem;
+        }
+        .cta-group {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background-color: var(--accent);
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: var(--accent-hover);
+        }
+        .btn-secondary {
+            background-color: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover {
+            border-color: var(--accent);
+        }
+
+        /* Screenshot Section */
+        .screenshot-container {
+            margin: 4rem 0;
+            border-radius: 1rem;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            background: var(--surface);
+        }
+        .screenshot-container img {
+            width: 100%;
+            display: block;
+        }
+
+        /* Pipeline Section */
+        .section-title {
             text-align: center;
             margin-bottom: 3rem;
         }
-        h1 {
-            font-size: 3rem;
-            color: var(--accent-color);
-            margin-bottom: 0.5rem;
+        .section-title h2 {
+            font-size: 2rem;
+            font-weight: 700;
         }
-        .subtitle {
-            font-size: 1.2rem;
-            opacity: 0.8;
+        .pipeline {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 4rem;
         }
-        .section {
-            max-width: 800px;
-            width: 100%;
-            margin-bottom: 2rem;
-            background: var(--card-bg);
-            padding: 2rem;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        }
-        h2 {
-            border-bottom: 2px solid var(--accent-color);
-            padding-bottom: 0.5rem;
-            margin-top: 0;
-        }
-        h3 {
-            margin-top: 1rem;
-            margin-bottom: 0.5rem;
-        }
-        .download-item {
-            margin-bottom: 1.5rem;
-        }
-        .download-btn {
-            display: inline-block;
-            background-color: var(--accent-color);
-            color: var(--bg-color);
-            padding: 0.8rem 1.5rem;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: bold;
-            transition: opacity 0.2s;
-            margin-top: 0.5rem;
-        }
-        .download-btn:hover {
-            opacity: 0.8;
-        }
-        .quickstart-list {
-            padding-left: 1.5rem;
-        }
-        .quickstart-list li {
-            margin-bottom: 0.8rem;
-        }
-        footer {
-            margin-top: 3rem;
+        .pipeline-step {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
             text-align: center;
-            opacity: 0.6;
         }
-        footer a {
-            color: var(--accent-color);
-            text-decoration: none;
-        }
-        .lang-en {
+        .step-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
             display: block;
-            font-size: 0.9em;
-            opacity: 0.8;
-            margin-top: 0.2rem;
         }
-        @media (max-width: 600px) {
-            h1 { font-size: 2rem; }
-            body { padding: 1rem; }
-            .section { padding: 1rem; }
+        .step-title {
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            font-size: 1.125rem;
+        }
+        .step-desc {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        /* Distribution & Modes */
+        .distribution-section {
+            margin-bottom: 4rem;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        @media (max-width: 768px) {
+            .grid-2 { grid-template-columns: 1fr; }
+        }
+        .card {
+            background: var(--surface);
+            padding: 2rem;
+            border-radius: 1rem;
+            border: 1px solid var(--border);
+        }
+        .card h3 {
+            margin-bottom: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--accent);
+        }
+        .card p {
+            font-size: 0.95rem;
+            margin-bottom: 1rem;
+        }
+        .card ul {
+            list-style: none;
+        }
+        .card li {
+            margin-bottom: 0.75rem;
+            padding-left: 1.5rem;
+            position: relative;
+            font-size: 0.95rem;
+        }
+        .card li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        /* Startup Section */
+        .setup-card {
+            background: #000;
+            padding: 2rem;
+            border-radius: 1rem;
+            border: 1px solid var(--border);
+            margin-bottom: 4rem;
+        }
+        .setup-card h3 {
+            margin-bottom: 1rem;
+            color: var(--text);
+        }
+        .code-block {
+            background: #1e293b;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.9rem;
+            margin: 1rem 0;
+            overflow-x: auto;
+            color: #e2e8f0;
+            border-left: 4px solid var(--accent);
+        }
+
+        footer {
+            text-align: center;
+            padding: 4rem 0;
+            border-top: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+        .footer-note {
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            opacity: 0.6;
         }
     </style>
 </head>
 <body>
-    <header>
-        <h1>photo-ai</h1>
-        <div class="subtitle">AI-powered construction photo analysis</div>
-    </header>
+    <div class="container">
+        <header>
+            <span class="badge">Gemini-Powered Engine</span>
+            <h1>photo-ai</h1>
+            <p class="hero-desc">工事写真をAIで自動分類し、写真台帳 (PDF/Excel) を生成する次世代ツール。複雑なフォルダ整理から解放され、マスタ照合まで自動化します。</p>
+            <div class="cta-group">
+                <a href="https://github.com/YuujiKamura/photo-ai-rust/releases/latest" class="btn btn-primary">最新版をダウンロード</a>
+                <a href="https://github.com/YuujiKamura/photo-ai-rust" class="btn btn-secondary">GitHub Repository</a>
+            </div>
+        </header>
 
-    <div class="section">
-        <h2>Download <span class="lang-en">ダウンロード</span></h2>
-        
-        <div class="download-item">
-            <h3>webserver (Main)</h3>
-            <p>
-                Download webserver.exe, run it, open localhost:9998 in your browser.
-                Now includes <b>deckpilot</b> (AI agent terminal integration).
-                <span class="lang-en">webserver.exe をダウンロードして実行し、ブラウザで localhost:9998 を開いてください。
-                AI エージェントターミナル連携 (deckpilot) も内蔵されました。</span>
-            </p>
-            <a href="https://github.com/YuujiKamura/photo-ai-rust/releases/latest" class="download-btn">Latest Release</a>
+        <div class="screenshot-container">
+            <img src="screenshots/web-ui.png" alt="photo-ai-rust Web UI Screenshot">
         </div>
-    </div>
 
-    <div class="section">
-        <h2>Quick Start <span class="lang-en">クイックスタート</span></h2>
-        <ol class="quickstart-list">
-            <li>
-                Download webserver.exe from Releases
-                <span class="lang-en">Releases から webserver.exe をダウンロードします。</span>
-            </li>
-            <li>
-                Run webserver.exe
-                <span class="lang-en">webserver.exe を実行します。</span>
-            </li>
-            <li>
-                Open http://localhost:9998 in your browser
-                <span class="lang-en">ブラウザで http://localhost:9998 を開きます。</span>
-            </li>
-            <li>
-                Select photo folder and analyze
-                <span class="lang-en">写真フォルダを選択して解析を開始します。</span>
-            </li>
-        </ol>
-    </div>
+        <section id="pipeline">
+            <div class="section-title">
+                <h2>解析パイプライン</h2>
+            </div>
+            <div class="pipeline">
+                <div class="pipeline-step">
+                    <span class="step-icon">📸</span>
+                    <div class="step-title">写真投入</div>
+                    <p class="step-desc">整理前の写真フォルダを指定するだけ</p>
+                </div>
+                <div class="pipeline-step">
+                    <span class="step-icon">🤖</span>
+                    <div class="step-title">Gemini AI分類</div>
+                    <p class="step-desc">AIが黒板と被写体を認識しグループ化</p>
+                </div>
+                <div class="pipeline-step">
+                    <span class="step-icon">⚖️</span>
+                    <div class="step-title">マスタ照合</div>
+                    <p class="step-desc">工種階層マスタと自動で紐付け</p>
+                </div>
+                <div class="pipeline-step">
+                    <span class="step-icon">📄</span>
+                    <div class="step-title">PDF/Excel出力</div>
+                    <p class="step-desc">数分で完成度の高い台帳をエクスポート</p>
+                </div>
+            </div>
+        </section>
 
-    <footer>
-        <p>GitHub Repository: <a href="https://github.com/YuujiKamura/photo-ai-rust">YuujiKamura/photo-ai-rust</a></p>
-    </footer>
+        <section class="distribution-section">
+            <div class="grid-2">
+                <div class="card">
+                    <h3>配布パッケージ</h3>
+                    <p>用途に合わせて2つのコンポーネントを提供しています。</p>
+                    <ul>
+                        <li><strong>photo-ai-rust CLI</strong>: 高速な写真解析エンジン（エンジニア向け）</li>
+                        <li><strong>webserver (Web UI)</strong>: ブラウザで完結するGUIツール。これだけで全機能が使えます。</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>必要なもの</h3>
+                    <ul>
+                        <li><strong>Windows PC</strong> (64bit)</li>
+                        <li><strong>Gemini API key</strong> (Google AI Studioで取得)</li>
+                        <li><strong>解析したい写真フォルダ</strong></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h3>デモモード (Demo)</h3>
+                    <p>GitHub Pages等で公開されているバージョンです。サーバーなしで動作し、サンプルデータを使用してUIや解析結果のイメージを確認できます。</p>
+                </div>
+                <div class="card">
+                    <h3>ローカルモード (Local)</h3>
+                    <p>手元のPCで実行する実務用モードです。実際の写真フォルダをスキャンし、AI解析から台帳出力まで全ての工程を実行します。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="setup-card">
+            <h3>起動手順</h3>
+            <p>1. GitHub Releases から <code>webserver.exe</code> をダウンロードして任意のフォルダに配置します。</p>
+            <p>2. <code>webserver.exe</code> をダブルクリックして起動します。</p>
+            <div class="code-block">
+                [info] Starting webserver on :9998...
+            </div>
+            <p>3. ブラウザで以下のURLを開きます。</p>
+            <div class="code-block">
+                http://localhost:9998
+            </div>
+        </section>
+
+        <footer>
+            <p>&copy; 2026 Yuuji Kamura | Built with Rust, Go and Gemini AI</p>
+            <p class="footer-note">This project is an AI-native construction tool. Agent: Claude 3.5 Sonnet</p>
+        </footer>
+    </div>
 </body>
 </html>
