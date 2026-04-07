@@ -73,23 +73,28 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Bundle web directory
+      - name: Create all-in-one distribution
         shell: bash
         run: |
           # Install ghostty-web demo dependencies
           cd web/ghostty-web/demo && npm install && cd ../../..
-          # Create distribution bundle
-          mkdir -p web-bundle
-          cp web/webserver-windows-x86_64.exe web-bundle/
-          cp web/*.html web-bundle/
-          cp -r web/ghostty-web web-bundle/ghostty-web
-          # Remove .git artifacts from submodule copy
-          rm -rf web-bundle/ghostty-web/.git
-          # Zip it
-          7z a -tzip web-bundle.zip ./web-bundle/*
+          # Build single distribution directory
+          DIST="photo-ai-rust-${{ github.ref_name }}-windows-x86_64"
+          mkdir -p "$DIST/web/ghostty-web"
+          # Executables
+          cp target/release/photo-ai-rust.exe "$DIST/"
+          cp web/webserver-windows-x86_64.exe "$DIST/web/webserver.exe"
+          cp web/deckpilot/deckpilot-windows-x86_64.exe "$DIST/web/deckpilot.exe"
+          # Web assets
+          cp web/*.html "$DIST/web/"
+          cp -r web/ghostty-web/demo "$DIST/web/ghostty-web/demo"
+          cp -r web/ghostty-web/dist "$DIST/web/ghostty-web/dist" 2>/dev/null || true
+          cp web/ghostty-web/ghostty-vt.wasm "$DIST/web/ghostty-web/" 2>/dev/null || true
+          # Zip
+          7z a -tzip "$DIST.zip" "./$DIST/*"
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.ref_name }} target/release/photo-ai-rust-windows-x86_64.exe web/webserver-windows-x86_64.exe web/deckpilot/deckpilot-windows-x86_64.exe web-bundle.zip --title "${{ github.ref_name }}" --generate-notes
+          gh release create ${{ github.ref_name }} "photo-ai-rust-${{ github.ref_name }}-windows-x86_64.zip" --title "${{ github.ref_name }}" --generate-notes
