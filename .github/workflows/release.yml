@@ -50,7 +50,20 @@ jobs:
         shell: bash
         run: cp target/release/photo-ai-rust.exe target/release/photo-ai-rust-windows-x86_64.exe
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: web/go.sum
+
+      - name: Build Go webserver
+        shell: bash
+        run: |
+          cd web
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o webserver-windows-x86_64.exe .
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create ${{ github.ref_name }} target/release/photo-ai-rust-windows-x86_64.exe --title "${{ github.ref_name }}" --generate-notes
+        run: |
+          gh release create ${{ github.ref_name }} target/release/photo-ai-rust-windows-x86_64.exe web/webserver-windows-x86_64.exe --title "${{ github.ref_name }}" --generate-notes
