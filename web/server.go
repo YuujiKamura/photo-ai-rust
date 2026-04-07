@@ -14,10 +14,12 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/YuujiKamura/deckpilot/daemon"
 	"golang.org/x/net/websocket"
@@ -91,6 +93,64 @@ func loadMasterCSVs(repoDir string) (map[string][]MasterRow, error) {
 	return result, nil
 }
 
+// getGhosttyPort returns the ghostty-web demo server port from env or default.
+func getGhosttyPort() string {
+	if p := os.Getenv("GHOSTTY_PORT"); p != "" {
+		return p
+	}
+	return "8888"
+}
+
+// startGhosttyWeb starts the ghostty-web demo server as a child process.
+// It auto-installs npm dependencies if needed.
+// Returns the process (nil if failed) and a cleanup function.
+func startGhosttyWeb(webDir string) (*exec.Cmd, func()) {
+	ghosttyPort := getGhosttyPort()
+	demoDir := filepath.Join(webDir, "ghostty-web", "demo")
+
+	// Check if demo directory exists (submodule present)
+	if _, err := os.Stat(filepath.Join(demoDir, "bin", "demo.js")); err != nil {
+		log.Printf("ghostty-web submodule not found at %s, skipping", demoDir)
+		return nil, func() {}
+	}
+
+	// Auto-install npm dependencies if needed
+	nodeModules := filepath.Join(demoDir, "node_modules")
+	if _, err := os.Stat(nodeModules); err != nil {
+		log.Printf("Installing ghostty-web demo dependencies...")
+		install := exec.Command("npm", "install")
+		install.Dir = demoDir
+		install.Stdout = os.Stdout
+		install.Stderr = os.Stderr
+		if err := install.Run(); err != nil {
+			log.Printf("npm install failed: %v (ghostty-web terminal will be unavailable)", err)
+			return nil, func() {}
+		}
+	}
+
+	// Start demo server
+	cmd := exec.Command("node", "bin/demo.js")
+	cmd.Dir = demoDir
+	cmd.Env = append(os.Environ(), "PORT="+ghosttyPort)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		log.Printf("Failed to start ghostty-web: %v", err)
+		return nil, func() {}
+	}
+	log.Printf("ghostty-web demo server started on port %s (PID %d)", ghosttyPort, cmd.Process.Pid)
+
+	cleanup := func() {
+		if cmd.Process != nil {
+			log.Printf("Stopping ghostty-web (PID %d)...", cmd.Process.Pid)
+			cmd.Process.Kill()
+			cmd.Wait()
+		}
+	}
+	return cmd, cleanup
+}
+
 func main() {
 	// Start deckpilot daemon in background
 	go func() {
@@ -130,6 +190,21 @@ func main() {
 	repoDir := filepath.Dir(webDir)
 	log.Printf("Serving static files from: %s", webDir)
 	log.Printf("Repo root: %s", repoDir)
+
+	// Start ghostty-web demo server as child process
+	ghosttyCmd, ghosttyCleanup := startGhosttyWeb(webDir)
+	defer ghosttyCleanup()
+	_ = ghosttyCmd
+
+	// Handle graceful shutdown to kill child processes
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		log.Printf("Shutting down...")
+		ghosttyCleanup()
+		os.Exit(0)
+	}()
 
 	// CORS Middleware
 	cors := func(h http.Handler) http.Handler {
@@ -494,9 +569,16 @@ if ($d.ShowDialog() -eq 'OK') {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": resp})
 	})
 
-	// Reverse proxy for ghostty-web assets: /ghostty/* → localhost:8888/*
+	// Config endpoint for frontend to discover ghostty-web port
+	ghosttyPort := getGhosttyPort()
+	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"ghosttyPort": ghosttyPort})
+	})
+
+	// Reverse proxy for ghostty-web assets: /ghostty/* → localhost:{ghosttyPort}/*
 	// This avoids cross-origin issues with WASM module import.
-	ghosttyOrigin, _ := url.Parse("http://localhost:8888")
+	ghosttyOrigin, _ := url.Parse("http://localhost:" + ghosttyPort)
 	ghosttyProxy := httputil.NewSingleHostReverseProxy(ghosttyOrigin)
 	mux.HandleFunc("/ghostty/", func(w http.ResponseWriter, r *http.Request) {
 		// Strip /ghostty prefix so /ghostty/dist/foo → /dist/foo on upstream
@@ -658,7 +740,7 @@ func getCPURL() string {
 	if url := os.Getenv("GHOSTTY_CP_URL"); url != "" {
 		return url
 	}
-	return "ws://localhost:8888/cp"
+	return "ws://localhost:" + getGhosttyPort() + "/cp"
 }
 
 // sendCPCommand opens a WebSocket to the CP URL, sends the command, reads the response, and closes.

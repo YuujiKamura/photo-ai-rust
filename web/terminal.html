@@ -122,7 +122,7 @@ body.cp-open #cp-toggle { bottom: 220px; }
   }
 
   function cpConnect() {
-    const wsUrl = 'ws://' + location.hostname + ':8888/cp';
+    const wsUrl = 'ws://' + location.hostname + ':' + ghosttyPort + '/cp';
     cpWs = new WebSocket(wsUrl);
     cpWs.onopen = () => {
       cpSetStatus(true);
@@ -165,7 +165,12 @@ body.cp-open #cp-toggle { bottom: 220px; }
     input.value = '';
   }
 
-  cpConnect();
+  // Fetch ghostty port from server config
+  let ghosttyPort = '8888'; // fallback
+  fetch('/api/config').then(r => r.json()).then(cfg => {
+    ghosttyPort = cfg.ghosttyPort || '8888';
+    cpConnect();
+  }).catch(() => cpConnect());
 </script>
 
 <script type="module">
@@ -211,7 +216,11 @@ body.cp-open #cp-toggle { bottom: 220px; }
 
     // Connect to the PTY WebSocket directly on the demo server
     // (WebSocket is not affected by COEP restrictions, only module import/fetch is)
-    const wsUrl = 'ws://' + location.hostname + ':8888/ws?cols=' + term.cols + '&rows=' + term.rows;
+    // Fetch ghostty port from server config (same as CP panel)
+    const cfgResp = await fetch('/api/config');
+    const cfg = await cfgResp.json();
+    const gPort = cfg.ghosttyPort || '8888';
+    const wsUrl = 'ws://' + location.hostname + ':' + gPort + '/ws?cols=' + term.cols + '&rows=' + term.rows;
     let ws;
 
     function connect() {

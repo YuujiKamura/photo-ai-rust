@@ -19,3 +19,6 @@
 [submodule "web/deckpilot"]
 	path = web/deckpilot
 	url = https://github.com/YuujiKamura/deckpilot.git
+[submodule "web/ghostty-web"]
+	path = web/ghostty-web
+	url = https://github.com/YuujiKamura/ghostty-web.git
