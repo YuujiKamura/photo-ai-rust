@@ -96,5 +96,22 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          gh release create ${{ github.ref_name }} "photo-ai-rust-${{ github.ref_name }}-windows-x86_64.zip" --title "${{ github.ref_name }}" --generate-notes
+          cat > release-notes.md <<'NOTES'
+          ## 使い方
+
+          1. zipを展開
+          2. `web\webserver.exe` を実行（Node.js必須）
+          3. ブラウザで http://localhost:9998 を開く
+
+          ### 必要な環境
+          - Windows 10/11
+          - [Node.js](https://nodejs.org/) v18以上
+
+          ### CLI単体で使う場合
+          ```
+          photo-ai-rust.exe analyze <写真フォルダ>
+          ```
+          NOTES
+          gh release create ${{ github.ref_name }} "photo-ai-rust-${{ github.ref_name }}-windows-x86_64.zip" --title "${{ github.ref_name }}" --notes-file release-notes.md
