@@ -169,68 +169,87 @@ body.cp-open #cp-toggle { bottom: 220px; }
 </script>
 
 <script type="module">
-  // ghostty-web assets served from /dist/ on the demo server (port 8888)
-  const GHOSTTY_SERVER = 'http://localhost:8888';
-
-  // Dynamic import from the demo server
-  const { init, Terminal, FitAddon } = await import(GHOSTTY_SERVER + '/dist/ghostty-web.js');
-
-  await init();
-  const term = new Terminal({
-    fontFamily: "'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
-    fontSize: 14,
-    theme: {
-      background: '#0f0f0f',
-      foreground: '#ececec',
-    },
-  });
-
-  const fitAddon = new FitAddon();
-  window._fitAddon = fitAddon;
-  term.loadAddon(fitAddon);
-
+  // Same-origin proxy: /ghostty/* → localhost:8888/* (avoids CORS/COEP issues)
   const container = document.getElementById('terminal');
-  await term.open(container);
-  fitAddon.fit();
-  fitAddon.observeResize();
 
-  // Connect to the PTY WebSocket on the demo server
-  const wsUrl = 'ws://localhost:8888/ws?cols=' + term.cols + '&rows=' + term.rows;
-  let ws;
-
-  function connect() {
-    ws = new WebSocket(wsUrl);
-    ws.onopen = () => {};
-    ws.onmessage = (e) => term.write(e.data);
-    ws.onclose = () => {
-      term.write('\r\n\x1b[31mDisconnected. Reconnecting...\x1b[0m\r\n');
-      setTimeout(connect, 2000);
-    };
-    ws.onerror = () => {};
+  function showError(msg) {
+    console.error('[ghostty-web]', msg);
+    const div = document.createElement('div');
+    div.style.cssText = 'color:#f66;padding:16px;font-size:13px;white-space:pre-wrap;';
+    div.textContent = '[ghostty-web error] ' + msg;
+    container.appendChild(div);
   }
 
-  term.onData((data) => {
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
-  });
+  try {
+    // Same-origin import via reverse proxy
+    console.log('[ghostty-web] Importing from /ghostty/dist/ghostty-web.js');
+    const mod = await import('/ghostty/dist/ghostty-web.js');
+    const { init, Terminal, FitAddon } = mod;
+    console.log('[ghostty-web] Module loaded, exports:', Object.keys(mod));
 
-  term.onResize(({ cols, rows }) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+    console.log('[ghostty-web] Calling init()...');
+    await init();
+    console.log('[ghostty-web] init() complete');
+
+    const term = new Terminal({
+      fontFamily: "'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
+      fontSize: 14,
+      theme: {
+        background: '#0f0f0f',
+        foreground: '#ececec',
+      },
+    });
+
+    const fitAddon = new FitAddon();
+    window._fitAddon = fitAddon;
+    term.loadAddon(fitAddon);
+
+    await term.open(container);
+    console.log('[ghostty-web] Terminal opened');
+    fitAddon.fit();
+    fitAddon.observeResize();
+
+    // Connect to the PTY WebSocket directly on the demo server
+    // (WebSocket is not affected by COEP restrictions, only module import/fetch is)
+    const wsUrl = 'ws://' + location.hostname + ':8888/ws?cols=' + term.cols + '&rows=' + term.rows;
+    let ws;
+
+    function connect() {
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => { console.log('[ghostty-web] WS connected'); };
+      ws.onmessage = (e) => term.write(e.data);
+      ws.onclose = () => {
+        term.write('\r\n\x1b[31mDisconnected. Reconnecting...\x1b[0m\r\n');
+        setTimeout(connect, 2000);
+      };
+      ws.onerror = (e) => { console.error('[ghostty-web] WS error', e); };
     }
-  });
 
-  connect();
+    term.onData((data) => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
+    });
 
-  // Auto-focus terminal on click and on load
-  container.addEventListener('click', () => term.focus());
-  term.focus();
+    term.onResize(({ cols, rows }) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+      }
+    });
 
-  // Listen for commands from parent window
-  window.addEventListener('message', (e) => {
-    if (e.data && e.data.type === 'command' && ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(e.data.cmd + '\r');
-    }
-  });
+    connect();
+
+    // Auto-focus terminal on click and on load
+    container.addEventListener('click', () => term.focus());
+    term.focus();
+
+    // Listen for commands from parent window
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'command' && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(e.data.cmd + '\r');
+      }
+    });
+  } catch (err) {
+    showError(err.name + ': ' + err.message + '\n\nStack: ' + (err.stack || 'N/A'));
+  }
 </script>
 </body>
 </html>

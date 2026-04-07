@@ -10,6 +10,8 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -135,6 +137,8 @@ func main() {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			// NOTE: COOP/COEP removed — they block cross-origin WASM import from ghostty-web (port 8888).
+			// ghostty-web works without SharedArrayBuffer in single-threaded mode.
 			if r.Method == "OPTIONS" {
 				return
 			}
@@ -488,6 +492,24 @@ if ($d.ShowDialog() -eq 'OK') {
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": resp})
+	})
+
+	// Reverse proxy for ghostty-web assets: /ghostty/* → localhost:8888/*
+	// This avoids cross-origin issues with WASM module import.
+	ghosttyOrigin, _ := url.Parse("http://localhost:8888")
+	ghosttyProxy := httputil.NewSingleHostReverseProxy(ghosttyOrigin)
+	mux.HandleFunc("/ghostty/", func(w http.ResponseWriter, r *http.Request) {
+		// Strip /ghostty prefix so /ghostty/dist/foo → /dist/foo on upstream
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/ghostty")
+		r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, "/ghostty")
+		r.Host = ghosttyOrigin.Host
+		// Remove COEP/COOP from proxied response so same-origin page works
+		ghosttyProxy.ModifyResponse = func(resp *http.Response) error {
+			resp.Header.Del("Cross-Origin-Embedder-Policy")
+			resp.Header.Del("Cross-Origin-Opener-Policy")
+			return nil
+		}
+		ghosttyProxy.ServeHTTP(w, r)
 	})
 
 	mux.Handle("/", http.FileServer(http.Dir(webDir)))
