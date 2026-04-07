@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>terminal</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; }
@@ -14,212 +13,68 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; }
 </head>
 <body>
 <div id="terminal"></div>
-<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
-<script>
-  const GHOSTTY_SERVER = 'http://localhost:9998';
-  const DECKPILOT_WS = 'ws://localhost:8099/ws';
-  const PTY_WS = 'ws://localhost:9998/ws?cols=';
+<script type="module">
+  // ghostty-web assets served from /dist/ on the demo server (port 8888)
+  const GHOSTTY_SERVER = 'http://localhost:8888';
 
-  let term;
-  let fitAddon;
+  // Dynamic import from the demo server
+  const { init, Terminal, FitAddon } = await import(GHOSTTY_SERVER + '/dist/ghostty-web.js');
+
+  await init();
+  const term = new Terminal({
+    fontFamily: "'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
+    fontSize: 14,
+    theme: {
+      background: '#0f0f0f',
+      foreground: '#ececec',
+    },
+  });
+
+  const fitAddon = new FitAddon();
+  term.loadAddon(fitAddon);
+
+  const container = document.getElementById('terminal');
+  await term.open(container);
+  fitAddon.fit();
+  fitAddon.observeResize();
+
+  // Connect to the PTY WebSocket on the demo server
+  const wsUrl = 'ws://localhost:8888/ws?cols=' + term.cols + '&rows=' + term.rows;
   let ws;
-  let mode = 'init'; // 'deckpilot' | 'pty'
-  let dpSession = '';
-  let pendingCmds = [];
-
-  async function start() {
-    // Try to load ghostty-web if available, otherwise use plain xterm
-    let TerminalClass = window.Terminal;
-    let FitAddonClass = window.FitAddon.FitAddon;
-
-    try {
-      const ghostty = await import(GHOSTTY_SERVER + '/dist/ghostty-web.js').catch(() => null);
-      if (ghostty) {
-        await ghostty.init();
-        TerminalClass = ghostty.Terminal;
-        FitAddonClass = ghostty.FitAddon;
-        console.log('Using ghostty-web terminal');
-      }
-    } catch (e) {
-      console.warn('ghostty-web load failed, using xterm.js from CDN');
-    }
-
-    term = new TerminalClass({
-      fontFamily: "'CaskaydiaCove Nerd Font', 'CaskaydiaCove NF', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
-      fontSize: 14,
-      theme: { background: '#0f0f0f', foreground: '#ececec' },
-      allowProposedApi: true
-    });
-
-    fitAddon = new FitAddonClass();
-    term.loadAddon(fitAddon);
-
-    const container = document.getElementById('terminal');
-    term.open(container);
-    fitAddon.fit();
-    if (fitAddon.observeResize) fitAddon.observeResize();
-
-    term.onData((data) => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        if (mode === 'deckpilot') {
-          if (!dpSession) return;
-          ws.send(JSON.stringify({ cmd: 'SEND', session: dpSession, msg: btoa(data) }));
-          // Optional: refresh buffer soon after input
-          setTimeout(() => ws.send(JSON.stringify({ cmd: 'SHOW', session: dpSession, mode: 'buffer' })), 50);
-        } else {
-          ws.send(data);
-        }
-      }
-    });
-
-    term.onResize(({ cols, rows }) => {
-      if (mode === 'pty' && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'resize', cols, rows }));
-      }
-    });
-
-    connect();
-
-    container.addEventListener('click', () => term.focus());
-    term.focus();
-    
-    window.addEventListener('resize', () => fitAddon.fit());
-  }
 
   function connect() {
-    term.write('\x1b[33mConnecting to Deckpilot (localhost:8099)...\x1b[0m\r\n');
-    ws = new WebSocket(DECKPILOT_WS);
-    
-    ws.onopen = () => {
-      mode = 'deckpilot';
-      term.write('\x1b[32mConnected to Deckpilot.\x1b[0m\r\n');
-      ws.send(JSON.stringify({ cmd: 'LIST' }));
-      notifyReady();
-    };
-
-    ws.onmessage = (e) => {
-      if (mode === 'deckpilot') {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.cmd === 'SHOW' || data.type === 'buffer' || data.mode === 'buffer') {
-            // SHOW response: data.data is base64-encoded terminal content
-            const b64 = data.data || data.msg || '';
-            if (b64) {
-              term.reset();
-              const decoded = atob(b64);
-              term.write(decoded);
-            }
-          } else if (data.cmd === 'LIST' || Array.isArray(data) || data.sessions) {
-            const sessions = data.data || data.sessions || (Array.isArray(data) ? data : []);
-            if (sessions.length > 0) {
-              // Notify parent about session list
-              if (window.parent !== window) {
-                window.parent.postMessage({ type: 'dp-sessions', sessions: sessions }, '*');
-              }
-              if (!dpSession) {
-                // Prefer active/idle sessions over dead ones
-                const alive = sessions.filter(s => (s.status || s.Status) === 'active' || (s.status || s.Status) === 'idle');
-                const first = alive.length > 0 ? alive[0] : sessions[0];
-                dpSession = typeof first === 'string' ? first : (first.name || first.Session);
-                const status = (first.status || first.Status) ? ` (${first.status || first.Status})` : '';
-                term.write(`[dp] Auto-selected session: ${dpSession}${status}\r\n`);
-                ws.send(JSON.stringify({ cmd: 'SHOW', session: dpSession, mode: 'buffer' }));
-                flushPending();
-              }
-            } else {
-              term.write('\x1b[31m[dp] No sessions found. Run ghostty first.\x1b[0m\r\n');
-            }
-          } else if (data.data && typeof data.data === 'string') {
-            // Fallback: if server doesn't have cmd field yet, treat string data as buffer
-            term.reset();
-            const decoded = atob(data.data);
-            term.write(decoded);
-          }
-        } catch (err) {
-          term.write(e.data);
-        }
-      } else {
-        term.write(e.data);
-      }
-    };
-
-    ws.onerror = () => {
-      if (mode === 'init') {
-        term.write('\x1b[31mDeckpilot connection failed. Falling back to PTY (localhost:9998)...\x1b[0m\r\n');
-        fallbackToPty();
-      }
-    };
-
-    ws.onclose = () => {
-      if (mode === 'deckpilot') {
-        term.write('\r\n\x1b[31mDeckpilot disconnected. Falling back to PTY...\x1b[0m\r\n');
-        fallbackToPty();
-      }
-    };
-  }
-
-  function fallbackToPty() {
-    mode = 'pty';
-    const url = PTY_WS + term.cols + '&rows=' + term.rows;
-    ws = new WebSocket(url);
-    ws.onopen = () => {
-      term.write('\x1b[32mConnected to PTY.\x1b[0m\r\n');
-      notifyReady();
-      flushPending();
-    };
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => {};
     ws.onmessage = (e) => term.write(e.data);
     ws.onclose = () => {
-      term.write('\r\n\x1b[31mPTY disconnected. Reconnecting...\x1b[0m\r\n');
-      setTimeout(connect, 3000);
+      term.write('\r\n\x1b[31mDisconnected. Reconnecting...\x1b[0m\r\n');
+      setTimeout(connect, 2000);
     };
+    ws.onerror = () => {};
   }
 
-  function notifyReady() {
-    if (window.parent !== window) {
-      window.parent.postMessage({ type: 'terminal-ready', mode: mode }, '*');
-    }
-  }
+  term.onData((data) => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
+  });
 
-  function flushPending() {
-    while (pendingCmds.length > 0) {
-      const cmd = pendingCmds.shift();
-      sendCmd(cmd);
-    }
-  }
-
-  function sendCmd(cmd) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      pendingCmds.push(cmd);
-      return;
-    }
-    if (mode === 'deckpilot') {
-      if (!dpSession) { pendingCmds.push(cmd); return; }
-      const encoded = btoa(unescape(encodeURIComponent(cmd + '\r')));
-      ws.send(JSON.stringify({ cmd: 'SEND', session: dpSession, msg: encoded }));
-      setTimeout(() => ws.send(JSON.stringify({ cmd: 'SHOW', session: dpSession, mode: 'buffer' })), 150);
-    } else {
-      ws.send(cmd + '\r');
-    }
-  }
-
-  window.addEventListener('message', (e) => {
-    if (e.data && e.data.type === 'command') {
-      sendCmd(e.data.cmd);
-    } else if (e.data && e.data.type === 'set-session') {
-      dpSession = e.data.session;
-      term.write(`\r\n[dp] Switched to session: ${dpSession}\r\n`);
-      if (ws && ws.readyState === WebSocket.OPEN && mode === 'deckpilot') {
-        ws.send(JSON.stringify({ cmd: 'SHOW', session: dpSession, mode: 'buffer' }));
-      }
-    } else if (e.data && e.data.type === 'refresh-sessions') {
-      if (ws && ws.readyState === WebSocket.OPEN && mode === 'deckpilot') {
-        ws.send(JSON.stringify({ cmd: 'LIST' }));
-      }
+  term.onResize(({ cols, rows }) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'resize', cols, rows }));
     }
   });
 
-  start();
+  connect();
+
+  // Auto-focus terminal on click and on load
+  container.addEventListener('click', () => term.focus());
+  term.focus();
+
+  // Listen for commands from parent window
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'command' && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(e.data.cmd + '\r');
+    }
+  });
 </script>
 </body>
 </html>
