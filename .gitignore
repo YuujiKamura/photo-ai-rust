@@ -52,3 +52,4 @@ web/.omc/
 
 # OMC state
 .omc/
+.gstack/

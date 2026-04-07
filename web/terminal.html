@@ -102,11 +102,15 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; }
       if (mode === 'deckpilot') {
         try {
           const data = JSON.parse(e.data);
-          if (data.type === 'buffer' || data.mode === 'buffer') {
-            term.reset();
-            const decoded = atob(data.data || data.msg || '');
-            term.write(decoded);
-          } else if (data.cmd === 'LIST' || Array.isArray(data) || data.sessions || data.data) {
+          if (data.cmd === 'SHOW' || data.type === 'buffer' || data.mode === 'buffer') {
+            // SHOW response: data.data is base64-encoded terminal content
+            const b64 = data.data || data.msg || '';
+            if (b64) {
+              term.reset();
+              const decoded = atob(b64);
+              term.write(decoded);
+            }
+          } else if (data.cmd === 'LIST' || Array.isArray(data) || data.sessions) {
             const sessions = data.data || data.sessions || (Array.isArray(data) ? data : []);
             if (sessions.length > 0) {
               // Notify parent about session list
@@ -114,15 +118,23 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; }
                 window.parent.postMessage({ type: 'dp-sessions', sessions: sessions }, '*');
               }
               if (!dpSession) {
-                const first = sessions[0];
+                // Prefer active/idle sessions over dead ones
+                const alive = sessions.filter(s => (s.status || s.Status) === 'active' || (s.status || s.Status) === 'idle');
+                const first = alive.length > 0 ? alive[0] : sessions[0];
                 dpSession = typeof first === 'string' ? first : (first.name || first.Session);
-                term.write(`[dp] Auto-selected session: ${dpSession}\r\n`);
+                const status = (first.status || first.Status) ? ` (${first.status || first.Status})` : '';
+                term.write(`[dp] Auto-selected session: ${dpSession}${status}\r\n`);
                 ws.send(JSON.stringify({ cmd: 'SHOW', session: dpSession, mode: 'buffer' }));
                 flushPending();
               }
             } else {
               term.write('\x1b[31m[dp] No sessions found. Run ghostty first.\x1b[0m\r\n');
             }
+          } else if (data.data && typeof data.data === 'string') {
+            // Fallback: if server doesn't have cmd field yet, treat string data as buffer
+            term.reset();
+            const decoded = atob(data.data);
+            term.write(decoded);
           }
         } catch (err) {
           term.write(e.data);
