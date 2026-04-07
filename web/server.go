@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -288,6 +289,33 @@ func main() {
 			args = append(args, "--output", req.Output)
 		}
 
+		// If ?via=cp is set, send the cargo command through CP instead of exec
+		if r.URL.Query().Get("via") == "cp" {
+			fullCmd := "cargo " + strings.Join(args, " ") + "\n"
+			encoded := base64.StdEncoding.EncodeToString([]byte(fullCmd))
+			cpCommand := "INPUT|web-server|" + encoded
+			resp, err := sendCPCommand(getCPURL(), cpCommand)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.WriteHeader(502)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"exitCode": -1,
+					"stdout":   "",
+					"stderr":   err.Error(),
+					"via":      "cp",
+				})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"exitCode": 0,
+				"stdout":   resp,
+				"stderr":   "",
+				"via":      "cp",
+			})
+			return
+		}
+
 		cmd := exec.Command("cargo", args...)
 		cmd.Dir = repoDir
 
@@ -406,6 +434,62 @@ if ($d.ShowDialog() -eq 'OK') {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"path": path})
 	})
+	mux.HandleFunc("/api/cp/send", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "POST only", 405)
+			return
+		}
+		var req struct {
+			Command string `json:"command"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if req.Command == "" {
+			http.Error(w, "command is required", 400)
+			return
+		}
+		resp, err := sendCPCommand(getCPURL(), req.Command)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(502)
+			json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": resp})
+	})
+
+	mux.HandleFunc("/api/cp/input", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "POST only", 405)
+			return
+		}
+		var req struct {
+			Text string `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if req.Text == "" {
+			http.Error(w, "text is required", 400)
+			return
+		}
+		encoded := base64.StdEncoding.EncodeToString([]byte(req.Text))
+		command := "INPUT|web-server|" + encoded
+		resp, err := sendCPCommand(getCPURL(), command)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(502)
+			json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": resp})
+	})
+
 	mux.Handle("/", http.FileServer(http.Dir(webDir)))
 
 	addr := ":9998"
@@ -545,6 +629,34 @@ func prepareMasterFile(repoDir string, masterFiles []string) (cleanup func(), ma
 		os.Remove(tmpPath)
 	}
 	return cleanupFn, tmpPath, nil
+}
+
+// getCPURL returns the CP WebSocket URL from environment or default.
+func getCPURL() string {
+	if url := os.Getenv("GHOSTTY_CP_URL"); url != "" {
+		return url
+	}
+	return "ws://localhost:8888/cp"
+}
+
+// sendCPCommand opens a WebSocket to the CP URL, sends the command, reads the response, and closes.
+func sendCPCommand(cpURL, command string) (string, error) {
+	ws, err := websocket.Dial(cpURL, "", "http://localhost")
+	if err != nil {
+		return "", fmt.Errorf("failed to connect to CP at %s: %w", cpURL, err)
+	}
+	defer ws.Close()
+
+	if err := websocket.Message.Send(ws, command); err != nil {
+		return "", fmt.Errorf("failed to send CP command: %w", err)
+	}
+
+	var response string
+	if err := websocket.Message.Receive(ws, &response); err != nil {
+		return "", fmt.Errorf("failed to read CP response: %w", err)
+	}
+
+	return response, nil
 }
 
 func handleTerminal(ws *websocket.Conn) {

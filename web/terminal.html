@@ -6,13 +6,168 @@
 <title>terminal</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; }
-#terminal { width: 100%; height: 100%; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; font-family: 'CaskaydiaCove Nerd Font', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace; }
+#terminal { width: 100%; height: 100%; transition: height 0.25s ease; }
+body.cp-open #terminal { height: calc(100% - 220px); }
 #terminal canvas { display: block; }
+
+/* CP Panel */
+#cp-toggle {
+  position: fixed; bottom: 0; right: 16px; z-index: 100;
+  background: #1a1a2e; color: #8888aa; border: 1px solid #333; border-bottom: none;
+  border-radius: 6px 6px 0 0; padding: 2px 12px; font-size: 12px; cursor: pointer;
+  font-family: inherit; transition: background 0.15s;
+}
+#cp-toggle:hover { background: #252540; color: #aaaacc; }
+body.cp-open #cp-toggle { bottom: 220px; }
+#cp-panel {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 99;
+  background: #0f0f17; border-top: 1px solid #2a2a3a;
+  max-height: 0; overflow: hidden; transition: max-height 0.25s ease;
+}
+#cp-panel.open { max-height: 320px; }
+#cp-panel-inner { padding: 8px 12px; }
+.cp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.cp-label { color: #666; font-size: 11px; min-width: 50px; }
+.cp-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+.cp-status.connected { background: #4caf50; box-shadow: 0 0 4px #4caf50; }
+.cp-status.disconnected { background: #f44336; box-shadow: 0 0 4px #f44336; }
+.cp-status-text { color: #888; font-size: 12px; }
+.cp-btn {
+  background: #1a1a2e; color: #aaa; border: 1px solid #333; border-radius: 4px;
+  padding: 3px 10px; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.cp-btn:hover { background: #252540; color: #ccc; }
+.cp-btn:active { background: #303050; }
+.cp-input {
+  background: #111118; color: #ccc; border: 1px solid #333; border-radius: 4px;
+  padding: 3px 8px; font-size: 12px; font-family: inherit; flex: 1; min-width: 120px;
+}
+.cp-input:focus { outline: none; border-color: #555; }
+.cp-input::placeholder { color: #444; }
+#cp-log {
+  background: #0a0a12; border: 1px solid #222; border-radius: 4px;
+  color: #8c8; font-size: 11px; padding: 6px 8px; margin-top: 4px;
+  max-height: 160px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+  line-height: 1.4;
+}
+#cp-log .cp-sent { color: #88aaff; }
+#cp-log .cp-recv { color: #8c8; }
+#cp-log .cp-err { color: #f66; }
 </style>
 </head>
 <body>
 <div id="terminal"></div>
+
+<button id="cp-toggle" onclick="toggleCP()">CP</button>
+<div id="cp-panel">
+  <div id="cp-panel-inner">
+    <div class="cp-row">
+      <span class="cp-status disconnected" id="cp-dot"></span>
+      <span class="cp-status-text" id="cp-status-text">Disconnected</span>
+      <button class="cp-btn" onclick="cpSend('PING')">PING</button>
+      <button class="cp-btn" onclick="cpSend('STATE')">STATE</button>
+      <button class="cp-btn" onclick="cpSend('TAIL|20')">TAIL 20</button>
+      <button class="cp-btn" onclick="cpSend('CAPTURE_PANE')">CAPTURE</button>
+      <button class="cp-btn" onclick="cpSend('LIST_TABS')">TABS</button>
+      <button class="cp-btn" onclick="cpSend('PERSIST')">PERSIST</button>
+    </div>
+    <div class="cp-row">
+      <span class="cp-label">Input:</span>
+      <input class="cp-input" id="cp-pty-input" placeholder="Text to send to PTY..." onkeydown="if(event.key==='Enter')sendPtyInput()">
+      <button class="cp-btn" onclick="sendPtyInput()">Send</button>
+    </div>
+    <div class="cp-row">
+      <span class="cp-label">Raw CP:</span>
+      <input class="cp-input" id="cp-raw-input" placeholder="Raw CP protocol message..." onkeydown="if(event.key==='Enter')sendRawCP()">
+      <button class="cp-btn" onclick="sendRawCP()">Send</button>
+    </div>
+    <div id="cp-log"></div>
+  </div>
+</div>
+
+<script>
+  // CP Panel toggle (global scope for onclick)
+  let cpOpen = false;
+  function toggleCP() {
+    cpOpen = !cpOpen;
+    document.getElementById('cp-panel').classList.toggle('open', cpOpen);
+    document.body.classList.toggle('cp-open', cpOpen);
+    document.getElementById('cp-toggle').textContent = cpOpen ? 'CP \u25BC' : 'CP';
+    // Resize terminal when panel toggles
+    if (window._fitAddon) {
+      setTimeout(() => window._fitAddon.fit(), 260);
+    }
+  }
+
+  // CP WebSocket (global scope for onclick handlers)
+  let cpWs = null;
+  function cpLog(msg, cls) {
+    const log = document.getElementById('cp-log');
+    const span = document.createElement('span');
+    span.className = cls || '';
+    const ts = new Date().toLocaleTimeString();
+    span.textContent = '[' + ts + '] ' + msg + '\n';
+    log.appendChild(span);
+    log.scrollTop = log.scrollHeight;
+    // Keep log trimmed
+    while (log.childNodes.length > 200) log.removeChild(log.firstChild);
+  }
+
+  function cpSetStatus(connected) {
+    const dot = document.getElementById('cp-dot');
+    const txt = document.getElementById('cp-status-text');
+    dot.className = 'cp-status ' + (connected ? 'connected' : 'disconnected');
+    txt.textContent = connected ? 'Connected' : 'Disconnected';
+  }
+
+  function cpConnect() {
+    const wsUrl = 'ws://' + location.hostname + ':8888/cp';
+    cpWs = new WebSocket(wsUrl);
+    cpWs.onopen = () => {
+      cpSetStatus(true);
+      cpLog('Connected to CP', 'cp-recv');
+    };
+    cpWs.onmessage = (e) => {
+      cpLog('\u2190 ' + e.data, 'cp-recv');
+    };
+    cpWs.onclose = () => {
+      cpSetStatus(false);
+      cpLog('CP disconnected, reconnecting in 3s...', 'cp-err');
+      setTimeout(cpConnect, 3000);
+    };
+    cpWs.onerror = () => {};
+  }
+
+  function cpSend(msg) {
+    if (cpWs && cpWs.readyState === WebSocket.OPEN) {
+      cpWs.send(msg);
+      cpLog('\u2192 ' + msg, 'cp-sent');
+    } else {
+      cpLog('Not connected to CP', 'cp-err');
+    }
+  }
+
+  function sendPtyInput() {
+    const input = document.getElementById('cp-pty-input');
+    const text = input.value;
+    if (!text) return;
+    const b64 = btoa(unescape(encodeURIComponent(text)));
+    cpSend('INPUT|web-ui|' + b64);
+    input.value = '';
+  }
+
+  function sendRawCP() {
+    const input = document.getElementById('cp-raw-input');
+    const msg = input.value;
+    if (!msg) return;
+    cpSend(msg);
+    input.value = '';
+  }
+
+  cpConnect();
+</script>
+
 <script type="module">
   // ghostty-web assets served from /dist/ on the demo server (port 8888)
   const GHOSTTY_SERVER = 'http://localhost:8888';
@@ -31,6 +186,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0f0f0f; }
   });
 
   const fitAddon = new FitAddon();
+  window._fitAddon = fitAddon;
   term.loadAddon(fitAddon);
 
   const container = document.getElementById('terminal');
