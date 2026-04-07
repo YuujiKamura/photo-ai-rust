@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>photo-ai - AI-powered construction photo analysis</title>
+    <style>
+        :root {
+            --bg-color: #1a1a2e;
+            --text-color: #e0e0e0;
+            --accent-color: #4fc3f7;
+            --card-bg: #2a2a4e;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif, 'Meiryo', 'MS PGothic';
+            margin: 0;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        h1 {
+            font-size: 3rem;
+            color: var(--accent-color);
+            margin-bottom: 0.5rem;
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.8;
+        }
+        .section {
+            max-width: 800px;
+            width: 100%;
+            margin-bottom: 2rem;
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        h2 {
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 0.5rem;
+            margin-top: 0;
+        }
+        h3 {
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .download-item {
+            margin-bottom: 1.5rem;
+        }
+        .download-btn {
+            display: inline-block;
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+            padding: 0.8rem 1.5rem;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            transition: opacity 0.2s;
+            margin-top: 0.5rem;
+        }
+        .download-btn:hover {
+            opacity: 0.8;
+        }
+        .quickstart-list {
+            padding-left: 1.5rem;
+        }
+        .quickstart-list li {
+            margin-bottom: 0.8rem;
+        }
+        footer {
+            margin-top: 3rem;
+            text-align: center;
+            opacity: 0.6;
+        }
+        footer a {
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+        .lang-en {
+            display: block;
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-top: 0.2rem;
+        }
+        @media (max-width: 600px) {
+            h1 { font-size: 2rem; }
+            body { padding: 1rem; }
+            .section { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>photo-ai</h1>
+        <div class="subtitle">AI-powered construction photo analysis</div>
+    </header>
+
+    <div class="section">
+        <h2>Download <span class="lang-en">ダウンロード</span></h2>
+        
+        <div class="download-item">
+            <h3>webserver (Main)</h3>
+            <p>
+                Download webserver.exe, run it, open localhost:9998 in your browser.
+                <span class="lang-en">webserver.exe をダウンロードして実行し、ブラウザで localhost:9998 を開いてください。</span>
+            </p>
+            <a href="https://github.com/YuujiKamura/photo-ai-rust/releases/latest" class="download-btn">Latest Release</a>
+        </div>
+
+        <div class="download-item">
+            <h3>deckpilot (Optional)</h3>
+            <p>
+                Optional: AI agent terminal integration via Ghostty.
+                <span class="lang-en">オプション：Ghostty 経由の AI エージェントターミナル連携。</span>
+            </p>
+            <a href="https://github.com/YuujiKamura/deckpilot/releases/latest" class="download-btn">Deckpilot Release</a>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Quick Start <span class="lang-en">クイックスタート</span></h2>
+        <ol class="quickstart-list">
+            <li>
+                Download webserver.exe from Releases
+                <span class="lang-en">Releases から webserver.exe をダウンロードします。</span>
+            </li>
+            <li>
+                Run webserver.exe
+                <span class="lang-en">webserver.exe を実行します。</span>
+            </li>
+            <li>
+                Open http://localhost:9998 in your browser
+                <span class="lang-en">ブラウザで http://localhost:9998 を開きます。</span>
+            </li>
+            <li>
+                Select photo folder and analyze
+                <span class="lang-en">写真フォルダを選択して解析を開始します。</span>
+            </li>
+        </ol>
+    </div>
+
+    <footer>
+        <p>GitHub Repository: <a href="https://github.com/YuujiKamura/photo-ai-rust">YuujiKamura/photo-ai-rust</a></p>
+    </footer>
+</body>
+</html>
