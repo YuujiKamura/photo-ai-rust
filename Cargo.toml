@@ -1,5 +1,5 @@
 [workspace]
-members = ["common", "desktop-rust", "web-wasm", "photo-engine"]
+members = ["common", "photo-engine"]
 resolver = "2"
 
 [package]
