@@ -12,7 +12,11 @@ license = "MIT"
 [features]
 default = []
 # PDF・画像生成機能（photo-pdf-engine など engine bin のみ有効化）
-pdf-gen = ["dep:printpdf", "dep:image", "dep:imageproc", "dep:ab_glyph"]
+pdf-gen = ["dep:printpdf", "dep:image", "dep:imageproc", "dep:ab_glyph", "pdf-extract"]
+# Excel機能（マスタ読み込み・書き出し）
+excel = ["dep:rust_xlsxwriter", "dep:calamine", "photo-ai-common/excel"]
+# PDFテキスト抽出機能（重いICU依存を含む）
+pdf-extract = ["pdf-analysis-embed/extract"]
 
 [[bin]]
 name = "photo-pdf-engine"
@@ -32,10 +36,10 @@ path = "src/main.rs"
 
 [dependencies]
 # PDF解析・埋め込みライブラリ
-pdf-analysis-embed = { path = "deps/pdf-analysis-embed" }
+pdf-analysis-embed = { path = "deps/pdf-analysis-embed", default-features = false }
 
 # 共通ライブラリ
-photo-ai-common = { path = "common" }
+photo-ai-common = { path = "common", default-features = false, features = ["pdf"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
@@ -63,10 +67,10 @@ serde_json = "1"
 printpdf = { version = "0.8", features = ["jpeg"], optional = true }
 
 # Excel生成
-rust_xlsxwriter = "0.79"
+rust_xlsxwriter = { version = "0.79", optional = true }
 
 # Excel読み込み
-calamine = "0.26"
+calamine = { version = "0.26", optional = true }
 
 # PDF解析（lopdf）
 lopdf = "0.34"

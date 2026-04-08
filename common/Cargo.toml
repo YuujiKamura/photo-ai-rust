@@ -14,7 +14,7 @@ rust_xlsxwriter = { version = "0.92", optional = true }
 pdf-analysis-embed = { path = "../deps/pdf-analysis-embed" }
 
 [features]
-default = ["excel", "pdf"]
+default = []
 excel = ["rust_xlsxwriter"]
 pdf = []
 wasm = []

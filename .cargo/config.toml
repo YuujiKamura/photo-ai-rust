@@ -2,3 +2,25 @@
 # lld-link is pre-installed on GitHub Actions windows-latest runners.
 [target.x86_64-pc-windows-msvc]
 linker = "lld-link"
+
+[alias]
+# --- 速度優先 (軽量ビルド) ---
+# 基本解析のみ。外部依存を最小限に抑えた爆速チェック
+check-base = "check --bin photo-ai-rust"
+# 基本ビルド。増分ビルドの速さを確認する用
+build-base = "build --bin photo-ai-rust"
+
+# --- 機能優先 (フルビルド) ---
+# PDFエンジン、Excelマスタ読込、PDFテキスト抽出（重いICU依存）をすべて有効化
+check-full = "check --bin photo-pdf-engine --features pdf-gen,excel,pdf-extract"
+build-full = "build --bin photo-pdf-engine --features pdf-gen,excel,pdf-extract"
+
+# --- プロファイリング (速度の可視化) ---
+# どこが遅いのかを秒単位で計測。実行後、target/cargo-timings/report.html が生成されます
+time-base = "build --timings --bin photo-ai-rust"
+time-full = "build --timings --bin photo-pdf-engine --features pdf-gen,excel,pdf-extract"
+
+# --- 診断 ---
+# バイナリサイズや依存関係の重さを解析 (要: cargo-bloat)
+bloat-base = "bloat --release --bin photo-ai-rust"
+bloat-full = "bloat --release --bin photo-pdf-engine --features pdf-gen,excel,pdf-extract"
