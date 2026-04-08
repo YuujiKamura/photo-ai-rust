@@ -47,6 +47,8 @@ jobs:
         shell: bash
         run: |
           git submodule update --init deps/pdf-analysis-embed
+          # サブモジュールの Cargo.toml が親の期待と一致するように強制同期（もしあれば）
+          cd deps/pdf-analysis-embed && git checkout . || true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
