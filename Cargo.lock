@@ -6252,7 +6252,6 @@ dependencies = [
  "calamine",
  "chrono",
  "clap",
- "cli-ai-analyzer",
  "dialoguer",
  "dirs 5.0.1",
  "env_logger",
@@ -6266,12 +6265,12 @@ dependencies = [
  "lopdf 0.34.0",
  "pdf-analysis-embed",
  "photo-ai-common",
- "photo-tagger",
  "predicates",
  "printpdf",
  "rayon",
  "regex",
  "reqwest 0.12.28",
+ "rpassword",
  "rust_xlsxwriter 0.79.4",
  "serde",
  "serde_json",
@@ -6303,19 +6302,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "photo-tagger"
-version = "0.2.0"
+name = "photo-engine"
+version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "anyhow",
+ "base64 0.22.1",
+ "calamine",
+ "chrono",
  "clap",
- "cli-ai-analyzer",
- "csv",
- "encoding_rs",
- "rpassword",
+ "image",
+ "imageproc",
+ "kamadak-exif",
+ "lopdf 0.34.0",
+ "photo-ai-common",
+ "printpdf",
+ "rayon",
+ "regex",
+ "reqwest 0.12.28",
  "rust_xlsxwriter 0.79.4",
  "serde",
  "serde_json",
- "unicode-width 0.1.14",
+ "sha2",
 ]
 
 [[package]]
@@ -7263,6 +7271,7 @@ dependencies = [
  "js-sys",
  "log",
  "mime",
+ "mime_guess",
  "native-tls",
  "percent-encoding",
  "pin-project-lite",

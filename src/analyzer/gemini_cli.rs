@@ -336,6 +336,8 @@ fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMas
 #[cfg(test)]
 mod tests {
     use super::*;
+    use photo_ai_common::parse_step1_response;
+    use std::path::PathBuf;
 
     #[test]
     fn test_parse_step1_response_with_json_block() {

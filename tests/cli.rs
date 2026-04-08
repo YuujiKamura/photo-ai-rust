@@ -172,18 +172,18 @@ fn test_verbose_flag() {
 }
 
 #[test]
-fn test_ai_provider_flag() {
+fn test_config_show_still_works_with_current_global_flags() {
     cmd()
-        .args(["--ai-provider", "gemini", "config", "--show"])
+        .args(["--verbose", "config", "--show"])
         .assert()
         .success();
 }
 
 #[test]
-fn test_invalid_ai_provider() {
+fn test_unknown_global_flag_is_rejected() {
     cmd()
-        .args(["--ai-provider", "invalid_provider", "config", "--show"])
+        .args(["--unknown-flag", "config", "--show"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid"));
+        .stderr(predicate::str::contains("unexpected argument"));
 }
