@@ -50,8 +50,8 @@ kamadak-exif = "0.5"
 # ファイル操作
 walkdir = "2"
 
-# 非同期（CLI出力待ち用）
-tokio = { version = "1", features = ["full", "process"] }
+# 非同期（#[tokio::main]用）
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 # シリアライズ
 serde = { version = "1", features = ["derive"] }
@@ -79,7 +79,6 @@ thiserror = "2"
 
 # ユーティリティ
 indicatif = "0.17"
-rayon = "1"
 dirs = "5"
 base64 = "0.22.1"
 sha2 = "0.10"

@@ -68,7 +68,7 @@ jobs:
         run: cargo build --release -p photo-engine --bin photo-analysis-engine
 
       - name: Run tests
-        run: cargo test --bin photo-ai-rust
+        run: cargo test --release --bin photo-ai-rust
 
       - name: Run analysis engine tests
-        run: cargo test -p photo-engine
+        run: cargo test --release -p photo-engine
