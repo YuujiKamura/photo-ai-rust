@@ -1,6 +1,6 @@
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use clap::Parser;
-use photo_ai_rust::export::pdf;
+use photo_ai_rust::export::{pdf, pair_pdf};
 use photo_ai_rust::cli::PdfQuality;
 use photo_ai_common::AnalysisResult;
 use serde::Serialize;
@@ -22,6 +22,14 @@ struct Args {
     /// 画質 (high/medium/low)
     #[arg(short, long, default_value = "medium")]
     quality: String,
+
+    /// 動作モード: "photo-pdf" (デフォルト) or "pair-pdf"
+    #[arg(long, default_value = "photo-pdf")]
+    mode: String,
+
+    /// pair-pdfモード用プロジェクト名
+    #[arg(long, default_value = "")]
+    project_name: String,
 }
 
 #[derive(Serialize)]
@@ -55,29 +63,24 @@ fn main() {
 }
 
 fn run(args: Args) -> anyhow::Result<PdfResult> {
-    // 1. JSON読み込み
-    let json_data = std::fs::read_to_string(&args.input)?;
-    let photos: Vec<AnalysisResult> = serde_json::from_str(&json_data)?;
-
-    // 2. 設定
     let output_path = PathBuf::from(&args.output);
+    let json_data = std::fs::read_to_string(&args.input)?;
+
+    if args.mode == "pair-pdf" {
+        let pairs: Vec<pair_pdf::PairEntry> = serde_json::from_str(&json_data)?;
+        let count = pairs.len();
+        pair_pdf::generate_pair_pdf(&pairs, &args.project_name, &output_path)?;
+        return Ok(PdfResult { output_path: args.output, count });
+    }
+
+    // デフォルト: photo-pdf
+    let photos: Vec<AnalysisResult> = serde_json::from_str(&json_data)?;
     let quality = match args.quality.as_str() {
         "high" => PdfQuality::High,
         "low" => PdfQuality::Low,
         _ => PdfQuality::Medium,
     };
-
-    // 3. PDF生成
-    pdf::generate_pdf(
-        &photos,
-        &output_path,
-        args.photos_per_page,
-        "写真台帳",
-        quality,
-    )?;
-
-    Ok(PdfResult {
-        output_path: args.output,
-        count: photos.len(),
-    })
+    let count = photos.len();
+    pdf::generate_pdf(&photos, &output_path, args.photos_per_page, "写真台帳", quality)?;
+    Ok(PdfResult { output_path: args.output, count })
 }

@@ -2,11 +2,15 @@
 //!
 //! コンタクトシートを使った1コール1問×3走査のアンサンブルでペアリングを行う。
 
+#[cfg(feature = "pdf-gen")]
 use crate::contactsheet::ContactSheet;
+#[cfg(feature = "pdf-gen")]
 use crate::engine;
+#[cfg(feature = "pdf-gen")]
 use crate::error::Result;
 
 /// 1つのBefore画像について、3回走査のアンサンブルでAfter番号を決定
+#[cfg(feature = "pdf-gen")]
 pub fn ensemble_pair_query(
     before_sheet: &ContactSheet,
     after_sheet: &ContactSheet,

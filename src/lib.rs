@@ -24,4 +24,5 @@ pub mod engine;
 pub mod pair_completion;
 pub mod pair_extraction;
 pub mod pair_ensemble;
+#[cfg(feature = "pdf-gen")]
 pub mod contactsheet;

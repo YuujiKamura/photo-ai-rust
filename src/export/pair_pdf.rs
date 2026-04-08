@@ -3,42 +3,49 @@
 //! ペアリング済みフォルダ（P01_測点名/before.JPG + after.jpg）から
 //! A4横の写真帳PDFを生成する。
 
+#[cfg(feature = "pdf-gen")]
 use crate::error::{PhotoAiError, Result};
-use printpdf::*;
+#[cfg(not(feature = "pdf-gen"))]
+use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "pdf-gen")]
+use printpdf::*;
+
+#[cfg(feature = "pdf-gen")]
 use ::image as image_crate;
+#[cfg(feature = "pdf-gen")]
 use image_crate::imageops::FilterType;
 
 // ---- レイアウト定数 ----
-const PAGE_W: f32 = 842.0;
-const PAGE_H: f32 = 595.35;
-const MARGIN_X: f32 = 19.2; // 左右マージン（PIL: 40px）
-const MARGIN_TOP: f32 = 28.35;   // 1cm
-const MARGIN_BOTTOM: f32 = 28.35; // 1cm
+#[cfg(feature = "pdf-gen")] const PAGE_W: f32 = 842.0;
+#[cfg(feature = "pdf-gen")] const PAGE_H: f32 = 595.35;
+#[cfg(feature = "pdf-gen")] const MARGIN_X: f32 = 19.2;
+#[cfg(feature = "pdf-gen")] const MARGIN_TOP: f32 = 28.35;
+#[cfg(feature = "pdf-gen")] const MARGIN_BOTTOM: f32 = 28.35;
 
 // ---- フォントサイズ（pt, PIL: px * 0.48）----
-const TITLE_SIZE: f32 = 32.0;
-const PROJECT_NAME_SIZE: f32 = 24.0;
-const CAPTION_FONT_SIZE: f32 = 12.0;
+#[cfg(feature = "pdf-gen")] const TITLE_SIZE: f32 = 32.0;
+#[cfg(feature = "pdf-gen")] const PROJECT_NAME_SIZE: f32 = 24.0;
+#[cfg(feature = "pdf-gen")] const CAPTION_FONT_SIZE: f32 = 12.0;
 
 // ---- キャプション固定Y座標（1行: 罫線上下 + テキスト）----
-const RULE_BOTTOM_Y: f32 = MARGIN_BOTTOM + 4.0;
-const CAPTION_Y: f32 = MARGIN_BOTTOM + 10.0;
-const RULE_TOP_Y: f32 = MARGIN_BOTTOM + 20.0;
+#[cfg(feature = "pdf-gen")] const RULE_BOTTOM_Y: f32 = MARGIN_BOTTOM + 4.0;
+#[cfg(feature = "pdf-gen")] const CAPTION_Y: f32 = MARGIN_BOTTOM + 10.0;
+#[cfg(feature = "pdf-gen")] const RULE_TOP_Y: f32 = MARGIN_BOTTOM + 20.0;
 
 // ---- 写真領域 ----
-const PHOTO_X: f32 = MARGIN_X;
-const PHOTO_Y: f32 = RULE_TOP_Y + 8.0;
-const PHOTO_W: f32 = PAGE_W - MARGIN_X * 2.0;
-const PHOTO_H: f32 = PAGE_H - MARGIN_TOP - PHOTO_Y; // 595.35 - 28.35 - 72 = 495pt
+#[cfg(feature = "pdf-gen")] const PHOTO_X: f32 = MARGIN_X;
+#[cfg(feature = "pdf-gen")] const PHOTO_Y: f32 = RULE_TOP_Y + 8.0;
+#[cfg(feature = "pdf-gen")] const PHOTO_W: f32 = PAGE_W - MARGIN_X * 2.0;
+#[cfg(feature = "pdf-gen")] const PHOTO_H: f32 = PAGE_H - MARGIN_TOP - PHOTO_Y;
 
 // ---- キャプション ----
-const RULE_W: f32 = 264.0;
+#[cfg(feature = "pdf-gen")] const RULE_W: f32 = 264.0;
 
 // ---- 画像品質 ----
-const MAX_IMAGE_WIDTH: u32 = 1400;
+#[cfg(feature = "pdf-gen")] const MAX_IMAGE_WIDTH: u32 = 1400;
 
 /// ペアリング結果の1エントリ
 #[derive(Serialize, Deserialize)]
@@ -49,11 +56,14 @@ pub struct PairEntry {
 }
 
 /// フォント選択
+#[cfg(feature = "pdf-gen")]
 enum FontChoice {
     External(FontId),
     Builtin,
 }
 
+/// フォント選択
+#[cfg(feature = "pdf-gen")]
 impl FontChoice {
     fn push_text_ops(&self, ops: &mut Vec<Op>, text: &str, x: f32, y: f32, size: f32) {
         ops.push(Op::StartTextSection);
@@ -79,29 +89,34 @@ impl FontChoice {
 }
 
 /// タイトル用・キャプション用のフォントセット
+#[cfg(feature = "pdf-gen")]
 struct PairFonts {
     title: FontChoice,
     caption: FontChoice,
 }
 
 /// 半角換算でテキスト幅を推定（全角=1em, 半角=0.5em）
+#[cfg(feature = "pdf-gen")]
 fn estimate_text_width(text: &str, font_size: f32) -> f32 {
     let units: f32 = text.chars().map(|c| if c.is_ascii() { 0.5 } else { 1.0 }).sum();
     units * font_size
 }
 
 /// テキストをページ中央揃えにするX座標を計算
+#[cfg(feature = "pdf-gen")]
 fn center_x(text: &str, font_size: f32) -> f32 {
     let w = estimate_text_width(text, font_size);
     (PAGE_W - w) / 2.0
 }
 
 /// 罫線の中央X開始位置
+#[cfg(feature = "pdf-gen")]
 fn rule_start_x() -> f32 {
     (PAGE_W - RULE_W) / 2.0
 }
 
 /// 游明朝フォントをロード（Demibold + Light、なければフォールバック）
+#[cfg(feature = "pdf-gen")]
 fn load_fonts(doc: &mut PdfDocument) -> Result<PairFonts> {
     let mut title_font = None;
     let mut caption_font = None;
@@ -173,6 +188,7 @@ fn load_fonts(doc: &mut PdfDocument) -> Result<PairFonts> {
 
 /// 画像を読み込んでドキュメントに追加（高品質固定）
 /// 戻り値: (XObjectId, width, height, jpeg_bytes)
+#[cfg(feature = "pdf-gen")]
 fn load_and_add_image(doc: &mut PdfDocument, path: &Path) -> Result<(XObjectId, u32, u32, Vec<u8>)> {
     if !path.exists() {
         return Err(PhotoAiError::FileNotFound(path.display().to_string()));
@@ -220,6 +236,7 @@ fn load_and_add_image(doc: &mut PdfDocument, path: &Path) -> Result<(XObjectId, 
 }
 
 /// 写真をフィットさせて描画
+#[cfg(feature = "pdf-gen")]
 fn add_photo_ops(ops: &mut Vec<Op>, id: &XObjectId, img_w: u32, img_h: u32) {
     let img_aspect = img_w as f32 / img_h as f32;
     let box_aspect = PHOTO_W / PHOTO_H;
@@ -247,6 +264,7 @@ fn add_photo_ops(ops: &mut Vec<Op>, id: &XObjectId, img_w: u32, img_h: u32) {
 }
 
 /// 罫線（水平線）を描画
+#[cfg(feature = "pdf-gen")]
 fn add_rule_ops(ops: &mut Vec<Op>, y: f32) {
     let x1 = rule_start_x();
     let x2 = x1 + RULE_W;
@@ -269,6 +287,7 @@ fn add_rule_ops(ops: &mut Vec<Op>, y: f32) {
 }
 
 /// 表紙ページを生成
+#[cfg(feature = "pdf-gen")]
 fn build_cover_page(fonts: &PairFonts, project_name: &str) -> PdfPage {
     let mut ops = Vec::new();
     ops.push(Op::SetFillColor { col: Color::Rgb(Rgb { r: 0.0, g: 0.0, b: 0.0, icc_profile: None }) });
@@ -286,6 +305,7 @@ fn build_cover_page(fonts: &PairFonts, project_name: &str) -> PdfPage {
 }
 
 /// 写真ページを生成（着手前 or 竣工）
+#[cfg(feature = "pdf-gen")]
 fn build_photo_page(
     fonts: &PairFonts,
     image_id: &XObjectId,
@@ -308,6 +328,7 @@ fn build_photo_page(
 }
 
 /// 着手前竣工写真帳PDFを生成
+#[cfg(feature = "pdf-gen")]
 pub fn generate_pair_pdf(
     pairs: &[PairEntry],
     project_name: &str,
@@ -389,6 +410,7 @@ pub fn generate_pair_pdf(
 }
 
 /// XObjectId名をキーにしてJPEG直接埋め込みに差し替える
+#[cfg(feature = "pdf-gen")]
 fn replace_images_with_jpeg_by_name(
     pdf_bytes: Vec<u8>,
     jpeg_map: &std::collections::HashMap<String, (Vec<u8>, u32, u32)>,
@@ -468,4 +490,50 @@ fn replace_images_with_jpeg_by_name(
     );
 
     buf
+}
+
+/// 着手前竣工写真帳PDFを生成（pdf-gen feature なし: photo-pdf-engine.exe サブプロセス経由）
+#[cfg(not(feature = "pdf-gen"))]
+pub fn generate_pair_pdf(
+    pairs: &[PairEntry],
+    project_name: &str,
+    output_path: &Path,
+) -> Result<()> {
+    use std::io::Write;
+    let json = serde_json::to_string(pairs)?;
+    let mut tmp = tempfile::NamedTempFile::new()?;
+    tmp.write_all(json.as_bytes())?;
+    tmp.flush()?;
+    let binary = resolve_pair_pdf_engine_binary();
+    let out = std::process::Command::new(&binary)
+        .args([
+            "--mode", "pair-pdf",
+            "--input", &tmp.path().display().to_string(),
+            "--output", &output_path.display().to_string(),
+            "--project-name", project_name,
+        ])
+        .output()
+        .map_err(|e| crate::error::PhotoAiError::CliExecution(format!(
+            "photo-pdf-engine 実行失敗 ({}): {}", binary.display(), e
+        )))?;
+    if !out.status.success() {
+        return Err(crate::error::PhotoAiError::CliExecution(
+            String::from_utf8_lossy(&out.stderr).to_string(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "pdf-gen"))]
+fn resolve_pair_pdf_engine_binary() -> PathBuf {
+    let exe_name = if cfg!(windows) { "photo-pdf-engine.exe" } else { "photo-pdf-engine" };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(exe_name);
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    PathBuf::from(exe_name)
 }

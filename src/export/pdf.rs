@@ -7,20 +7,28 @@
 use crate::analyzer::AnalysisResult;
 use crate::cli::PdfQuality;
 use crate::error::{PhotoAiError, Result};
-use photo_ai_common::export::pdf as pdf_common;
-use photo_ai_common::PdfLayout;
-use printpdf::*;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "pdf-gen")]
+use photo_ai_common::export::pdf as pdf_common;
+#[cfg(feature = "pdf-gen")]
+use photo_ai_common::PdfLayout;
+#[cfg(feature = "pdf-gen")]
+use printpdf::*;
+
+#[cfg(feature = "pdf-gen")]
 use ::image as image_crate;
+#[cfg(feature = "pdf-gen")]
 use image_crate::imageops::FilterType;
 
 /// フォント情報
+#[cfg(feature = "pdf-gen")]
 enum FontSet {
     Japanese(FontId),
     Builtin,
 }
 
+#[cfg(feature = "pdf-gen")]
 impl FontSet {
     fn is_japanese(&self) -> bool {
         matches!(self, FontSet::Japanese(_))
@@ -28,6 +36,7 @@ impl FontSet {
 }
 
 /// 日本語フォントのパスを検索（明朝体優先）
+#[cfg(feature = "pdf-gen")]
 pub(crate) fn find_japanese_font() -> Option<PathBuf> {
     // 日本語フォント候補（明朝体優先）
     let font_names = [
@@ -112,6 +121,7 @@ pub(crate) fn find_japanese_font() -> Option<PathBuf> {
 }
 
 /// フォントをロード（printpdf 0.8 API）
+#[cfg(feature = "pdf-gen")]
 fn load_fonts(doc: &mut PdfDocument) -> Result<FontSet> {
     if let Some(font_path) = find_japanese_font() {
         let font_data = std::fs::read(&font_path)?;
@@ -128,6 +138,7 @@ fn load_fonts(doc: &mut PdfDocument) -> Result<FontSet> {
     Ok(FontSet::Builtin)
 }
 
+#[cfg(feature = "pdf-gen")]
 fn process_text(text: &str, is_japanese: bool) -> String {
     if is_japanese {
         text.to_string()
@@ -137,9 +148,11 @@ fn process_text(text: &str, is_japanese: bool) -> String {
 }
 
 /// 統一フォントサイズ（12pt）
+#[cfg(feature = "pdf-gen")]
 const UNIFIED_FONT_SIZE: f32 = 12.0;
 
-/// 写真台帳PDFを生成（printpdf 0.8 API）
+/// 写真台帳PDFを生成（printpdf 0.8 API、pdf-gen feature が必要）
+#[cfg(feature = "pdf-gen")]
 pub fn generate_pdf(
     results: &[AnalysisResult],
     output_path: &Path,
@@ -285,6 +298,7 @@ pub fn generate_pdf(
 }
 
 /// 画像を読み込んでドキュメントに追加
+#[cfg(feature = "pdf-gen")]
 fn load_and_add_image(
     doc: &mut PdfDocument,
     image_path: &str,
@@ -328,6 +342,7 @@ fn load_and_add_image(
 }
 
 /// 画像をリサイズ（品質設定に基づく）
+#[cfg(feature = "pdf-gen")]
 fn resize_image(
     img: image_crate::DynamicImage,
     quality: PdfQuality,
@@ -346,6 +361,7 @@ fn resize_image(
 }
 
 /// テキスト描画オペレーション追加
+#[cfg(feature = "pdf-gen")]
 fn add_text_ops(ops: &mut Vec<Op>, text: &str, x_pt: f32, y_pt: f32, size: f32, fonts: &FontSet) {
     ops.push(Op::StartTextSection);
     ops.push(Op::SetTextCursor { pos: Point { x: Pt(x_pt), y: Pt(y_pt) } });
@@ -371,6 +387,7 @@ fn add_text_ops(ops: &mut Vec<Op>, text: &str, x_pt: f32, y_pt: f32, size: f32, 
 }
 
 /// ページ番号のみ描画
+#[cfg(feature = "pdf-gen")]
 fn add_page_number_ops(
     ops: &mut Vec<Op>,
     page_num: usize,
@@ -390,6 +407,7 @@ fn add_page_number_ops(
 
 /// 画像描画オペレーション追加
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "pdf-gen")]
 fn add_image_ops(
     ops: &mut Vec<Op>,
     image_id: &XObjectId,
@@ -431,6 +449,7 @@ fn add_image_ops(
 }
 
 /// 矩形描画オペレーション追加
+#[cfg(feature = "pdf-gen")]
 fn add_rect_ops(ops: &mut Vec<Op>, x_pt: f32, y_pt: f32, width_pt: f32, height_pt: f32) {
     ops.push(Op::SetOutlineColor { col: Color::Rgb(Rgb { r: 0.7, g: 0.7, b: 0.7, icc_profile: None }) });
     ops.push(Op::SetOutlineThickness { pt: Pt(0.5) });
@@ -452,6 +471,7 @@ fn add_rect_ops(ops: &mut Vec<Op>, x_pt: f32, y_pt: f32, width_pt: f32, height_p
 }
 
 /// テキスト自動調整設定
+#[cfg(feature = "pdf-gen")]
 struct TextFitConfig {
     /// 半角換算での最大幅（全角=2, 半角=1）
     max_half_width: usize,
@@ -461,6 +481,7 @@ struct TextFitConfig {
     max_lines: usize,
 }
 
+#[cfg(feature = "pdf-gen")]
 impl Default for TextFitConfig {
     fn default() -> Self {
         Self {
@@ -473,16 +494,19 @@ impl Default for TextFitConfig {
 }
 
 /// 半角換算の文字幅を計算（全角=2, 半角=1）
+#[cfg(feature = "pdf-gen")]
 fn half_width_count(text: &str) -> usize {
     text.chars().map(|c| if c.is_ascii() { 1 } else { 2 }).sum()
 }
 
 /// カタカナ文字判定（U+30A0〜U+30FF）
+#[cfg(feature = "pdf-gen")]
 fn is_katakana(c: char) -> bool {
     ('\u{30A0}'..='\u{30FF}').contains(&c)
 }
 
 /// 半角換算幅で文字列を分割（スペース区切り・文字種境界を優先）
+#[cfg(feature = "pdf-gen")]
 fn split_at_half_width(text: &str, max_hw: usize) -> (&str, &str) {
     let mut hw = 0;
     // 最後の「単語の開始位置」を記録（スペース/区切り/文字種境界）
@@ -520,12 +544,14 @@ fn split_at_half_width(text: &str, max_hw: usize) -> (&str, &str) {
 }
 
 /// テキストの描画情報（行分割結果・フォントサイズ・行間）
+#[cfg(feature = "pdf-gen")]
 struct TextLayout<'a> {
     lines: Vec<&'a str>,
     font_size: f32,
     line_spacing: f32,
 }
 
+#[cfg(feature = "pdf-gen")]
 impl TextFitConfig {
     /// テキストを行分割し、適切なフォントサイズを決定する
     fn layout_for_height<'a>(&self, text: &'a str, _field_height: f32) -> TextLayout<'a> {
@@ -572,6 +598,7 @@ impl TextFitConfig {
 }
 
 /// テキスト描画オペレーション追加（センタリング済みのy_ptから描画）
+#[cfg(feature = "pdf-gen")]
 fn add_fitted_text_ops(
     ops: &mut Vec<Op>,
     text: &str,
@@ -592,6 +619,7 @@ fn add_fitted_text_ops(
 }
 
 /// 測定値フィールド描画（実測値行を赤色で描画）
+#[cfg(feature = "pdf-gen")]
 fn add_measurements_text_ops(
     ops: &mut Vec<Op>,
     text: &str,
@@ -640,6 +668,7 @@ fn add_measurements_text_ops(
 }
 
 /// 水平線描画オペレーション追加
+#[cfg(feature = "pdf-gen")]
 fn add_horizontal_line_ops(ops: &mut Vec<Op>, x1_pt: f32, x2_pt: f32, y_pt: f32) {
     ops.push(Op::SetOutlineColor { col: Color::Rgb(Rgb { r: 0.7, g: 0.7, b: 0.7, icc_profile: None }) });
     ops.push(Op::SetOutlineThickness { pt: Pt(0.5) });
@@ -659,6 +688,7 @@ fn add_horizontal_line_ops(ops: &mut Vec<Op>, x1_pt: f32, x2_pt: f32, y_pt: f32)
 }
 
 /// 情報欄テキスト描画オペレーション追加（参照PDF準拠レイアウト）
+#[cfg(feature = "pdf-gen")]
 fn add_info_field_ops(
     ops: &mut Vec<Op>,
     result: &AnalysisResult,
@@ -735,6 +765,65 @@ fn add_info_field_ops(
 
         current_top = field_bottom;
     }
+}
+
+/// 写真台帳PDFを生成（pdf-gen feature なし: photo-pdf-engine.exe サブプロセス経由）
+#[cfg(not(feature = "pdf-gen"))]
+pub fn generate_pdf(
+    results: &[AnalysisResult],
+    output_path: &Path,
+    photos_per_page: u8,
+    _title: &str,
+    quality: PdfQuality,
+) -> Result<()> {
+    use std::io::Write;
+    let json = serde_json::to_string(results)?;
+    let mut tmp = tempfile::NamedTempFile::new()?;
+    tmp.write_all(json.as_bytes())?;
+    tmp.flush()?;
+    let quality_str = match quality {
+        PdfQuality::High => "high",
+        PdfQuality::Medium => "medium",
+        PdfQuality::Low => "low",
+    };
+    let binary = resolve_pdf_engine_binary();
+    let out = std::process::Command::new(&binary)
+        .args([
+            "--input",
+            &tmp.path().display().to_string(),
+            "--output",
+            &output_path.display().to_string(),
+            "--photos-per-page",
+            &photos_per_page.to_string(),
+            "--quality",
+            quality_str,
+        ])
+        .output()
+        .map_err(|e| PhotoAiError::CliExecution(format!(
+            "photo-pdf-engine 実行失敗 ({}): {}",
+            binary.display(),
+            e
+        )))?;
+    if !out.status.success() {
+        return Err(PhotoAiError::CliExecution(
+            String::from_utf8_lossy(&out.stderr).to_string(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "pdf-gen"))]
+fn resolve_pdf_engine_binary() -> PathBuf {
+    let exe_name = if cfg!(windows) { "photo-pdf-engine.exe" } else { "photo-pdf-engine" };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(exe_name);
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    PathBuf::from(exe_name)
 }
 
 #[cfg(test)]

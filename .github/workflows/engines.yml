@@ -30,6 +30,7 @@ jobs:
         include:
           - package: photo-ai-rust
             bin: photo-pdf-engine
+            features: "pdf-gen"
           - package: photo-ai-rust
             bin: photo-tag-engine
           - package: photo-ai-rust
@@ -64,7 +65,13 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-
 
       - name: Build engine
-        run: cargo build --release -p ${{ matrix.package }} --bin ${{ matrix.bin }}
+        shell: bash
+        run: |
+          FEATURES=""
+          if [ -n "${{ matrix.features }}" ]; then
+            FEATURES="--features ${{ matrix.features }}"
+          fi
+          cargo build --release -p ${{ matrix.package }} --bin ${{ matrix.bin }} $FEATURES
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
