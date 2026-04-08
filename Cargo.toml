@@ -39,7 +39,7 @@ photo-ai-common = { path = "common" }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
-dialoguer = "0.11"
+dialoguer = "0.12"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rpassword = "5"
 
