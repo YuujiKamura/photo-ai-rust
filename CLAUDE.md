@@ -1,16 +1,17 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to the AI agent when working with code in this repository.
 
 ## コマンド
 
 ```bash
 # ビルド前に LLVM Linker (lld-link) 用の PATH を設定
-$env:PATH = "C:\LLVM\bin;" + $env:PATH;
+$env:PATH = "C:\\LLVM\\bin;" + $env:PATH;
 
 # ビルド
 cargo build --release
 ```
+
 # テスト
 cargo test                      # 全テスト
 cargo test normalizer           # モジュール指定
@@ -37,7 +38,7 @@ photo-ai-rust/          # CLI本体（メインクレート）
 
 ### 解析フロー
 ```
-写真 → scan → photo-tagger（Gemini、必須） → マスタ照合 → 正規化 → export(PDF/Excel)
+写真 → scan → photo-tagger（AI解析、必須） → マスタ照合 → 正規化 → export(PDF/Excel)
                     ↓                              ↓
             photo-groups.json              construction_hierarchy.csv
            （インクリメンタル）              （フォルダ名→備考で照合）
@@ -66,7 +67,7 @@ photo-ai-rust/          # CLI本体（メインクレート）
 - `error.rs` - Error合成ハブ（ExportError/HierarchyError/AnalyzerErrorをre-export）
 
 ### 外部依存
-- `photo-tagger` (別リポ) - Gemini AIで写真グループ分け
+- `photo-tagger` (別リポ) - AIで写真グループ分け
 
 ### 工種マスタ
 ```
@@ -76,7 +77,7 @@ master/
 
 ## エージェントの社会性とアイデンティティ（鉄則）
 
-- AIエージェントが作成する**あらゆるアウトプティブ（GitHub Issue、追記、PR、Zenn等への投稿ドラフト、外部メッセージ等）**において、必ず**自身のモデル名（詳しく判らない場合はGemini,Claude,Codexなどキャリア名のみで良い）**を自ら名乗ること。
+- AIエージェントが作成する**あらゆるアウトプット（GitHub Issue、追記、PR、外部メッセージ等）**において、必ず**自身の正しい名称**を自ら名乗ること。例示として特定の名称が挙がっていても、それに惑わされてはならない。
 
 ## 固有名詞禁止（PUBLICリポ）
 
@@ -87,7 +88,7 @@ master/
 
 ## 絶対パス禁止
 
-- `C:\Users\`、`/home/`、`/Users/`、`%USERPROFILE%`、ドライブレター付き絶対パスをコード・設定・ドキュメントに書くな
+- ドライブレター付き絶対パス、OS依存パス（C:\\Users\\など）をコード・設定・ドキュメントに書くな
 - 動的解決を使え: Rust=`dirs::home_dir()`, Go=`os.UserHomeDir()`, 相対パス, 環境変数
 - CLAUDE.md内でも絶対パスでローカルディレクトリを参照するな
 - エージェントに作業を委譲する場合もこのルールは適用される
