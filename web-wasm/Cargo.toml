@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 photo-ai-common = { path = "../common", default-features = false, features = ["wasm"] }
 
 # Leptos Framework
-leptos = { version = "0.7", features = ["csr"] }
+leptos = { version = "0.8", features = ["csr"] }
 
 # WASM
 wasm-bindgen = "0.2"
