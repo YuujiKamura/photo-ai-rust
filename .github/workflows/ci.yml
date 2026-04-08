@@ -13,7 +13,6 @@ on:
     paths:
       - "src/**"
       - "common/**"
-      - "photo-engine/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
@@ -41,12 +40,22 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
+      # Cache crate downloads separately from compilation (small, fast, safe to cancel)
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
       - name: Download Pre-built Engines
         shell: bash
         run: |
           mkdir -p target/release
-          # All engines are built/tested locally and published via engines.yml
-          # CI only verifies the main orchestrator integrates correctly
+          # All engines are built/tested via engines.yml; CI just downloads them
           URL="https://github.com/YuujiKamura/photo-ai-rust/releases/download/engines-latest"
           for bin in photo-pdf-engine photo-tag-engine photo-excel-engine photo-analysis-engine; do
             echo "Fetching $bin..."
