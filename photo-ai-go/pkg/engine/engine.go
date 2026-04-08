@@ -41,9 +41,7 @@ func runCommandWithJobObject(cmd *exec.Cmd) ([]byte, error) {
 		return nil, fmt.Errorf("failed to set job object info: %w", err)
 	}
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: windows.CREATE_SUSPENDED,
-	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{}
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start command: %w", err)
@@ -56,19 +54,10 @@ func runCommandWithJobObject(cmd *exec.Cmd) ([]byte, error) {
 	defer windows.CloseHandle(processHandle)
 
 	if err := windows.AssignProcessToJobObject(job, processHandle); err != nil {
-		return nil, fmt.Errorf("failed to assign process to job object: %w", err)
+		// Ignore error if process already exited
+		return cmd.CombinedOutput()
 	}
 
-	threadHandle, err := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, cmd.SysProcAttr.Threads[0])
-	if err != nil {
-		return nil, fmt.Errorf("failed to open thread: %w", err)
-}
-	defer windows.CloseHandle(threadHandle)
-
-	if _, err := windows.ResumeThread(threadHandle); err != nil {
-		return nil, fmt.Errorf("failed to resume thread: %w", err)
-	}
-	
 	return cmd.CombinedOutput()
 }
 
