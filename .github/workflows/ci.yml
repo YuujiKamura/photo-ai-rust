@@ -45,9 +45,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p target/release
-          # Download from engines-latest release
+          # All engines are built/tested locally and published via engines.yml
+          # CI only verifies the main orchestrator integrates correctly
           URL="https://github.com/YuujiKamura/photo-ai-rust/releases/download/engines-latest"
-          for bin in photo-pdf-engine photo-tag-engine photo-excel-engine; do
+          for bin in photo-pdf-engine photo-tag-engine photo-excel-engine photo-analysis-engine; do
             echo "Fetching $bin..."
             curl -L -O "$URL/$bin.exe"
             mv "$bin.exe" target/release/
@@ -56,11 +57,5 @@ jobs:
       - name: Build main binary
         run: cargo build --release --bin photo-ai-rust
 
-      - name: Build analysis engine
-        run: cargo build --release -p photo-engine --bin photo-analysis-engine
-
       - name: Run tests
         run: cargo test --release --bin photo-ai-rust
-
-      - name: Run analysis engine tests
-        run: cargo test --release -p photo-engine
