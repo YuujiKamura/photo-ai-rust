@@ -56,6 +56,14 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-registry-
 
+      # Cache the final binary; skip build+test entirely when source is unchanged
+      - name: Cache main binary
+        id: binary-cache
+        uses: actions/cache@v4
+        with:
+          path: target/release/photo-ai-rust.exe
+          key: binary-${{ runner.os }}-${{ hashFiles('src/**', 'common/**', 'Cargo.lock') }}
+
       - name: Download Pre-built Engines
         shell: bash
         run: |
@@ -69,4 +77,5 @@ jobs:
           done
 
       - name: Build and test main binary
+        if: steps.binary-cache.outputs.cache-hit != 'true'
         run: cargo test --release --bin photo-ai-rust

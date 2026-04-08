@@ -1,0 +1,4 @@
+# Use lld-link (LLVM linker) on Windows for faster linking.
+# lld-link is pre-installed on GitHub Actions windows-latest runners.
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
