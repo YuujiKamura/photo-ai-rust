@@ -23,7 +23,7 @@ printpdf = { version = "0.8", features = ["jpeg"] }
 lopdf = "0.34"
 
 # Excel generation
-rust_xlsxwriter = "0.79"
+rust_xlsxwriter = "0.92"
 
 # Excel reading
 calamine = "0.26"

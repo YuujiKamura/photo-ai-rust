@@ -63,7 +63,7 @@ serde_json = "1"
 printpdf = { version = "0.8", features = ["jpeg"], optional = true }
 
 # Excel生成
-rust_xlsxwriter = "0.79"
+rust_xlsxwriter = "0.92"
 
 # Excel読み込み
 calamine = "0.26"

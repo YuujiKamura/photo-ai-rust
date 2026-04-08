@@ -2630,7 +2630,7 @@ version = "0.2.0"
 dependencies = [
  "csv",
  "pdf-analysis-embed",
- "rust_xlsxwriter 0.92.3",
+ "rust_xlsxwriter",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
@@ -2665,7 +2665,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rpassword",
- "rust_xlsxwriter 0.79.4",
+ "rust_xlsxwriter",
  "serde",
  "serde_json",
  "sha2",
@@ -2694,7 +2694,7 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest",
- "rust_xlsxwriter 0.79.4",
+ "rust_xlsxwriter",
  "serde",
  "serde_json",
  "sha2",
@@ -3409,15 +3409,6 @@ dependencies = [
  "base64",
  "mmapio",
  "xmlparser",
-]
-
-[[package]]
-name = "rust_xlsxwriter"
-version = "0.79.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c743cb9f2a4524676020e26ee5f298445a82d882b09956811b1e78ca7e42b440"
-dependencies = [
- "zip 2.4.2",
 ]
 
 [[package]]
