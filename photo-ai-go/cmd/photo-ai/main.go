@@ -116,11 +116,41 @@ var analyzeCmd = &cobra.Command{
 
 		result, err := engine.ProcessImage(cfg)
 		if err != nil {
-			return fmt.Errorf("analyze: %w", err)
+			return fmt.Errorf("analyze (tagging): %w", err)
 		}
 
-		fmt.Fprintf(os.Stderr, "解析完了: %d枚\n", result.PhotoCount)
-		fmt.Fprintf(os.Stderr, "結果を保存: %s\n", result.OutputJSON)
+		fmt.Fprintf(os.Stderr, "タグ付け完了: %d枚\n", result.PhotoCount)
+
+		// --- Stage 2: Master Matching ---
+		if master != "" {
+			fmt.Fprintln(os.Stderr, "マスタ照合を開始しています...")
+			matchedResults, err := engine.MatchMaster(result.OutputJSON, master, filepath.Base(folder))
+			if err != nil {
+				return fmt.Errorf("analyze (matching): %w", err)
+			}
+
+			// 保存（一時ファイル）
+			matchedJSON := filepath.Join(folder, "matched-results.json")
+			data, _ := json.MarshalIndent(matchedResults, "", "  ")
+			os.WriteFile(matchedJSON, data, 0o644)
+
+			// --- Stage 3: Normalization ---
+			fmt.Fprintln(os.Stderr, "正規化を開始しています...")
+			finalResults, err := engine.Normalize(matchedJSON, station)
+			if err != nil {
+				return fmt.Errorf("analyze (normalization): %w", err)
+			}
+
+			// 最終結果を保存
+			finalData, _ := json.MarshalIndent(finalResults, "", "  ")
+			if err := os.WriteFile(destJSON, finalData, 0o644); err != nil {
+				return fmt.Errorf("failed to save final result: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "最終結果を保存: %s\n", destJSON)
+		} else {
+			fmt.Fprintf(os.Stderr, "マスタ指定がないため、タグ付け結果のみを保存します: %s\n", result.OutputJSON)
+		}
+
 		return nil
 	},
 }

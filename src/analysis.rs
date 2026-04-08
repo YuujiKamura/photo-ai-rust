@@ -292,7 +292,7 @@ pub fn normalize_results_with_station(
 
 /// photo-groups.json のレコードを AnalysisResult に変換し、マスタ照合する
 /// グループ番号→全景優先でソート
-fn convert_groups_to_results(
+pub fn convert_groups_to_results(
     images: &[scanner::ImageInfo],
     groups: &GroupRecords,
     master: &HierarchyMaster,

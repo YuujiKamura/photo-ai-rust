@@ -260,6 +260,59 @@ func ProcessImage(config ImageConfig) (ImageResult, error) {
 	return result, nil
 }
 
+// MatchMaster calls the photo-analysis-engine.exe to match analysis results with a master CSV.
+func MatchMaster(inputJSON, masterPath, folderName string) ([]AnalysisResult, error) {
+	enginePath, err := resolveEnginePath("PHOTO_ANALYSIS_ENGINE_EXE", "photo-analysis-engine.exe")
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.Command(enginePath, "match-master",
+		"--input", inputJSON,
+		"--master", masterPath,
+		"--folder-name", folderName,
+	)
+
+	output, err := runCommandWithJobObject(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("match-master failed: %w\noutput: %s", err, string(output))
+	}
+
+	var results []AnalysisResult
+	if err := parseEngineResponse(output, &results); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
+// Normalize calls the photo-analysis-engine.exe to normalize analysis results.
+func Normalize(inputJSON, station string) ([]AnalysisResult, error) {
+	enginePath, err := resolveEnginePath("PHOTO_ANALYSIS_ENGINE_EXE", "photo-analysis-engine.exe")
+	if err != nil {
+		return nil, err
+	}
+
+	args := []string{"normalize", "--input", inputJSON}
+	if station != "" {
+		args = append(args, "--station", station)
+	}
+
+	cmd := exec.Command(enginePath, args...)
+
+	output, err := runCommandWithJobObject(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("normalize failed: %w\noutput: %s", err, string(output))
+	}
+
+	var results []AnalysisResult
+	if err := parseEngineResponse(output, &results); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
 func ExtractEXIF(config EXIFConfig) (EXIFResult, error) {
 	return EXIFResult{Error: "Not implemented in EXE mode yet"}, nil
 }

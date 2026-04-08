@@ -235,6 +235,55 @@ Final: A?? (majority vote)"
     })
 }
 
+use photo_ai_rust::analysis::{convert_groups_to_results, normalize_results_with_station};
+use photo_ai_rust::scanner::ImageInfo;
+
+pub fn match_master(
+    input_json: &Path,
+    master_path: &Path,
+    folder_name: &str,
+) -> Result<Vec<AnalysisResult>> {
+    let content = std::fs::read_to_string(input_json)?;
+    let groups: GroupRecords = serde_json::from_str(&content)?;
+    let master = HierarchyMaster::from_csv(master_path)
+        .map_err(|e| anyhow!("Failed to load master: {e}"))?;
+
+    // Restore ImageInfo from groups
+    let mut images = Vec::new();
+    for file_name in groups.keys() {
+        images.push(ImageInfo {
+            file_name: file_name.clone(),
+            path: PathBuf::from(file_name),
+            date: None,
+        });
+    }
+
+    let folder_context = "";
+    let results = convert_groups_to_results(
+        &images,
+        &groups,
+        &master,
+        folder_name,
+        folder_context,
+        None,
+        None,
+    );
+
+    Ok(results)
+}
+
+pub fn normalize(
+    input_json: &Path,
+    station: Option<&str>,
+) -> Result<Vec<AnalysisResult>> {
+    let content = std::fs::read_to_string(input_json)?;
+    let mut results: Vec<AnalysisResult> = serde_json::from_str(&content)?;
+
+    normalize_results_with_station(&mut results, station, true);
+    
+    Ok(results)
+}
+
 fn to_image_meta(images: &[ScanImage]) -> Vec<(&str, Option<&str>)> {
     images
         .iter()

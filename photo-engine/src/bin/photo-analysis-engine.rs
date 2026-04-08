@@ -52,6 +52,21 @@ enum Command {
         #[arg(long)]
         after_max: u32,
     },
+    #[command(name = "match-master")]
+    MatchMaster {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(short, long)]
+        master: PathBuf,
+        #[arg(short, long)]
+        folder_name: String,
+    },
+    Normalize {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(short, long)]
+        station: Option<String>,
+    },
 }
 
 fn main() {
@@ -123,6 +138,14 @@ fn run(cli: Cli) -> Result<String> {
             before_max,
             after_max,
         )?),
+        Command::MatchMaster {
+            input,
+            master,
+            folder_name,
+        } => emit(analysis::match_master(&input, &master, &folder_name)?),
+        Command::Normalize { input, station } => {
+            emit(analysis::normalize(&input, station.as_deref())?)
+        }
     }
 }
 
