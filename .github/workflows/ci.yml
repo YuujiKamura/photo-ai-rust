@@ -13,6 +13,8 @@ on:
     paths:
       - "src/**"
       - "common/**"
+      - "photo-engine/**"
+      - "photo-ai-go/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
