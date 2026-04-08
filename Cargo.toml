@@ -29,9 +29,6 @@ path = "src/main.rs"
 # PDF解析・埋め込みライブラリ
 pdf-analysis-embed = { path = "deps/pdf-analysis-embed" }
 
-# コードレビュー
-ai-code-review = { path = "deps/ai-code-review" }
-
 # 共通ライブラリ
 photo-ai-common = { path = "common" }
 

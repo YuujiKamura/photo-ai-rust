@@ -37,7 +37,7 @@ jobs:
       - name: Checkout required submodules
         shell: bash
         run: |
-          git submodule update --init deps/pdf-analysis-embed deps/ai-code-review
+          git submodule update --init deps/pdf-analysis-embed
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

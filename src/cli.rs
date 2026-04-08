@@ -243,25 +243,6 @@ pub enum Commands {
         line_types: Option<PathBuf>,
     },
 
-    /// ソースコードをAIでレビュー
-    Review {
-        /// レビュー対象のファイルまたはフォルダ
-        #[arg(required = true)]
-        path: PathBuf,
-
-        /// ファイル監視モード（変更時に自動レビュー）
-        #[arg(short, long)]
-        watch: bool,
-
-        /// AIモデル指定（プロバイダに依存）
-        #[arg(short, long)]
-        model: Option<String>,
-
-        /// レビューバックエンド (gemini/claude/codex)
-        #[arg(long, default_value = "gemini")]
-        backend: ReviewBackendArg,
-    },
-
     /// 解析結果を評価（GT比較・精度検証）
     Evaluate {
         /// パイプライン出力JSONファイル
@@ -492,24 +473,3 @@ impl std::str::FromStr for LaneArg {
     }
 }
 
-/// レビューバックエンド（CLIパース用）
-#[derive(Clone, Debug, Default)]
-pub enum ReviewBackendArg {
-    #[default]
-    Gemini,
-    Claude,
-    Codex,
-}
-
-impl std::str::FromStr for ReviewBackendArg {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "gemini" => Ok(ReviewBackendArg::Gemini),
-            "claude" => Ok(ReviewBackendArg::Claude),
-            "codex" => Ok(ReviewBackendArg::Codex),
-            _ => Err(format!("Unknown backend: {}. Use gemini/claude/codex", s)),
-        }
-    }
-}

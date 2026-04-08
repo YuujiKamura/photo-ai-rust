@@ -4,13 +4,12 @@
 
 use crate::analysis::{apply_station, ScanAnalysisConfig, prepare_analysis, scan_and_analyze};
 use crate::api_key_guard::ApiKeyGuard;
-use crate::cli::{Commands, ExportFormat, GtAction, PdfQuality, ReviewBackendArg};
+use crate::cli::{Commands, ExportFormat, GtAction, PdfQuality};
 use crate::config::Config;
 use crate::error::{self, Result};
 use crate::grouping::UsageMode;
 use crate::normalizer::{self, NormalizationOptions};
 use crate::{analyzer, export, master_selector};
-use ai_code_review::{CodeReviewer, Backend as ReviewBackend};
 use photo_ai_common::{LineTypeEntry, LineTypesConfig};
 use std::path::{Path, PathBuf};
 
@@ -74,14 +73,6 @@ pub struct ExportCommandArgs {
     pub alias: Option<PathBuf>,
 }
 
-/// Reviewコマンドの引数
-pub struct ReviewCommandArgs {
-    pub path: PathBuf,
-    pub watch: bool,
-    pub model: Option<String>,
-    pub backend: ReviewBackendArg,
-    pub cli_args: CommonCliArgs,
-}
 
 /// Normalizeコマンドの引数
 pub struct NormalizeCommandArgs {
@@ -464,55 +455,6 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
     })?;
 
     println!("\n✅ 完了");
-    Ok(())
-}
-
-/// Reviewコマンドを処理
-pub fn handle_review_command(args: ReviewCommandArgs) -> Result<()> {
-    println!("🔍 photo-ai-rust - コードレビュー\n");
-
-    let backend = match args.backend {
-        ReviewBackendArg::Gemini => ReviewBackend::Gemini,
-        ReviewBackendArg::Claude => ReviewBackend::Claude,
-        ReviewBackendArg::Codex => ReviewBackend::Codex,
-    };
-
-    // ファイル指定の場合は親ディレクトリでReviewerを初期化
-    let (base_dir, target_file) = if args.path.is_file() {
-        let parent = args.path.parent().unwrap_or(Path::new("."));
-        (parent.to_path_buf(), Some(args.path.clone()))
-    } else {
-        (args.path.clone(), None)
-    };
-
-    let reviewer = CodeReviewer::new(&base_dir)
-        .map_err(|e| error::PhotoAiError::CodeReview(e.to_string()))?
-        .with_backend(backend);
-
-    let mut reviewer = if let Some(ref m) = args.model {
-        reviewer.with_model(m)
-    } else {
-        reviewer
-    };
-
-    if args.watch {
-        println!("👀 ファイル監視中... (Ctrl+C で終了)\n");
-        reviewer.start()
-            .map_err(|e| error::PhotoAiError::CodeReview(e.to_string()))?;
-    } else if let Some(ref file) = target_file {
-        // 単発ファイルレビュー
-        let result = reviewer.review_file(file)
-            .map_err(|e| error::PhotoAiError::CodeReview(e.to_string()))?;
-
-        println!("=== {} ===", result.path.display());
-        println!("重要度: {:?}\n", result.severity);
-        println!("{}", result.review);
-    } else {
-        // フォルダ内の全ファイルをレビュー（ここは簡易実装）
-        println!("フォルダレビューは --watch モードをお使いください");
-    }
-
-    println!("\n✅ レビュー完了");
     Ok(())
 }
 
@@ -1201,16 +1143,6 @@ impl Commands {
                     dekigata_remarks,
                     dry_run,
                     line_types,
-                })?;
-            }
-
-            Commands::Review { path, watch, model, backend } => {
-                handle_review_command(ReviewCommandArgs {
-                    path,
-                    watch,
-                    model,
-                    backend,
-                    cli_args: cli_args.clone(),
                 })?;
             }
 

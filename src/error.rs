@@ -48,9 +48,6 @@ pub enum PhotoAiError {
     #[error("CLI実行エラー: {0}")]
     CliExecution(String),
 
-    #[error("コードレビューエラー: {0}")]
-    CodeReview(String),
-
     #[error("PDF画像抽出エラー: {0}")]
     PdfExtraction(String),
 
