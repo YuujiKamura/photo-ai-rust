@@ -75,7 +75,7 @@ anyhow = "1"
 thiserror = "2"
 
 # ユーティリティ
-indicatif = "0.17"
+indicatif = "0.18"
 dirs = "5"
 base64 = "0.22.1"
 sha2 = "0.10"
