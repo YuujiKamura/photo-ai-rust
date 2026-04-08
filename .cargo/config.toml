@@ -11,16 +11,16 @@ check-base = "check --bin photo-ai-rust"
 build-base = "build --bin photo-ai-rust"
 
 # --- 機能優先 (フルビルド) ---
-# PDFエンジン、Excelマスタ読込、PDFテキスト抽出（重いICU依存）をすべて有効化
-check-full = "check --bin photo-pdf-engine --features pdf-gen,excel,pdf-extract"
-build-full = "build --bin photo-pdf-engine --features pdf-gen,excel,pdf-extract"
+# すべてのエンジンとフル機能の CLI を有効化
+check-full = "check --all-targets --features pdf-gen,excel,pdf-extract"
+build-full = "build --all-targets --features pdf-gen,excel,pdf-extract"
 
 # --- プロファイリング (速度の可視化) ---
 # どこが遅いのかを秒単位で計測。実行後、target/cargo-timings/report.html が生成されます
 time-base = "build --timings --bin photo-ai-rust"
-time-full = "build --timings --bin photo-pdf-engine --features pdf-gen,excel,pdf-extract"
+time-full = "build --timings --all-targets --features pdf-gen,excel,pdf-extract"
 
 # --- 診断 ---
 # バイナリサイズや依存関係の重さを解析 (要: cargo-bloat)
 bloat-base = "bloat --release --bin photo-ai-rust"
-bloat-full = "bloat --release --bin photo-pdf-engine --features pdf-gen,excel,pdf-extract"
+bloat-full = "bloat --release --all-targets --features pdf-gen,excel,pdf-extract"

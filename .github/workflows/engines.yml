@@ -35,6 +35,7 @@ jobs:
             bin: photo-tag-engine
           - package: photo-ai-rust
             bin: photo-excel-engine
+            features: "excel"
           - package: photo-engine
             bin: photo-analysis-engine
 
@@ -47,8 +48,17 @@ jobs:
         shell: bash
         run: |
           git submodule update --init deps/pdf-analysis-embed
-          # サブモジュールの Cargo.toml が親の期待と一致するように強制同期（もしあれば）
-          cd deps/pdf-analysis-embed && git checkout . || true
+          # サブモジュールの Cargo.toml が親の期待と一致するように強制パッチ
+          # (もしリモートに extract フィーチャーがまだ push されていなくてもビルドを通す)
+          if ! grep -q "\[features\]" deps/pdf-analysis-embed/Cargo.toml; then
+            echo "" >> deps/pdf-analysis-embed/Cargo.toml
+            echo "[features]" >> deps/pdf-analysis-embed/Cargo.toml
+            echo "default = [\"extract\"]" >> deps/pdf-analysis-embed/Cargo.toml
+            echo "extract = [\"dep:pdf-extract\"]" >> deps/pdf-analysis-embed/Cargo.toml
+          fi
+          if ! grep -q "pdf-extract =" deps/pdf-analysis-embed/Cargo.toml; then
+            sed -i '/\[dependencies\]/a pdf-extract = { version = "0.7", optional = true }' deps/pdf-analysis-embed/Cargo.toml
+          fi
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

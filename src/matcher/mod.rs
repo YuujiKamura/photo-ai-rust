@@ -128,8 +128,6 @@ fn load_master_excel(master_path: &Path) -> Result<Value> {
             .unwrap();
 
         let variety_obj = work_type_obj
-            .entry(work_type) // Error fix: variety should be key here, but keeping original logic if it was intended. Wait, checking original... variety was variety_obj.
-            // Original code: variety_obj = work_type_obj.entry(variety).or_insert_with(|| json!({})).as_object_mut().unwrap();
             .entry(variety)
             .or_insert_with(|| json!({}))
             .as_object_mut()

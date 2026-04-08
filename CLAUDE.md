@@ -5,9 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## コマンド
 
 ```bash
+# ビルド前に LLVM Linker (lld-link) 用の PATH を設定
+$env:PATH = "C:\LLVM\bin;" + $env:PATH;
+
 # ビルド
 cargo build --release
-
+```
 # テスト
 cargo test                      # 全テスト
 cargo test normalizer           # モジュール指定
