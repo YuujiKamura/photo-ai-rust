@@ -1,0 +1,15 @@
+[
+  {
+    "fileName": "test.jpg",
+    "filePath": "",
+    "date": "2026-04-08 12:00:00",
+    "workType": "舗装工",
+    "variety": "表層工",
+    "subphase": "施工状況",
+    "station": "No.1",
+    "remarks": "テスト写真",
+    "measurements": "50mm",
+    "photoCategory": "施工状況写真",
+    "hasBoard": true
+  }
+]

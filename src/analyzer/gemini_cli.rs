@@ -6,16 +6,15 @@
 //!
 //! 共通ロジックは photo_ai_common から使用
 
+use crate::engine;
 use crate::error::{PhotoAiError, Result};
 use crate::scanner::ImageInfo;
-use std::path::PathBuf;
+use std::path::Path;
 
 // 共通モジュールから型と関数をインポート
 use photo_ai_common::{
     AnalysisResult, RawImageData, HierarchyMaster,
     build_step1_prompt, build_prompt_for_category,
-    parse_step1_response as common_parse_step1,
-    parse_single_step_response as common_parse_single_step,
 };
 
 /// Step1: 画像認識を実行
@@ -23,8 +22,10 @@ pub async fn analyze_batch_step1(
     images: &[ImageInfo],
     verbose: bool,
 ) -> Result<Vec<RawImageData>> {
-    // 元画像パスをそのまま使用（cli-ai-analyzerが内部でASCIIパスにコピーする）
-    let image_paths: Vec<PathBuf> = images.iter().map(|img| img.path.clone()).collect();
+    let folder = images
+        .first()
+        .and_then(|img| img.path.parent())
+        .ok_or_else(|| PhotoAiError::FolderNotFound("画像フォルダを特定できません".to_string()))?;
 
     // 共通プロンプト生成を使用
     let image_meta: Vec<(&str, Option<&str>)> = images
@@ -37,17 +38,11 @@ pub async fn analyze_batch_step1(
         println!("  [Step1] プロンプト長: {} chars", step1_prompt.len());
     }
 
-    // cli-ai-analyzer経由でGemini CLI呼び出し
-    let options = cli_ai_analyzer::AnalyzeOptions::default();
-    let response = cli_ai_analyzer::analyze(&step1_prompt, &image_paths, options)
-        .map_err(|e| PhotoAiError::ApiCall(format!("Gemini解析エラー: {}", e)))?;
-
     if verbose {
-        println!("  [Step1] レスポンス長: {} chars", response.len());
+        println!("  [Step1] photo-analysis-engine 呼び出し");
     }
 
-    // 共通パーサーを使用
-    parse_step1_response(&response)
+    engine::run_step1(folder)
 }
 
 /// 基本解析を実行（マスタなし）
@@ -103,8 +98,12 @@ pub async fn analyze_batch_single_step(
     photo_type: Option<&str>,
     verbose: bool,
 ) -> Result<Vec<AnalysisResult>> {
-    // 元画像パスをそのまま使用（cli-ai-analyzerが内部でASCIIパスにコピーする）
-    let image_paths: Vec<PathBuf> = images.iter().map(|img| img.path.clone()).collect();
+    let folder = images
+        .first()
+        .and_then(|img| img.path.parent())
+        .ok_or_else(|| PhotoAiError::FolderNotFound("画像フォルダを特定できません".to_string()))?;
+    let master_csv = std::env::temp_dir().join(format!("photo-ai-master-{}.csv", std::process::id()));
+    write_master_csv(master, &master_csv)?;
 
     // 画像メタデータ
     let image_meta: Vec<(&str, Option<&str>)> = images
@@ -119,17 +118,18 @@ pub async fn analyze_batch_single_step(
         println!("  [1ステップ解析] プロンプト長: {} chars", single_step_prompt.len());
     }
 
-    // cli-ai-analyzer経由でGemini CLI呼び出し
-    let options = cli_ai_analyzer::AnalyzeOptions::default();
-    let response = cli_ai_analyzer::analyze(&single_step_prompt, &image_paths, options)
-        .map_err(|e| PhotoAiError::ApiCall(format!("Gemini解析エラー: {}", e)))?;
-
     if verbose {
-        println!("  [1ステップ解析] レスポンス長: {} chars", response.len());
+        println!("  [1ステップ解析] photo-analysis-engine 呼び出し");
     }
 
-    // レスポンスをパース
-    let mut results = parse_single_step_response(&response)?;
+    let mut results = engine::run_single_step(
+        folder,
+        &master_csv,
+        work_type,
+        variety,
+        photo_type,
+    )?;
+    let _ = std::fs::remove_file(&master_csv);
 
     // file_path と date を補完
     let info_map: std::collections::HashMap<&str, &ImageInfo> = images
@@ -150,21 +150,33 @@ pub async fn analyze_batch_single_step(
     Ok(results)
 }
 
-/// parse関数のラッパーマクロ
-///
-/// 共通パーサー関数をラップし、エラーメッセージを付与した関数を生成する
-macro_rules! wrap_parse {
-    ($fn_name:ident, $parser:path, $return_type:ty, $error_msg:expr) => {
-        fn $fn_name(response: &str) -> Result<$return_type> {
-            $parser(response)
-                .map_err(|e| PhotoAiError::ApiParse(format!("{}: {}", $error_msg, e)))
-        }
-    };
+fn write_master_csv(master: &HierarchyMaster, path: &Path) -> Result<()> {
+    let mut out = String::from("費目,写真区分,工種,種別,細別,撮影内容,検索パターン\n");
+    for row in master.rows() {
+        let line = [
+            row.photo_division.as_str(),
+            row.photo_type.as_str(),
+            row.work_type.as_str(),
+            row.variety.as_str(),
+            row.subphase.as_str(),
+            row.remarks.as_str(),
+            row.search_patterns.as_str(),
+        ]
+        .into_iter()
+        .map(csv_escape)
+        .collect::<Vec<_>>()
+        .join(",");
+        out.push_str(&line);
+        out.push('\n');
+    }
+
+    std::fs::write(path, out).map_err(PhotoAiError::Io)
 }
 
-// マクロを使用してparse関数を生成
-wrap_parse!(parse_single_step_response, common_parse_single_step, Vec<AnalysisResult>, "1ステップ解析 JSONパースエラー");
-wrap_parse!(parse_step1_response, common_parse_step1, Vec<RawImageData>, "Step1 JSONパースエラー");
+fn csv_escape(value: &str) -> String {
+    let escaped = value.replace('"', "\"\"");
+    format!("\"{escaped}\"")
+}
 
 fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMaster) {
     for result in results.iter_mut() {

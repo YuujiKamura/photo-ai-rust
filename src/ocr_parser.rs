@@ -1,6 +1,6 @@
 //! 黒板OCRテキストの解析と正規化
 //!
-//! photo-taggerが返すdetected_textからキー:値ペアを抽出し、
+//! 解析 engine が返す detected_text からキー:値ペアを抽出し、
 //! 測点表記を正規化する。
 
 /// 既知の黒板キー一覧
@@ -8,7 +8,7 @@ const KNOWN_KEYS: &[&str] = &["工事名", "場所", "工種", "測点", "車番
 
 /// detected_textを正規化: 既知キー+コロンの前に改行を挿入
 ///
-/// photo-taggerがスペース区切り/カンマ区切りで返す場合がある:
+/// 解析 engine がスペース区切り/カンマ区切りで返す場合がある:
 /// "工事名：AAA 場所：BBB 表層工 初期転圧状況"
 /// → "工事名：AAA\n場所：BBB 表層工 初期転圧状況"
 ///
@@ -41,7 +41,7 @@ fn normalize_detected_text(text: &str) -> String {
 
 /// detected_textからキー:値ペアを抽出
 ///
-/// photo-taggerのdetected_textは改行区切り・全角コロンまたはスペース区切り:
+/// 解析 engine の detected_text は改行区切り・全角コロンまたはスペース区切り:
 /// ```text
 /// 工事名：市道 ○○第1号線舗装補修工事\n場所：No.4 L\n路面切削工\n切削・積込状況
 /// 工事名 市道 ○○第1号線舗装補修工事\n場所 No. 4 L\n表層工\n乳剤散布状況

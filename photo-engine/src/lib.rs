@@ -1,3 +1,5 @@
+pub mod agentapi;
+pub mod analysis;
 pub mod exif;
 pub mod excel;
 pub mod ffi;

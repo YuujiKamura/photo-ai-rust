@@ -1,6 +1,5 @@
 [workspace]
-members = ["common", "desktop-rust", "web-wasm"]
-exclude = ["photo-engine"]
+members = ["common", "desktop-rust", "web-wasm", "photo-engine"]
 resolver = "2"
 
 [package]
@@ -10,12 +9,25 @@ edition = "2021"
 description = "工事写真AI解析・写真台帳生成ツール"
 license = "MIT"
 
+[[bin]]
+name = "photo-pdf-engine"
+path = "src/bin/pdf_engine.rs"
+
+[[bin]]
+name = "photo-tag-engine"
+path = "src/bin/tag_engine.rs"
+
+[[bin]]
+name = "photo-excel-engine"
+path = "src/bin/excel_engine.rs"
+
+[[bin]]
+name = "photo-ai-rust"
+path = "src/main.rs"
+
 [dependencies]
 # PDF解析・埋め込みライブラリ
 pdf-analysis-embed = { path = "deps/pdf-analysis-embed" }
-
-# AI CLI解析
-cli-ai-analyzer = { path = "deps/cli-ai-analyzer" }
 
 # コードレビュー
 ai-code-review = { path = "deps/ai-code-review" }
@@ -23,12 +35,11 @@ ai-code-review = { path = "deps/ai-code-review" }
 # 共通ライブラリ
 photo-ai-common = { path = "common" }
 
-# フォトタガー（使用機械グループ分け）
-photo-tagger = { path = "deps/photo-tagger" }
 # CLI
 clap = { version = "4", features = ["derive"] }
 dialoguer = "0.11"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+rpassword = "5"
 
 # 画像処理
 image = "0.25"
@@ -78,6 +89,5 @@ lazy_static = "1"
 
 [dev-dependencies]
 tempfile = "3"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 assert_cmd = "2"
 predicates = "3"

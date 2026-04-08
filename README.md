@@ -4,27 +4,30 @@
 
 ## 概要
 
-建設工事の写真をGemini AIで自動解析し、工種階層マスタと照合して写真台帳（PDF/Excel）を生成する。
+建設工事の写真をAIで自動解析し、工種階層マスタと照合して写真台帳（PDF/Excel）を生成する。
+
+現在の解析層は `photo-analysis-engine` という単独バイナリに分離されており、`photo-ai-rust` 本体はこの engine を呼び出す構成になっている。
 
 ## 前提条件
 
 - Rust 1.70+
-- [photo-tagger](https://github.com/YuujiKamura/photo-tagger) — Gemini AIで写真グループ分け・OCR（必須）
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli) — photo-taggerのデフォルトバックエンド（`npm install -g @google/gemini-cli`、Googleアカウント認証）
+- AgentAPI サーバー
+- Claude / Codex / Gemini のいずれかの常駐CLIエージェント
 
 ### AIバックエンド
 
-photo-taggerは内部で [cli-ai-analyzer](https://github.com/YuujiKamura/cli-ai-analyzer) を使用。2つのモードがある:
+`photo-analysis-engine` は AgentAPI 経由で常駐CLIエージェントを利用する。
 
-| モード | 認証 | 費用 | 備考 |
-|--------|------|------|------|
-| Gemini CLI（デフォルト） | Googleアカウント OAuth | 無料枠 | `gemini auth` で認証 |
-| Gemini REST API | `GEMINI_API_KEY` 環境変数 | 従量課金 | cli-ai-analyzer側で `--pay-per-use` 指定 |
+| バックエンド | 認証 | 備考 |
+|--------|------|------|
+| Claude Code | Claude CLI側の認証 | AgentAPIから起動・再利用 |
+| Codex | Codex CLI側の認証 | AgentAPIから起動・再利用 |
+| Gemini | Gemini CLI側の認証 | AgentAPIから起動・再利用 |
 
-現状、photo-taggerはGemini CLIモード固定。REST APIモードを使うにはphoto-tagger側の改修が必要。
+解析 engine 単体をビルドする場合:
 
 ```bash
-photo-ai-rust doctor   # 前提条件を一括チェック
+cargo build --release -p photo-engine --bin photo-analysis-engine
 ```
 
 ## インストール
@@ -38,7 +41,7 @@ cargo build --release
 ```
 写真フォルダ
   → scan（画像収集）
-  → photo-tagger（Gemini API：グループ分け・OCR・focus_target抽出）
+  → photo-analysis-engine（グループ分け・OCR・focus target抽出）
   → マスタ照合（detected_text + folder_name → 工種階層マッチング）
   → グループ伝播（リーダーのマッチ結果を同一グループに適用）
   → ドメイン補正（工種変換・線種検出）
@@ -123,7 +126,7 @@ photo-ai-rust normalize result.json -S "No.9" --dry-run
 ### 7. 前回解析済みのフォルダを再出力（AIコスト節約）
 
 ```bash
-# --use-cache: photo-taggerをスキップし、前回のphoto-groups.jsonを再利用
+# --use-cache: 解析 engine のグループ分けをスキップし、前回のphoto-groups.jsonを再利用
 photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --use-cache
 ```
 

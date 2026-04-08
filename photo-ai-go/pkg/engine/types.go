@@ -59,6 +59,7 @@ type ImageConfig struct {
 	IncludeAll  bool   `json:"includeAll"`
 	FolderRules string `json:"folderRules,omitempty"`
 	PayPerUse   bool   `json:"payPerUse"`
+	Resident    bool   `json:"resident"`
 }
 
 // ImageResult is the response from ProcessImage.

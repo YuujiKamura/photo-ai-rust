@@ -13,6 +13,7 @@ on:
     paths:
       - "src/**"
       - "common/**"
+      - "photo-engine/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
@@ -32,13 +33,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Checkout sibling repos
-        shell: bash
-        run: |
-          for repo in pdf-analysis-embed ai-code-review photo-tagger cli-ai-analyzer folder-watcher; do
-            git clone --depth 1 https://github.com/YuujiKamura/$repo.git ../$repo
-          done
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -55,8 +49,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Build release
-        run: cargo build --release
+      - name: Download Pre-built Engines
+        shell: bash
+        run: |
+          mkdir -p target/release
+          # Download from engines-latest release
+          URL="https://github.com/YuujiKamura/photo-ai-rust/releases/download/engines-latest"
+          for bin in photo-pdf-engine photo-tag-engine photo-excel-engine; do
+            echo "Fetching $bin..."
+            curl -L -O "$URL/$bin.exe"
+            mv "$bin.exe" target/release/
+          done
+
+      - name: Build main binary
+        run: cargo build --release --bin photo-ai-rust
+
+      - name: Build analysis engine
+        run: cargo build --release -p photo-engine --bin photo-analysis-engine
 
       - name: Run tests
-        run: cargo test
+        run: cargo test --bin photo-ai-rust
+
+      - name: Run analysis engine tests
+        run: cargo test -p photo-engine

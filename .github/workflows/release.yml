@@ -20,13 +20,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Checkout sibling repos
-        shell: bash
-        run: |
-          for repo in pdf-analysis-embed ai-code-review photo-tagger cli-ai-analyzer folder-watcher; do
-            git clone --depth 1 https://github.com/YuujiKamura/$repo.git ../$repo
-          done
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -45,6 +38,9 @@ jobs:
 
       - name: Build release
         run: cargo build --release
+
+      - name: Build analysis engine
+        run: cargo build --release -p photo-engine --bin photo-analysis-engine
 
       - name: Rename artifact
         shell: bash
@@ -83,6 +79,7 @@ jobs:
           mkdir -p "$DIST/web/ghostty-web"
           # Executables
           cp target/release/photo-ai-rust.exe "$DIST/"
+          cp target/release/photo-analysis-engine.exe "$DIST/"
           cp web/webserver-windows-x86_64.exe "$DIST/web/webserver.exe"
           cp web/deckpilot/deckpilot-windows-x86_64.exe "$DIST/web/deckpilot.exe"
           # Bundle node.exe from CI runner (same version as setup-node)

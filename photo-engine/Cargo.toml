@@ -9,6 +9,8 @@ license = "MIT"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 # Image processing
 image = "0.25"
 imageproc = "0.25"
@@ -32,9 +34,12 @@ kamadak-exif = "0.5"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "multipart", "blocking", "rustls-tls"] }
+regex = "1"
 
 # Utilities
 rayon = "1"
 base64 = "0.22"
 sha2 = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+photo-ai-common = { path = "../common", default-features = false }

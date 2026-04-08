@@ -86,7 +86,7 @@ fn classify_temperature_remarks(
     detected_text: &str,
     focus_target: &str,
 ) -> String {
-    // 1. focusTarget（photo-taggerの判定、最優先）
+// 1. focusTarget（解析 engine の判定、最優先）
     if let Some(kind) = TemperatureKind::from_text(focus_target) {
         return kind.label().to_string();
     }

@@ -412,7 +412,7 @@ fn station_hint_from_result(result: &AnalysisResult) -> Option<String> {
 
 /// グループ内でボードアップ写真の計測値に統一する
 ///
-/// Phase 1: real group番号(photo-tagger)によるグループ化 → 全写真対象
+/// Phase 1: real group番号(解析 engine)によるグループ化 → 全写真対象
 /// Phase 2: group=0の温度写真は連続同一remarksでグループ化（後方互換）
 ///
 /// ボードアップ写真がなければ伝播しない（値なし）。
@@ -502,7 +502,7 @@ fn unify_measurements_by_group(results: &[AnalysisResult]) -> Vec<NormalizationC
 
 /// グループ内でステーションを統一する
 ///
-/// photo-taggerのグループ内で、ボードアップ写真またはhas_board=trueの写真の
+/// 解析 engine のグループ内で、ボードアップ写真またはhas_board=trueの写真の
 /// stationを代表値として全写真に適用する。
 fn unify_station_by_group(results: &[AnalysisResult]) -> Vec<NormalizationCorrection> {
     let mut corrections = Vec::new();
@@ -762,7 +762,7 @@ fn unify_dekigata_measurements(
         return corrections;
     }
 
-    // photo-taggerのgroup番号でグループ化（唯一の基準）
+// 解析 engine の group番号でグループ化（唯一の基準）
     let mut tagger_groups: std::collections::BTreeMap<u32, Vec<usize>> =
         std::collections::BTreeMap::new();
     for &idx in &dekigata_indices {
@@ -772,7 +772,7 @@ fn unify_dekigata_measurements(
         }
     }
 
-    // 各photo-taggerグループで統一
+// 各解析 engine グループで統一
     for group in tagger_groups.values() {
         // 同一groupに別測点セットが混在するケースを避けるため、
         // 時刻差5分超でサブグループに分割して統一する。

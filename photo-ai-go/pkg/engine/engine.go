@@ -1,191 +1,246 @@
 //go:build windows
 
-// Package engine wraps the photo-engine shared library (DLL).
+// Package engine wraps the photo-engine CLI tools (EXEs).
 //
-// The library path is resolved in this order:
-//  1. Environment variable PHOTO_ENGINE_LIB (full path to the DLL file)
-//  2. Same directory as the running executable, named "photo-engine.dll"
-//
-// The DLL uses a buffer-based ABI: the caller provides a byte buffer and the
-// DLL writes its JSON response into it. Return value is bytes written (>=0)
-// or negative required size if the buffer was too small.
-//
-// No CGo is used; all DLL interaction goes through syscall.
+// The engine path is resolved in this order:
+//  1. Environment variable PHOTO_PDF_ENGINE_EXE (full path to the EXE file)
+//  2. Same directory as the running executable, named "photo-pdf-engine.exe"
 package engine
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
-// lib holds the loaded DLL handle and resolved proc pointers.
-var lib *photoEngineLib
+// runCommandWithJobObject executes a command within a Job Object to ensure
+// that the entire process tree (including grandchild processes) is terminated
+// when the main command exits. This prevents hangs caused by zombie processes
+// holding onto pipe handles.
+func runCommandWithJobObject(cmd *exec.Cmd) ([]byte, error) {
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create job object: %w", err)
+	}
+	defer windows.CloseHandle(job)
 
-// photoEngineLib holds Windows DLL proc handles.
-type photoEngineLib struct {
-	genPDF    *syscall.Proc
-	genExcel  *syscall.Proc
-	procImage *syscall.Proc
-	extEXIF   *syscall.Proc
+	info := &windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
+		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{
+			LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+		},
+	}
+	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(info)), uint32(unsafe.Sizeof(*info))); err != nil {
+		return nil, fmt.Errorf("failed to set job object info: %w", err)
+	}
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: windows.CREATE_SUSPENDED,
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start command: %w", err)
+	}
+
+	processHandle, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
+	if err != nil {
+		return nil, fmt.Errorf("failed to open process: %w", err)
+	}
+	defer windows.CloseHandle(processHandle)
+
+	if err := windows.AssignProcessToJobObject(job, processHandle); err != nil {
+		return nil, fmt.Errorf("failed to assign process to job object: %w", err)
+	}
+
+	threadHandle, err := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, cmd.SysProcAttr.Threads[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to open thread: %w", err)
+}
+	defer windows.CloseHandle(threadHandle)
+
+	if _, err := windows.ResumeThread(threadHandle); err != nil {
+		return nil, fmt.Errorf("failed to resume thread: %w", err)
+	}
+	
+	return cmd.CombinedOutput()
 }
 
-// resolvePath returns the path to the DLL, preferring PHOTO_ENGINE_LIB, then
-// the executable's directory.
-func resolvePath() (string, error) {
-	if v := os.Getenv("PHOTO_ENGINE_LIB"); v != "" {
+// runCommand is a wrapper for non-windows platforms.
+func runCommand(cmd *exec.Cmd) ([]byte, error) {
+	return cmd.CombinedOutput()
+}
+
+// resolveEnginePath returns the path to the specified engine EXE.
+func resolveEnginePath(envVar, defaultName string) (string, error) {
+	if v := os.Getenv(envVar); v != "" {
 		return v, nil
 	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve executable path: %w", err)
 	}
-	return filepath.Join(filepath.Dir(exe), "photo-engine.dll"), nil
+	// Try same directory as executable
+	p := filepath.Join(filepath.Dir(exe), defaultName)
+	if _, err := os.Stat(p); err == nil {
+		return p, nil
+	}
+	// Try parent directory's target/release (for dev)
+	p = filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(exe))), "target", "release", defaultName)
+	if _, err := os.Stat(p); err == nil {
+		return p, nil
+	}
+	return defaultName, nil // Fallback to PATH
 }
 
-// Load explicitly loads the DLL. Calling it is optional; each exported function
-// calls it lazily on first use.
-func Load() error {
-	if lib != nil {
-		return nil
+// parseEngineResponse parses the last line of output as a JSON EngineResponse.
+func parseEngineResponse(output []byte, target any) error {
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 0 {
+		return fmt.Errorf("empty output from engine")
 	}
-	path, err := resolvePath()
-	if err != nil {
-		return err
+	lastLine := lines[len(lines)-1]
+
+	var resp struct {
+		OK    bool            `json:"ok"`
+		Data  json.RawMessage `json:"data"`
+		Error string          `json:"error"`
 	}
-	dll, err := syscall.LoadDLL(path)
-	if err != nil {
-		return fmt.Errorf("LoadDLL %q: %w", path, err)
+
+	if err := json.Unmarshal([]byte(lastLine), &resp); err != nil {
+		return fmt.Errorf("failed to parse engine JSON: %w\nraw output: %s", err, string(output))
 	}
-	l := &photoEngineLib{}
-	type entry struct {
-		name string
-		ptr  **syscall.Proc
+
+	if !resp.OK {
+		return fmt.Errorf("engine error: %s", resp.Error)
 	}
-	entries := []entry{
-		{"photo_engine_generate_pdf", &l.genPDF},
-		{"photo_engine_generate_excel", &l.genExcel},
-		{"photo_engine_process_image", &l.procImage},
-		{"photo_engine_extract_exif", &l.extEXIF},
+
+	if err := json.Unmarshal(resp.Data, target); err != nil {
+		return fmt.Errorf("failed to parse engine data: %w", err)
 	}
-	for _, e := range entries {
-		p, findErr := dll.FindProc(e.name)
-		if findErr != nil {
-			return fmt.Errorf("FindProc %q: %w", e.name, findErr)
-		}
-		*e.ptr = p
-	}
-	lib = l
+
 	return nil
 }
 
-// defaultBufSize is the initial response buffer size (64 KiB).
-const defaultBufSize = 64 * 1024
-
-// callDLL marshals req to JSON, calls the DLL proc with a buffer-based ABI:
-//
-//	int32_t proc(const char* req_json, char* out_buf, size_t out_len)
-//
-// Returns bytes written on success, or negative required size if buffer too small.
-func callDLL(proc *syscall.Proc, req interface{}, resp interface{}) error {
-	if err := Load(); err != nil {
-		return err
-	}
-	reqJSON, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
-	}
-	// Null-terminate the request JSON.
-	reqBytes := append(reqJSON, 0)
-
-	// Allocate response buffer.
-	bufSize := defaultBufSize
-	outBuf := make([]byte, bufSize)
-
-	ret, _, _ := proc.Call(
-		uintptr(unsafe.Pointer(&reqBytes[0])),
-		uintptr(unsafe.Pointer(&outBuf[0])),
-		uintptr(bufSize),
-	)
-
-	written := int32(ret)
-
-	// Negative return means buffer too small; absolute value is required size.
-	if written < 0 {
-		needed := int(-written)
-		if needed > 10*1024*1024 {
-			return fmt.Errorf("DLL requested unreasonable buffer size: %d", needed)
-		}
-		outBuf = make([]byte, needed)
-		ret, _, _ = proc.Call(
-			uintptr(unsafe.Pointer(&reqBytes[0])),
-			uintptr(unsafe.Pointer(&outBuf[0])),
-			uintptr(needed),
-		)
-		written = int32(ret)
-		if written < 0 {
-			return fmt.Errorf("DLL retry failed, returned %d", written)
-		}
-	}
-
-	if written == 0 {
-		return errors.New("DLL function returned empty response")
-	}
-
-	if err := json.Unmarshal(outBuf[:written], resp); err != nil {
-		return fmt.Errorf("unmarshal response: %w", err)
-	}
-	return nil
-}
-
-// GeneratePDF calls the DLL to generate a PDF photo book.
+// GeneratePDF calls the photo-pdf-engine.exe to generate a PDF photo book.
 func GeneratePDF(config PDFConfig) (PDFResult, error) {
 	var result PDFResult
-	if err := callDLL(lib.genPDF, config, &result); err != nil {
+
+	enginePath, err := resolveEnginePath("PHOTO_PDF_ENGINE_EXE", "photo-pdf-engine.exe")
+	if err != nil {
 		return result, err
 	}
-	if result.Error != "" {
-		return result, errors.New(result.Error)
+
+	cmd := exec.Command(enginePath,
+		"--input", config.InputJSON,
+		"--output", config.OutputPath,
+		"--photos-per-page", strconv.Itoa(config.PhotosPerPage),
+		"--quality", config.Quality,
+	)
+
+	output, err := runCommandWithJobObject(cmd)
+	if err != nil {
+		return result, fmt.Errorf("execution failed: %w\noutput: %s", err, string(output))
 	}
+
+	var data struct {
+		OutputPath string `json:"output_path"`
+		Count      int    `json:"count"`
+	}
+	if err := parseEngineResponse(output, &data); err != nil {
+		return result, err
+	}
+
+	result.OutputPath = data.OutputPath
+	result.PageCount = (data.Count + config.PhotosPerPage - 1) / config.PhotosPerPage
+
 	return result, nil
 }
 
-// GenerateExcel calls the DLL to generate an Excel workbook.
+// GenerateExcel calls the photo-excel-engine.exe to generate an Excel photo book.
 func GenerateExcel(config ExcelConfig) (ExcelResult, error) {
 	var result ExcelResult
-	if err := callDLL(lib.genExcel, config, &result); err != nil {
+
+	enginePath, err := resolveEnginePath("PHOTO_EXCEL_ENGINE_EXE", "photo-excel-engine.exe")
+	if err != nil {
 		return result, err
 	}
-	if result.Error != "" {
-		return result, errors.New(result.Error)
+
+	// TODO: PhotosPerPage support in ExcelConfig? types.go has no PhotosPerPage in ExcelConfig
+	photosPerPage := 3
+
+	cmd := exec.Command(enginePath,
+		"--input", config.InputJSON,
+		"--output", config.OutputPath,
+		"--photos-per-page", strconv.Itoa(photosPerPage),
+	)
+
+	output, err := runCommandWithJobObject(cmd)
+	if err != nil {
+		return result, fmt.Errorf("execution failed: %w\noutput: %s", err, string(output))
 	}
+
+	var data struct {
+		OutputPath string `json:"output_path"`
+		Count      int    `json:"count"`
+	}
+	if err := parseEngineResponse(output, &data); err != nil {
+		return result, err
+	}
+
+	result.OutputPath = data.OutputPath
+	result.SheetCount = (data.Count + photosPerPage - 1) / photosPerPage
+
 	return result, nil
 }
 
-// ProcessImage calls the DLL to run the AI photo analysis pipeline.
+// ProcessImage calls the photo-tag-engine.exe to analyze images.
 func ProcessImage(config ImageConfig) (ImageResult, error) {
 	var result ImageResult
-	if err := callDLL(lib.procImage, config, &result); err != nil {
+
+	enginePath, err := resolveEnginePath("PHOTO_TAG_ENGINE_EXE", "photo-tag-engine.exe")
+	if err != nil {
 		return result, err
 	}
-	if result.Error != "" {
-		return result, errors.New(result.Error)
+
+	usageMode := "time_based_quota"
+	if config.PayPerUse {
+		usageMode = "pay_per_use"
+	} else if config.Resident {
+		usageMode = "resident"
 	}
+
+	cmd := exec.Command(enginePath,
+		"--folder", config.Folder,
+		"--batch-size", strconv.Itoa(config.BatchSize),
+		"--usage-mode", usageMode,
+	)
+
+	output, err := runCommandWithJobObject(cmd)
+	if err != nil {
+		return result, fmt.Errorf("execution failed: %w\noutput: %s", err, string(output))
+	}
+
+	var data struct {
+		Folder string `json:"folder"`
+		Count  int    `json:"count"`
+	}
+	if err := parseEngineResponse(output, &data); err != nil {
+		return result, err
+	}
+
+	result.PhotoCount = data.Count
+	result.OutputJSON = filepath.Join(config.Folder, "photo-groups.json")
+
 	return result, nil
 }
 
-// ExtractEXIF calls the DLL to extract EXIF metadata from an image file.
 func ExtractEXIF(config EXIFConfig) (EXIFResult, error) {
-	var result EXIFResult
-	if err := callDLL(lib.extEXIF, config, &result); err != nil {
-		return result, err
-	}
-	if result.Error != "" {
-		return result, errors.New(result.Error)
-	}
-	return result, nil
+	return EXIFResult{Error: "Not implemented in EXE mode yet"}, nil
 }

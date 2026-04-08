@@ -4,9 +4,10 @@
 //! OCR解析・マスタ照合・線種判定は各専用モジュールに委譲し、
 //! このモジュールはパイプラインのオーケストレーションに専念する。
 
-use crate::{analyzer, error, scanner};
+use crate::{analyzer, engine, error, scanner};
 use crate::domain::*;
 use crate::folder_rules::FolderRule;
+use crate::grouping::{GroupRecords, UsageMode};
 use crate::normalizer::{self, NormalizationOptions};
 use crate::ocr_parser::{extract_kv_from_text, normalize_station};
 use crate::master_matcher::{
@@ -14,7 +15,6 @@ use crate::master_matcher::{
 };
 use crate::line_type_detector::detect_line_type;
 use photo_ai_common::{HierarchyMaster, LineTypeEntry};
-use photo_tagger::{GroupRecords, UsageMode};
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;
@@ -156,19 +156,18 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
     }
     let vocabulary = master.extract_vocabulary();
 
-    // 3. photo-tagger（語彙リスト付き）
+    // 3. 解析engine（語彙リスト付き）
     if config.usage_mode == UsageMode::PayPerUse {
-        println!("{} photo-tagger実行中... [従量課金API]", config.step_prefix_analyze);
+        println!("{} photo-analysis-engine実行中... [従量課金API]", config.step_prefix_analyze);
     } else {
-        println!("{} photo-tagger実行中...", config.step_prefix_analyze);
+        println!("{} photo-analysis-engine実行中...", config.step_prefix_analyze);
     }
     let vocab_ref = if vocabulary.is_empty() { None } else { Some(vocabulary.as_slice()) };
-    let group_records = photo_tagger::run_grouping(config.folder, config.batch_size, vocab_ref, config.usage_mode)
-        .map_err(|e| error::PhotoAiError::ApiCall(format!("photo-tagger: {}", e)))?;
+    let group_records = engine::run_tag_groups(config.folder, config.batch_size, vocab_ref, config.usage_mode)?;
 
     if group_records.is_empty() {
         return Err(error::PhotoAiError::NoImagesFound(
-            format!("photo-taggerの結果が空: {}", config.folder.display())
+            format!("photo-analysis-engine の結果が空: {}", config.folder.display())
         ));
     }
 
@@ -492,7 +491,7 @@ fn convert_groups_to_results(
 
 /// グループ内でマスタ照合結果を伝搬する
 ///
-/// photo-taggerのmachine_id由来グループ番号を利用して、
+/// 解析 engine の machine_id 由来グループ番号を利用して、
 /// マスタ照合に成功した写真(リーダー)の結果を、同一グループ内の
 /// マスタ照合失敗写真(remarks空)に伝搬する。
 ///

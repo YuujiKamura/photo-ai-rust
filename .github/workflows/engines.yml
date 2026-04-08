@@ -1,0 +1,92 @@
+name: Build Engines
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "e-*"
+    paths:
+      - "src/bin/*_engine.rs"
+      - "common/**"
+      - "photo-engine/**"
+      - "deps/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/engines.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-engines:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - package: photo-ai-rust
+            bin: photo-pdf-engine
+          - package: photo-ai-rust
+            bin: photo-tag-engine
+          - package: photo-ai-rust
+            bin: photo-excel-engine
+          - package: photo-engine
+            bin: photo-analysis-engine
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-engines-${{ matrix.bin }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-engines-
+
+      - name: Build engine
+        run: cargo build --release -p ${{ matrix.package }} --bin ${{ matrix.bin }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.bin }}-windows-x86_64
+          path: target/release/${{ matrix.bin }}.exe
+
+  release-engines:
+    needs: build-engines
+    if: startsWith(github.ref, 'refs/tags/e-') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: engines-latest
+          files: |
+            photo-pdf-engine-windows-x86_64/photo-pdf-engine.exe
+            photo-tag-engine-windows-x86_64/photo-tag-engine.exe
+            photo-excel-engine-windows-x86_64/photo-excel-engine.exe
+            photo-analysis-engine-windows-x86_64/photo-analysis-engine.exe
+          name: Pre-built Engines
+          body: |
+            These are pre-built engine binaries to speed up main CI.
+            Uploaded at: ${{ github.sha }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
