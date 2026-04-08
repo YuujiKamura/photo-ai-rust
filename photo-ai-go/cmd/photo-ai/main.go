@@ -124,7 +124,10 @@ var analyzeCmd = &cobra.Command{
 		// --- Stage 2: Master Matching ---
 		if master != "" {
 			fmt.Fprintln(os.Stderr, "マスタ照合を開始しています...")
-			matchedResults, err := engine.MatchMaster(result.OutputJSON, master, filepath.Base(folder))
+			lineTypes, _ := cmd.Flags().GetString("line-types")
+			folderRules, _ := cmd.Flags().GetString("folder-rules")
+
+			matchedResults, err := engine.MatchMaster(result.OutputJSON, master, folder, lineTypes, folderRules)
 			if err != nil {
 				return fmt.Errorf("analyze (matching): %w", err)
 			}
@@ -136,7 +139,7 @@ var analyzeCmd = &cobra.Command{
 
 			// --- Stage 3: Normalization ---
 			fmt.Fprintln(os.Stderr, "正規化を開始しています...")
-			finalResults, err := engine.Normalize(matchedJSON, station)
+			finalResults, err := engine.Normalize(matchedJSON, folder, station, folderRules)
 			if err != nil {
 				return fmt.Errorf("analyze (normalization): %w", err)
 			}

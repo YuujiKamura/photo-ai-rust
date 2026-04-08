@@ -241,32 +241,59 @@ use photo_ai_rust::scanner::ImageInfo;
 pub fn match_master(
     input_json: &Path,
     master_path: &Path,
-    folder_name: &str,
+    folder: &Path,
+    line_types_path: Option<&Path>,
+    folder_rules_path: Option<&Path>,
 ) -> Result<Vec<AnalysisResult>> {
     let content = std::fs::read_to_string(input_json)?;
     let groups: GroupRecords = serde_json::from_str(&content)?;
     let master = HierarchyMaster::from_csv(master_path)
         .map_err(|e| anyhow!("Failed to load master: {e}"))?;
 
+    let line_types = if let Some(p) = line_types_path {
+        let s = std::fs::read_to_string(p)?;
+        let cfg: photo_ai_common::LineTypesConfig = serde_json::from_str(&s)?;
+        Some(cfg.line_types)
+    } else {
+        None
+    };
+
+    let folder_rules = if let Some(p) = folder_rules_path {
+        let s = std::fs::read_to_string(p)?;
+        let rules: Vec<photo_ai_rust::folder_rules::FolderRule> = serde_json::from_str(&s)?;
+        Some(rules)
+    } else {
+        None
+    };
+
     // Restore ImageInfo from groups
     let mut images = Vec::new();
-    for file_name in groups.keys() {
-        images.push(ImageInfo {
+    for (file_name, rec) in &groups {
+        let mut img = ImageInfo {
             file_name: file_name.clone(),
-            path: PathBuf::from(file_name),
+            path: folder.join(file_name),
             date: None,
-        });
+        };
+        if let Some(ts) = rec.captured_at {
+            // Convert timestamp to YYYY-MM-DD HH:MM:SS
+            let dt = chrono::DateTime::from_timestamp(ts, 0)
+                .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string());
+            img.date = dt;
+        }
+        images.push(img);
     }
 
-    let folder_context = "";
+    let folder_name = folder.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let folder_context = folder.display().to_string();
+    
     let results = convert_groups_to_results(
         &images,
         &groups,
         &master,
         folder_name,
-        folder_context,
-        None,
-        None,
+        &folder_context,
+        line_types.as_deref(),
+        folder_rules.as_deref(),
     );
 
     Ok(results)
@@ -274,13 +301,32 @@ pub fn match_master(
 
 pub fn normalize(
     input_json: &Path,
+    folder: &Path,
     station: Option<&str>,
+    folder_rules_path: Option<&Path>,
 ) -> Result<Vec<AnalysisResult>> {
     let content = std::fs::read_to_string(input_json)?;
     let mut results: Vec<AnalysisResult> = serde_json::from_str(&content)?;
 
+    let folder_rules = if let Some(p) = folder_rules_path {
+        let s = std::fs::read_to_string(p)?;
+        let rules: Vec<photo_ai_rust::folder_rules::FolderRule> = serde_json::from_str(&s)?;
+        Some(rules)
+    } else {
+        None
+    };
+
+    let folder_context = folder.display().to_string();
+
     normalize_results_with_station(&mut results, station, true);
     
+    // Apply additional corrections that are normally run after normalization in scan_and_analyze
+    if let Some(rules) = folder_rules {
+        photo_ai_rust::folder_rules::apply_folder_specific_corrections(&mut results, &folder_context, &rules);
+    }
+    
+    photo_ai_rust::temperature::apply_temperature_folder_final_adjustments(&mut results, &folder_context);
+
     Ok(results)
 }
 

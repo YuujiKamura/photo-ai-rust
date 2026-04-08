@@ -261,17 +261,25 @@ func ProcessImage(config ImageConfig) (ImageResult, error) {
 }
 
 // MatchMaster calls the photo-analysis-engine.exe to match analysis results with a master CSV.
-func MatchMaster(inputJSON, masterPath, folderName string) ([]AnalysisResult, error) {
+func MatchMaster(inputJSON, masterPath, folderPath, lineTypes, folderRules string) ([]AnalysisResult, error) {
 	enginePath, err := resolveEnginePath("PHOTO_ANALYSIS_ENGINE_EXE", "photo-analysis-engine.exe")
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := exec.Command(enginePath, "match-master",
+	args := []string{"match-master",
 		"--input", inputJSON,
 		"--master", masterPath,
-		"--folder-name", folderName,
-	)
+		"--folder", folderPath,
+	}
+	if lineTypes != "" {
+		args = append(args, "--line-types", lineTypes)
+	}
+	if folderRules != "" {
+		args = append(args, "--folder-rules", folderRules)
+	}
+
+	cmd := exec.Command(enginePath, args...)
 
 	output, err := runCommandWithJobObject(cmd)
 	if err != nil {
@@ -287,15 +295,21 @@ func MatchMaster(inputJSON, masterPath, folderName string) ([]AnalysisResult, er
 }
 
 // Normalize calls the photo-analysis-engine.exe to normalize analysis results.
-func Normalize(inputJSON, station string) ([]AnalysisResult, error) {
+func Normalize(inputJSON, folderPath, station, folderRules string) ([]AnalysisResult, error) {
 	enginePath, err := resolveEnginePath("PHOTO_ANALYSIS_ENGINE_EXE", "photo-analysis-engine.exe")
 	if err != nil {
 		return nil, err
 	}
 
-	args := []string{"normalize", "--input", inputJSON}
+	args := []string{"normalize",
+		"--input", inputJSON,
+		"--folder", folderPath,
+	}
 	if station != "" {
 		args = append(args, "--station", station)
+	}
+	if folderRules != "" {
+		args = append(args, "--folder-rules", folderRules)
 	}
 
 	cmd := exec.Command(enginePath, args...)

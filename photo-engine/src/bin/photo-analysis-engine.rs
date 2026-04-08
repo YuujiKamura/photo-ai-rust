@@ -59,13 +59,21 @@ enum Command {
         #[arg(short, long)]
         master: PathBuf,
         #[arg(short, long)]
-        folder_name: String,
+        folder: PathBuf,
+        #[arg(long)]
+        line_types: Option<PathBuf>,
+        #[arg(long)]
+        folder_rules: Option<PathBuf>,
     },
     Normalize {
         #[arg(short, long)]
         input: PathBuf,
         #[arg(short, long)]
+        folder: PathBuf,
+        #[arg(short, long)]
         station: Option<String>,
+        #[arg(long)]
+        folder_rules: Option<PathBuf>,
     },
 }
 
@@ -141,11 +149,27 @@ fn run(cli: Cli) -> Result<String> {
         Command::MatchMaster {
             input,
             master,
-            folder_name,
-        } => emit(analysis::match_master(&input, &master, &folder_name)?),
-        Command::Normalize { input, station } => {
-            emit(analysis::normalize(&input, station.as_deref())?)
-        }
+            folder,
+            line_types,
+            folder_rules,
+        } => emit(analysis::match_master(
+            &input,
+            &master,
+            &folder,
+            line_types.as_deref(),
+            folder_rules.as_deref(),
+        )?),
+        Command::Normalize {
+            input,
+            folder,
+            station,
+            folder_rules,
+        } => emit(analysis::normalize(
+            &input,
+            &folder,
+            station.as_deref(),
+            folder_rules.as_deref(),
+        )?),
     }
 }
 
