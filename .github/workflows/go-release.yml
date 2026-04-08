@@ -1,0 +1,61 @@
+name: Go Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-rust-engines:
+    uses: ./.github/workflows/engines.yml
+    secrets: inherit
+
+  build-go-cli:
+    needs: build-rust-engines
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: photo-ai-go/go.sum
+
+      - name: Build Go CLI
+        shell: bash
+        run: |
+          cd photo-ai-go
+          go build -o ../photo-ai.exe ./cmd/photo-ai
+
+      - name: Download Rust Engines
+        uses: actions/download-artifact@v4
+        with:
+          path: engines
+
+      - name: Prepare Release Package
+        shell: bash
+        run: |
+          mkdir release
+          cp photo-ai.exe release/
+          # engines/<bin>-windows-x86_64/<bin>.exe -> release/<bin>.exe
+          find engines -name "*.exe" -exec cp {} release/ \;
+          ls -R release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/photo-ai.exe
+            release/photo-pdf-engine.exe
+            release/photo-tag-engine.exe
+            release/photo-excel-engine.exe
+            release/photo-analysis-engine.exe
+          name: Release ${{ github.ref_name }}
+          body: |
+            Photo AI Go Frontend + Rust Engines
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

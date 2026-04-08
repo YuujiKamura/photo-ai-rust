@@ -11,7 +11,16 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::panic;
 
-use crate::{exif, excel, image_proc, pdf};
+use crate::exif;
+
+#[cfg(feature = "excel")]
+use crate::excel;
+
+#[cfg(feature = "image")]
+use crate::image_proc;
+
+#[cfg(feature = "pdf")]
+use crate::pdf;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +76,7 @@ where
 /// `req_json` must be a JSON object matching `pdf::PdfConfig`.
 /// On success, writes a JSON object matching `EngineResponse<pdf::PdfResult>`
 /// into `out_buf` and returns the byte count written.
+#[cfg(feature = "pdf")]
 #[no_mangle]
 pub unsafe extern "C" fn photo_engine_generate_pdf(
     req_json: *const c_char,
@@ -92,6 +102,7 @@ pub unsafe extern "C" fn photo_engine_generate_pdf(
 /// `req_json` must be a JSON object matching `excel::ExcelConfig`.
 /// On success, writes a JSON object matching `EngineResponse<excel::ExcelResult>`
 /// into `out_buf` and returns the byte count written.
+#[cfg(feature = "excel")]
 #[no_mangle]
 pub unsafe extern "C" fn photo_engine_generate_excel(
     req_json: *const c_char,
@@ -117,6 +128,7 @@ pub unsafe extern "C" fn photo_engine_generate_excel(
 /// `req_json` must be a JSON object matching `image_proc::ImageConfig`.
 /// On success, writes a JSON object matching `EngineResponse<image_proc::ImageResult>`
 /// into `out_buf` and returns the byte count written.
+#[cfg(feature = "image")]
 #[no_mangle]
 pub unsafe extern "C" fn photo_engine_process_image(
     req_json: *const c_char,

@@ -79,3 +79,21 @@ jobs:
       - name: Build and test main binary
         if: steps.binary-cache.outputs.cache-hit != 'true'
         run: cargo test --release --bin photo-ai-rust
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: photo-ai-go/go.sum
+
+      - name: Build Go CLI
+        shell: bash
+        run: |
+          cd photo-ai-go
+          go build -o ../photo-ai.exe ./cmd/photo-ai
+
+      - name: Test Go CLI
+        shell: bash
+        run: |
+          cd photo-ai-go
+          go test ./...

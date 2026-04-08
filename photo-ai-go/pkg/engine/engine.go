@@ -146,6 +146,16 @@ func GeneratePDF(config PDFConfig) (PDFResult, error) {
 
 	output, err := runCommandWithJobObject(cmd)
 	if err != nil {
+		// Try parsing anyway, as engine might exit 1 but still print JSON error
+		var data struct {
+			OutputPath string `json:"output_path"`
+			Count      int    `json:"count"`
+		}
+		if parseErr := parseEngineResponse(output, &data); parseErr == nil {
+			result.OutputPath = data.OutputPath
+			result.PageCount = (data.Count + config.PhotosPerPage - 1) / config.PhotosPerPage
+			return result, nil
+		}
 		return result, fmt.Errorf("execution failed: %w\noutput: %s", err, string(output))
 	}
 
@@ -183,6 +193,15 @@ func GenerateExcel(config ExcelConfig) (ExcelResult, error) {
 
 	output, err := runCommandWithJobObject(cmd)
 	if err != nil {
+		var data struct {
+			OutputPath string `json:"output_path"`
+			Count      int    `json:"count"`
+		}
+		if parseErr := parseEngineResponse(output, &data); parseErr == nil {
+			result.OutputPath = data.OutputPath
+			result.SheetCount = (data.Count + photosPerPage - 1) / photosPerPage
+			return result, nil
+		}
 		return result, fmt.Errorf("execution failed: %w\noutput: %s", err, string(output))
 	}
 
@@ -224,12 +243,23 @@ func ProcessImage(config ImageConfig) (ImageResult, error) {
 
 	output, err := runCommandWithJobObject(cmd)
 	if err != nil {
+		var data struct {
+			Folder  string `json:"folder"`
+			Count   int    `json:"count"`
+			Records any    `json:"records"`
+		}
+		if parseErr := parseEngineResponse(output, &data); parseErr == nil {
+			result.PhotoCount = data.Count
+			result.OutputJSON = filepath.Join(config.Folder, "photo-groups.json")
+			return result, nil
+		}
 		return result, fmt.Errorf("execution failed: %w\noutput: %s", err, string(output))
 	}
 
 	var data struct {
-		Folder string `json:"folder"`
-		Count  int    `json:"count"`
+		Folder  string `json:"folder"`
+		Count   int    `json:"count"`
+		Records any    `json:"records"`
 	}
 	if err := parseEngineResponse(output, &data); err != nil {
 		return result, err

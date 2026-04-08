@@ -12,21 +12,21 @@ crate-type = ["cdylib", "rlib"]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 # Image processing
-image = "0.25"
-imageproc = "0.25"
-ab_glyph = "0.2"
+image = { version = "0.25", optional = true }
+imageproc = { version = "0.25", optional = true }
+ab_glyph = { version = "0.2", optional = true }
 
 # PDF generation
-printpdf = { version = "0.8", features = ["jpeg"] }
+printpdf = { version = "0.8", features = ["jpeg"], optional = true }
 
 # PDF parsing
 lopdf = "0.34"
 
 # Excel generation
-rust_xlsxwriter = "0.79"
+rust_xlsxwriter = { version = "0.79", optional = true }
 
 # Excel reading
-calamine = "0.26"
+calamine = { version = "0.26", optional = true }
 
 # EXIF extraction
 kamadak-exif = "0.5"
@@ -43,3 +43,10 @@ base64 = "0.22"
 sha2 = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 photo-ai-common = { path = "../common", default-features = false }
+
+[features]
+default = ["analysis"]
+analysis = []
+pdf = ["dep:printpdf", "image"]
+excel = ["dep:rust_xlsxwriter", "dep:calamine"]
+image = ["dep:image", "dep:imageproc", "dep:ab_glyph"]
