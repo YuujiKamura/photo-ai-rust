@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 // サブエラーの re-export
+#[cfg(any(feature = "excel", feature = "pdf"))]
 pub use crate::export::ExportError;
 pub use crate::hierarchy::HierarchyError;
 pub use crate::analyzer::AnalyzerError;
@@ -35,6 +36,7 @@ pub enum Error {
     Analyzer(#[from] AnalyzerError),
 
     /// エクスポートエラー
+    #[cfg(any(feature = "excel", feature = "pdf"))]
     #[error(transparent)]
     Export(#[from] ExportError),
 
@@ -135,6 +137,7 @@ mod tests {
         assert!(matches!(error, Error::Analyzer(AnalyzerError::TaggerEmpty)));
     }
 
+    #[cfg(any(feature = "excel", feature = "pdf"))]
     #[test]
     fn test_error_from_export_failed() {
         let error: Error = ExportError::Failed {
@@ -144,6 +147,7 @@ mod tests {
         assert!(matches!(error, Error::Export(ExportError::Failed { .. })));
     }
 
+    #[cfg(any(feature = "excel", feature = "pdf"))]
     #[test]
     fn test_export_error_from_conversion() {
         let export_err = ExportError::Failed {

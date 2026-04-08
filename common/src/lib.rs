@@ -24,7 +24,9 @@ pub mod export;
 pub use types::{AnalysisResult, RawImageData, PhotoData, WorkTypeDefinition, LineTypeEntry, LineTypesConfig};
 pub use layout::{PdfLayout, ExcelLayout, FieldKey};
 pub use alias::{AliasConfig, apply_aliases, longest_match_transform};
-pub use error::{Error, Result, ExportError, HierarchyError, AnalyzerError};
+pub use error::{Error, Result, HierarchyError, AnalyzerError};
+#[cfg(any(feature = "excel", feature = "pdf"))]
+pub use error::ExportError;
 pub use hierarchy::{HierarchyMaster, HierarchyRow};
 pub use parser::{extract_json, parse_step1_response, parse_single_step_response};
 pub use analyzer::{detect_work_types, detect_work_types_with};
