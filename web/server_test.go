@@ -158,6 +158,33 @@ func TestResolveEngineBinariesUsesEnvOverride(t *testing.T) {
 	}
 }
 
+func TestGetRuntimeStatusWithoutCLI(t *testing.T) {
+	resetTestState(t)
+	status := getRuntimeStatus(t.TempDir())
+	if status.MainCLIAvailable {
+		t.Fatal("cli should be unavailable")
+	}
+	if !status.AgentOptional {
+		t.Fatal("agent should be optional")
+	}
+}
+
+func TestGetRuntimeStatusWithCLIAndEngines(t *testing.T) {
+	resetTestState(t)
+	repo := t.TempDir()
+	cliPath := filepath.Join(repo, "photo-ai-go", "photo-ai.exe")
+	mustWriteFile(t, cliPath, "cli")
+	mustWriteFile(t, filepath.Join(filepath.Dir(cliPath), "photo-tag-engine.exe"), "tag")
+	mustWriteFile(t, filepath.Join(filepath.Dir(cliPath), "photo-analysis-engine.exe"), "analysis")
+	mustWriteFile(t, filepath.Join(filepath.Dir(cliPath), "photo-pdf-engine.exe"), "pdf")
+	mustWriteFile(t, filepath.Join(filepath.Dir(cliPath), "photo-excel-engine.exe"), "excel")
+
+	status := getRuntimeStatus(repo)
+	if !status.MainCLIAvailable || !status.TagEngineAvailable || !status.AnalysisEnginePresent || !status.PDFEngineAvailable || !status.ExcelEnginePresent {
+		t.Fatalf("expected all runtime components, got %#v", status)
+	}
+}
+
 func TestPrepareMasterFileNoFiles(t *testing.T) {
 	resetTestState(t)
 	cleanup, path, err := prepareMasterFile(t.TempDir(), nil)

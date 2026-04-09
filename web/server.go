@@ -57,6 +57,22 @@ type AppState struct {
 	job JobState
 }
 
+type RuntimeStatus struct {
+	WebReady              bool   `json:"webReady"`
+	MainCLIPath           string `json:"mainCliPath,omitempty"`
+	MainCLIAvailable      bool   `json:"mainCliAvailable"`
+	TagEnginePath         string `json:"tagEnginePath,omitempty"`
+	TagEngineAvailable    bool   `json:"tagEngineAvailable"`
+	AnalysisEnginePath    string `json:"analysisEnginePath,omitempty"`
+	AnalysisEnginePresent bool   `json:"analysisEngineAvailable"`
+	PDFEnginePath         string `json:"pdfEnginePath,omitempty"`
+	PDFEngineAvailable    bool   `json:"pdfEngineAvailable"`
+	ExcelEnginePath       string `json:"excelEnginePath,omitempty"`
+	ExcelEnginePresent    bool   `json:"excelEngineAvailable"`
+	AgentTerminalMode     string `json:"agentTerminalMode"`
+	AgentOptional         bool   `json:"agentOptional"`
+}
+
 var appState AppState
 var (
 	findMainCLIFunc       = findMainCLI
@@ -558,6 +574,10 @@ if ($d.ShowDialog() -eq 'OK') {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"ghosttyPort": ghosttyPort})
 	})
+	mux.HandleFunc("/api/runtime-status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(getRuntimeStatus(repoDir))
+	})
 
 	// Reverse proxy for ghostty-web assets: /ghostty/* → localhost:{ghosttyPort}/*
 	// This avoids cross-origin issues with WASM module import.
@@ -843,6 +863,36 @@ func findMainCLI(repoDir string) (string, error) {
 		}
 	}
 	return "", errors.New("photo-ai.exe not found")
+}
+
+func getRuntimeStatus(repoDir string) RuntimeStatus {
+	status := RuntimeStatus{
+		WebReady:          true,
+		AgentTerminalMode: "optional",
+		AgentOptional:     true,
+	}
+	if cliPath, err := findMainCLIFunc(repoDir); err == nil {
+		status.MainCLIPath = cliPath
+		status.MainCLIAvailable = true
+		engineBinaries := resolveEngineBinaries(repoDir, cliPath)
+		if p := engineBinaries["PHOTO_TAG_ENGINE_EXE"]; p != "" {
+			status.TagEnginePath = p
+			status.TagEngineAvailable = true
+		}
+		if p := engineBinaries["PHOTO_ANALYSIS_ENGINE_EXE"]; p != "" {
+			status.AnalysisEnginePath = p
+			status.AnalysisEnginePresent = true
+		}
+		if p := engineBinaries["PHOTO_PDF_ENGINE_EXE"]; p != "" {
+			status.PDFEnginePath = p
+			status.PDFEngineAvailable = true
+		}
+		if p := engineBinaries["PHOTO_EXCEL_ENGINE_EXE"]; p != "" {
+			status.ExcelEnginePath = p
+			status.ExcelEnginePresent = true
+		}
+	}
+	return status
 }
 
 func resolveEngineBinaries(repoDir, cliPath string) map[string]string {

@@ -142,6 +142,33 @@ body {
   margin-top: 4px;
 }
 .folder-browse-btn:hover { border-color: var(--accent); color: var(--text); }
+.runtime-status-box {
+  margin-top: 10px;
+  padding: 8px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.runtime-status-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.runtime-status-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  padding: 3px 0;
+}
+.runtime-status-item code {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.runtime-status-value.ok { color: var(--green); }
+.runtime-status-value.warn { color: var(--yellow); }
+.runtime-status-value.muted { color: var(--text-muted); }
 .cli-btn.primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -559,6 +586,10 @@ body {
         <button class="cli-btn" id="exportExcelBtn" disabled>Export Excel</button>
         <button class="cli-btn load-result" id="loadResultBtn" disabled>結果読み込み</button>
         <div id="runStatus" style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:8px;">解析待機中</div>
+        <div class="runtime-status-box">
+          <div class="runtime-status-title">起動状態</div>
+          <div id="runtimeStatusList"></div>
+        </div>
       </div>
       <div class="master-left-footer">
         <div><span class="summary-count" id="summaryCount">0</span> <span class="summary-label">行選択中</span></div>
@@ -701,6 +732,7 @@ let currentResultPath = '';
 let currentPdfPath = '';
 let currentExcelPath = '';
 let jobRunning = false;
+let runtimeStatus = null;
 
 function updateButtonStates() {
   const hasFolder = selectedFolder.length > 0;
@@ -732,6 +764,41 @@ function updatePaths(resultPath, pdfPath, excelPath) {
   if (resultPath !== undefined) currentResultPath = resultPath || '';
   if (pdfPath !== undefined) currentPdfPath = pdfPath || '';
   if (excelPath !== undefined) currentExcelPath = excelPath || '';
+}
+
+function renderRuntimeStatus() {
+  const el = document.getElementById('runtimeStatusList');
+  if (!el) return;
+  if (!runtimeStatus) {
+    el.innerHTML = '<div class="runtime-status-item"><span>確認中</span><span class="runtime-status-value muted">loading</span></div>';
+    return;
+  }
+
+  const engineReady = runtimeStatus.tagEngineAvailable && runtimeStatus.analysisEngineAvailable;
+  const exportReady = runtimeStatus.pdfEngineAvailable && runtimeStatus.excelEngineAvailable;
+  const rows = [
+    { label: '解析CLI', value: runtimeStatus.mainCliAvailable ? 'ready' : 'missing', tone: runtimeStatus.mainCliAvailable ? 'ok' : 'warn', detail: runtimeStatus.mainCliPath || 'photo-ai.exe が必要' },
+    { label: '解析engine', value: engineReady ? 'ready' : 'missing', tone: engineReady ? 'ok' : 'warn', detail: runtimeStatus.tagEnginePath || runtimeStatus.analysisEnginePath || 'tag/analysis engine が必要' },
+    { label: '出力engine', value: exportReady ? 'ready' : 'partial', tone: exportReady ? 'ok' : 'warn', detail: runtimeStatus.pdfEnginePath || runtimeStatus.excelEnginePath || 'pdf/excel engine が必要' },
+    { label: 'ターミナル', value: terminalReady ? 'connected' : 'optional', tone: terminalReady ? 'ok' : 'muted', detail: terminalReady ? 'agent available' : '解析はエージェントなしで実行可' },
+  ];
+
+  el.innerHTML = rows.map(row => `
+    <div class="runtime-status-item">
+      <span>${row.label}</span>
+      <span class="runtime-status-value ${row.tone}">${row.value}</span>
+    </div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:-2px;margin-bottom:4px;"><code>${escHtml(row.detail)}</code></div>
+  `).join('');
+}
+
+async function loadRuntimeStatus() {
+  try {
+    const res = await fetch('/api/runtime-status');
+    if (!res.ok) return;
+    runtimeStatus = await res.json();
+    renderRuntimeStatus();
+  } catch (e) {}
 }
 
 async function invokeApiJob(url, body, options = {}) {
@@ -803,6 +870,8 @@ async function loadMaster() {
   
   // Restore state after master load
   restoreState();
+  renderRuntimeStatus();
+  await loadRuntimeStatus();
   await syncJobState();
   document.querySelectorAll('.wt-card').forEach(card => {
     if (card._node && selectedWorkTypes.has(card._node.label)) {
@@ -1175,6 +1244,7 @@ window.addEventListener('message', (e) => {
     terminalReady = true;
     document.getElementById('terminalModeLabel').textContent = (e.data.mode === 'deckpilot' ? 'Deckpilot Mode' : 'PTY Mode');
     document.getElementById('dpStatusDot').classList.toggle('online', e.data.mode === 'deckpilot');
+    renderRuntimeStatus();
     updateButtonStates();
     const cached = localStorage.getItem('photoai_agent_cmd');
     if (cached) setTimeout(() => sendToTerminal(cached), 500);
