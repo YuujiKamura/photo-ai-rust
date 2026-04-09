@@ -670,6 +670,32 @@ body {
 .review-photos { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
 .review-photo-chip { font-size:11px; padding:3px 8px; background:var(--input-bg); border-radius:5px; color:var(--text-muted); display:flex; align-items:center; gap:4px; }
 .review-photo-chip .board-icon { color:var(--yellow); }
+.result-item { display:grid; grid-template-columns: 180px 1fr; gap:14px; align-items:start; }
+.result-thumb-wrap { width:180px; }
+.result-thumb {
+  width:180px;
+  height:135px;
+  object-fit:cover;
+  display:block;
+  border-radius:8px;
+  border:1px solid var(--border);
+  background:var(--input-bg);
+}
+.result-thumb-missing {
+  width:180px;
+  height:135px;
+  border-radius:8px;
+  border:1px dashed var(--border);
+  background:var(--input-bg);
+  color:var(--text-muted);
+  font-size:12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:8px;
+}
+.result-meta { min-width:0; }
 
 /* Field rows */
 .review-field { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
@@ -956,6 +982,18 @@ let jobRunning = false;
 let runtimeStatus = null;
 let selectedMasterFiles = new Set();
 
+function dirnameOfPath(path) {
+  if (!path) return '';
+  return path.replace(/[\\/][^\\/]*$/, '');
+}
+
+function buildResultImagePath(fileName) {
+  if (!fileName) return '';
+  const baseDir = selectedFolder || dirnameOfPath(currentResultPath);
+  if (!baseDir) return '';
+  return `${baseDir.replace(/[\\/]$/, '')}/${fileName}`;
+}
+
 function updateButtonStates() {
   const hasFolder = selectedFolder.length > 0;
   const hasWorkTypes = selectedMasterFiles.size > 0;
@@ -1085,6 +1123,11 @@ async function invokeApiJob(url, body, options = {}) {
     updateButtonStates();
     return null;
   }
+}
+
+async function ensureResultLoadedAfterRestore() {
+  if (!currentResultPath || reviewData) return;
+  await loadReviewData({ force: true, autoOpen: false });
 }
 
 // --- Tree data model ---
@@ -1440,13 +1483,16 @@ document.getElementById('folderPathInput').addEventListener('input', () => {
 async function runAnalyze(folder) {
   const names = [...selectedMasterFiles];
   if (!names.includes('共通')) names.push('共通');
-  await invokeApiJob('/api/analyze', { folder, masterFiles: names }, {
+  const result = await invokeApiJob('/api/analyze', { folder, masterFiles: names }, {
     startStatus: '解析中...',
     successStatus: (data) => `解析完了: ${data.resultPath}`,
     failurePrefix: '解析失敗',
     clearPathsOnFailure: true,
     onSuccess: (data) => updatePaths(data.resultPath, '', ''),
   });
+  if (result && currentResultPath) {
+    await loadReviewData({ force: true, autoOpen: false });
+  }
 }
 
 document.getElementById('analyzeBtn').addEventListener('click', () => {
@@ -1640,6 +1686,7 @@ async function syncJobState() {
     }
     updateButtonStates();
     saveState();
+    await ensureResultLoadedAfterRestore();
   } catch (e) {}
 }
 
@@ -1670,7 +1717,7 @@ function canReloadResult(force = false) {
 }
 
 async function loadReviewData(options = {}) {
-  const { force = false } = options;
+  const { force = false, autoOpen = true } = options;
   if (!currentResultPath) {
     setRunStatus('先に解析を完了してください', 'warn');
     return;
@@ -1690,7 +1737,7 @@ async function loadReviewData(options = {}) {
   reviewDirty = false;
   renderResultPanel();
   renderReviewPanel();
-  switchTab('result');
+  if (autoOpen) switchTab('result');
 }
 
 function renderResultPanel() {
@@ -1711,7 +1758,11 @@ function renderResultPanel() {
 
   scroll.innerHTML = reviewData.map((item, idx) => {
     const label = item.remarks || item.focusTarget || item.fileName || `item-${idx + 1}`;
-    return `<div class="review-group open"><div class="review-group-header"><span class="review-group-title">${escHtml(label)}</span><span class="review-group-category">${escHtml(item.photoCategory || '未分類')}</span></div><div class="review-group-body"><div class="review-photos"><span class="review-photo-chip">${item.hasBoard ? '<span class="board-icon">&#9635;</span>' : ''}${escHtml(item.fileName || `photo-${idx + 1}`)}</span></div><div class="review-field"><span class="review-field-label">工種</span><span class="review-field-input" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.workType || '')}</span><span class="review-field-status">${item.workType ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">種別</span><span class="review-field-input" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.variety || '')}</span><span class="review-field-status">${item.variety ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">細別</span><span class="review-field-input" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.subphase || '')}</span><span class="review-field-status">${item.subphase ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">測点</span><span class="review-field-input ${item.station ? '' : 'empty'}" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.station || '')}</span><span class="review-field-status">${item.station ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">備考</span><span class="review-field-input ${item.remarks ? '' : 'empty'}" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.remarks || '')}</span><span class="review-field-status">${item.remarks ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div></div></div>`;
+    const imagePath = buildResultImagePath(item.fileName || '');
+    const imageBlock = imagePath
+      ? `<img class="result-thumb" src="/api/file?path=${encodeURIComponent(imagePath)}" alt="${escAttr(item.fileName || label)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'), { className: 'result-thumb-missing', textContent: '画像を表示できません' }))">`
+      : `<div class="result-thumb-missing">画像パス不明</div>`;
+    return `<div class="review-group open"><div class="review-group-header"><span class="review-group-title">${escHtml(label)}</span><span class="review-group-category">${escHtml(item.photoCategory || '未分類')}</span></div><div class="review-group-body"><div class="result-item"><div class="result-thumb-wrap">${imageBlock}<div class="review-photos" style="margin-top:8px;"><span class="review-photo-chip">${item.hasBoard ? '<span class="board-icon">&#9635;</span>' : ''}${escHtml(item.fileName || `photo-${idx + 1}`)}</span></div></div><div class="result-meta"><div class="review-field"><span class="review-field-label">工種</span><span class="review-field-input" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.workType || '')}</span><span class="review-field-status">${item.workType ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">種別</span><span class="review-field-input" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.variety || '')}</span><span class="review-field-status">${item.variety ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">細別</span><span class="review-field-input" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.subphase || '')}</span><span class="review-field-status">${item.subphase ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">測点</span><span class="review-field-input ${item.station ? '' : 'empty'}" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.station || '')}</span><span class="review-field-status">${item.station ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">備考</span><span class="review-field-input ${item.remarks ? '' : 'empty'}" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.remarks || '')}</span><span class="review-field-status">${item.remarks ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div></div></div></div></div>`;
   }).join('');
 }
 

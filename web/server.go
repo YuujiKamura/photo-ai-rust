@@ -484,6 +484,42 @@ func main() {
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fileName))
 		http.ServeFile(w, r, absResolved)
 	})
+	mux.HandleFunc("/api/file", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "GET only", 405)
+			return
+		}
+		filePath := r.URL.Query().Get("path")
+		if filePath == "" {
+			http.Error(w, "missing ?path= parameter", 400)
+			return
+		}
+		resolved := resolvePath(repoDir, filePath)
+		if !isPathAllowed(repoDir, resolved) {
+			http.Error(w, "path traversal denied", 403)
+			return
+		}
+		absResolved, err := filepath.Abs(resolved)
+		if err != nil {
+			http.Error(w, "invalid path", 400)
+			return
+		}
+		info, err := os.Stat(absResolved)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("file not found: %v", err), 404)
+			return
+		}
+		if info.IsDir() {
+			http.Error(w, "cannot read a directory", 400)
+			return
+		}
+		contentType := mime.TypeByExtension(filepath.Ext(absResolved))
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		w.Header().Set("Content-Type", contentType)
+		http.ServeFile(w, r, absResolved)
+	})
 
 	mux.HandleFunc("/api/merge-master", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {

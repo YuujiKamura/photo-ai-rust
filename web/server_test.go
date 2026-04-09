@@ -437,6 +437,63 @@ func TestHandleAnalyzeFailureSetsLastError(t *testing.T) {
 	}
 }
 
+func TestHandleAnalyzeOverwritesSameResultPathOnRerun(t *testing.T) {
+	resetTestState(t)
+	repo := t.TempDir()
+	folder := t.TempDir()
+	resultPath := filepath.Join(folder, "result.json")
+	findMainCLIFunc = func(repoDir string) (string, error) { return "photo-ai.exe", nil }
+	prepareMasterFileFunc = func(repoDir string, masterFiles []string) (func(), string, error) {
+		if len(masterFiles) == 0 {
+			return nil, "", nil
+		}
+		return nil, filepath.Join(repoDir, "master", "by_work_type", masterFiles[0]+".csv"), nil
+	}
+	runCLIFunc = func(repoDir, cliPath string, args []string) (string, string, int, error) {
+		var body string
+		if strings.Contains(strings.Join(args, " "), "舗装工.csv") {
+			body = `[{"fileName":"IMG_001.jpg","remarks":"舗装工結果"}]`
+		} else {
+			body = `[{"fileName":"IMG_001.jpg","remarks":"共通結果"}]`
+		}
+		if err := os.WriteFile(resultPath, []byte(body), 0o644); err != nil {
+			t.Fatalf("write result: %v", err)
+		}
+		return "ok", "", 0, nil
+	}
+
+	firstReq := newJSONRequest(t, http.MethodPost, map[string]any{"folder": folder, "masterFiles": []string{"舗装工"}})
+	firstRR := httptest.NewRecorder()
+	handleAnalyze(firstRR, firstReq, repo)
+	if firstRR.Code != http.StatusOK {
+		t.Fatalf("expected first analyze 200, got %d body=%s", firstRR.Code, firstRR.Body.String())
+	}
+	firstData, err := os.ReadFile(resultPath)
+	if err != nil {
+		t.Fatalf("read first result: %v", err)
+	}
+	if !strings.Contains(string(firstData), "舗装工結果") {
+		t.Fatalf("expected first result content, got %s", string(firstData))
+	}
+
+	secondReq := newJSONRequest(t, http.MethodPost, map[string]any{"folder": folder, "masterFiles": []string{"共通"}})
+	secondRR := httptest.NewRecorder()
+	handleAnalyze(secondRR, secondReq, repo)
+	if secondRR.Code != http.StatusOK {
+		t.Fatalf("expected second analyze 200, got %d body=%s", secondRR.Code, secondRR.Body.String())
+	}
+	secondData, err := os.ReadFile(resultPath)
+	if err != nil {
+		t.Fatalf("read second result: %v", err)
+	}
+	if !strings.Contains(string(secondData), "共通結果") {
+		t.Fatalf("expected second result content, got %s", string(secondData))
+	}
+	if strings.Contains(string(secondData), "舗装工結果") {
+		t.Fatalf("expected old result to be overwritten, got %s", string(secondData))
+	}
+}
+
 func TestHandleExportRejectsGET(t *testing.T) {
 	resetTestState(t)
 	rr := httptest.NewRecorder()
@@ -546,5 +603,44 @@ func TestHandleExportFailureSetsLastError(t *testing.T) {
 	snap := appState.snapshot()
 	if snap.LastError == "" || snap.LastExitCode != 1 {
 		t.Fatalf("expected export error state, got %#v", snap)
+	}
+}
+
+func TestAPIFileServesAllowedImage(t *testing.T) {
+	resetTestState(t)
+	repo := t.TempDir()
+	folder := filepath.Join(repo, "case")
+	imagePath := filepath.Join(folder, "IMG_001.jpg")
+	mustWriteFile(t, imagePath, "fakejpg")
+	appState.update(func(job *JobState) { job.Folder = folder })
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/file", func(w http.ResponseWriter, r *http.Request) {
+		filePath := r.URL.Query().Get("path")
+		if filePath == "" {
+			http.Error(w, "missing ?path= parameter", 400)
+			return
+		}
+		resolved := resolvePath(repo, filePath)
+		if !isPathAllowed(repo, resolved) {
+			http.Error(w, "path traversal denied", 403)
+			return
+		}
+		absResolved, err := filepath.Abs(resolved)
+		if err != nil {
+			http.Error(w, "invalid path", 400)
+			return
+		}
+		http.ServeFile(w, r, absResolved)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/file?path="+imagePath, nil)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if body := rr.Body.String(); body != "fakejpg" {
+		t.Fatalf("unexpected body: %q", body)
 	}
 }
