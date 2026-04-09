@@ -167,6 +167,16 @@ pub fn merge_results(
                 skip: false,
                 group: 0,
                 label_overrides: HashMap::new(),
+                analysis_timestamp: String::new(),
+                analysis_provider: String::new(),
+                analysis_billing: String::new(),
+                analysis_transport: String::new(),
+                analysis_commit: String::new(),
+                analysis_master_selection: String::new(),
+                analysis_master_path: String::new(),
+                analysis_scope_work_type: String::new(),
+                analysis_scope_photo_type: String::new(),
+                analysis_scope_variety: String::new(),
             }
         })
         .collect()

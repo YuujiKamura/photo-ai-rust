@@ -1,7 +1,7 @@
 use std::path::{PathBuf};
 use clap::Parser;
 use photo_ai_rust::engine::run_tag_groups;
-use photo_ai_rust::grouping::{GroupRecords, UsageMode};
+use photo_ai_rust::grouping::{BillingMode, CarrierConfig, GroupRecords, TransportMode, UsageMode};
 use serde::Serialize;
 
 #[derive(Parser)]
@@ -69,10 +69,23 @@ fn run(args: Args) -> anyhow::Result<TagResult> {
         "resident" => UsageMode::Resident,
         _ => UsageMode::TimeBasedQuota,
     };
+    let carrier = match usage_mode {
+        UsageMode::PayPerUse => CarrierConfig {
+            provider: Default::default(),
+            billing: BillingMode::PayPerUse,
+            transport: Default::default(),
+        },
+        UsageMode::Resident => CarrierConfig {
+            provider: Default::default(),
+            billing: Default::default(),
+            transport: TransportMode::ResidentAgent,
+        },
+        UsageMode::TimeBasedQuota => CarrierConfig::default(),
+    };
 
     let vocab_ref = vocab.as_ref().map(|v| v.as_slice());
 
-    let records = run_tag_groups(&folder_path, args.batch_size, vocab_ref, usage_mode)?;
+    let records = run_tag_groups(&folder_path, args.batch_size, vocab_ref, carrier)?;
 
     Ok(TagResult {
         folder: args.folder,

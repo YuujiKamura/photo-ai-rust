@@ -43,7 +43,7 @@ base64 = "0.22"
 sha2 = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 photo-ai-common = { path = "../common", default-features = false }
-photo-ai-rust = { path = ".." }
+photo-ai-rust = { path = "..", default-features = false }
 
 [features]
 default = ["analysis"]

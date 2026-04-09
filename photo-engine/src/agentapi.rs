@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use photo_ai_rust::grouping::{AiProvider, BillingMode, CarrierConfig, TransportMode};
+
 const DEFAULT_AGENTAPI_URL: &str = "http://127.0.0.1:3284";
 const DEFAULT_TIMEOUT_SECS: u64 = 300;
 
@@ -33,7 +35,7 @@ struct StatusResponse {
     status: String,
 }
 
-pub fn analyze(prompt: &str, files: &[PathBuf]) -> Result<String> {
+pub fn analyze(prompt: &str, files: &[PathBuf], carrier: CarrierConfig) -> Result<String> {
     let base_url = std::env::var("PHOTO_AI_AGENTAPI_URL")
         .unwrap_or_else(|_| DEFAULT_AGENTAPI_URL.to_string())
         .trim_end_matches('/')
@@ -48,15 +50,48 @@ pub fn analyze(prompt: &str, files: &[PathBuf]) -> Result<String> {
         .build()
         .context("AgentAPI client 初期化失敗")?;
 
-    let before = fetch_messages(&client, &base_url)?;
-    let last_seen_id = before.messages.last().map(|m| m.id).unwrap_or(0);
     let uploaded_files = upload_files(&client, &base_url, files)?;
-    let message = build_message(prompt, &uploaded_files);
+    let mut last_err = None;
 
-    send_message(&client, &base_url, &message)?;
-    wait_until_stable(&client, &base_url, timeout_secs)?;
+    for provider in provider_attempt_order(carrier) {
+        let attempt_carrier = CarrierConfig { provider, ..carrier };
+        match analyze_once(
+            &client,
+            &base_url,
+            timeout_secs,
+            prompt,
+            &uploaded_files,
+            attempt_carrier,
+        ) {
+            Ok(content) => return Ok(content),
+            Err(err) => last_err = Some((provider, err)),
+        }
+    }
 
-    let after = fetch_messages(&client, &base_url)?;
+    let (provider, err) = last_err.expect("provider_attempt_order must not be empty");
+    Err(anyhow!(
+        "AgentAPI 呼び出し失敗 (last provider={}): {}",
+        provider_name(provider),
+        err
+    ))
+}
+
+fn analyze_once(
+    client: &Client,
+    base_url: &str,
+    timeout_secs: u64,
+    prompt: &str,
+    uploaded_files: &[String],
+    carrier: CarrierConfig,
+) -> Result<String> {
+    let before = fetch_messages(client, base_url)?;
+    let last_seen_id = before.messages.last().map(|m| m.id).unwrap_or(0);
+    let message = build_message(prompt, uploaded_files, carrier);
+
+    send_message(client, base_url, &message, carrier)?;
+    wait_until_stable(client, base_url, timeout_secs)?;
+
+    let after = fetch_messages(client, base_url)?;
     extract_latest_agent_message(after.messages, last_seen_id)
 }
 
@@ -100,7 +135,7 @@ fn upload_files(client: &Client, base_url: &str, files: &[PathBuf]) -> Result<Ve
     Ok(uploaded)
 }
 
-fn build_message(prompt: &str, uploaded_files: &[String]) -> String {
+fn build_message(prompt: &str, uploaded_files: &[String], carrier: CarrierConfig) -> String {
     let mut message = String::from(
         "You are the analysis backend for photo-ai-rust.\n\
 Read every uploaded file directly from disk.\n\
@@ -117,14 +152,28 @@ Do not add preamble, explanation, markdown fences, or commentary unless the task
         }
     }
 
+    message.push_str("\nRouting hints:\n");
+    message.push_str("- provider: ");
+    message.push_str(provider_name(carrier.provider));
+    message.push('\n');
+    message.push_str("- billing: ");
+    message.push_str(billing_name(carrier.billing));
+    message.push('\n');
+    message.push_str("- transport: ");
+    message.push_str(transport_name(carrier.transport));
+    message.push('\n');
+
     message.push_str("\nTask prompt:\n");
     message.push_str(prompt);
     message
 }
 
-fn send_message(client: &Client, base_url: &str, content: &str) -> Result<()> {
+fn send_message(client: &Client, base_url: &str, content: &str, carrier: CarrierConfig) -> Result<()> {
     let response = client
         .post(format!("{base_url}/message"))
+        .header("X-PhotoAI-Provider", provider_name(carrier.provider))
+        .header("X-PhotoAI-Billing", billing_name(carrier.billing))
+        .header("X-PhotoAI-Transport", transport_name(carrier.transport))
         .json(&serde_json::json!({
             "content": content,
             "type": "user"
@@ -196,4 +245,43 @@ fn extract_latest_agent_message(messages: Vec<Message>, last_seen_id: i64) -> Re
         .map(|message| message.content.trim().to_string())
         .filter(|content| !content.is_empty())
         .ok_or_else(|| anyhow!("AgentAPI 応答から agent message を取得できませんでした"))
+}
+
+fn provider_name(provider: AiProvider) -> &'static str {
+    match provider {
+        AiProvider::Auto => "auto",
+        AiProvider::Gemini => "gemini",
+        AiProvider::Claude => "claude",
+        AiProvider::Codex => "codex",
+    }
+}
+
+fn billing_name(billing: BillingMode) -> &'static str {
+    match billing {
+        BillingMode::Auto => "auto",
+        BillingMode::Subscription => "subscription",
+        BillingMode::PayPerUse => "pay_per_use",
+    }
+}
+
+fn transport_name(transport: TransportMode) -> &'static str {
+    match transport {
+        TransportMode::Auto => "auto",
+        TransportMode::AgentApi => "agent_api",
+        TransportMode::ResidentAgent => "resident_agent",
+        TransportMode::DirectCli => "direct_cli",
+    }
+}
+
+fn provider_attempt_order(carrier: CarrierConfig) -> Vec<AiProvider> {
+    if carrier.billing == BillingMode::PayPerUse {
+        return vec![carrier.provider];
+    }
+
+    match carrier.provider {
+        AiProvider::Auto => vec![AiProvider::Auto],
+        AiProvider::Gemini => vec![AiProvider::Gemini, AiProvider::Claude, AiProvider::Codex],
+        AiProvider::Claude => vec![AiProvider::Claude, AiProvider::Codex, AiProvider::Gemini],
+        AiProvider::Codex => vec![AiProvider::Codex, AiProvider::Claude, AiProvider::Gemini],
+    }
 }

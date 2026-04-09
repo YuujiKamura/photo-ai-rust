@@ -1,5 +1,7 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
+
+use crate::grouping::{AiProvider, BillingMode, TransportMode};
 
 #[derive(Parser)]
 #[command(name = "photo-ai")]
@@ -73,6 +75,18 @@ pub enum Commands {
         /// API key従量課金モード（GEMINI_API_KEY環境変数が必要）
         #[arg(long)]
         pay_per_use: bool,
+
+        /// AI提供元を選択（auto/gemini/claude/codex）
+        #[arg(long, value_enum, default_value_t = ProviderArg::Auto)]
+        provider: ProviderArg,
+
+        /// 課金系統を選択（auto/subscription/pay_per_use）
+        #[arg(long, value_enum, default_value_t = BillingArg::Auto)]
+        billing: BillingArg,
+
+        /// 呼び出し経路を選択（内部用）
+        #[arg(long, value_enum, default_value_t = TransportArg::Auto, hide = true)]
+        transport: TransportArg,
     },
 
     /// 解析結果からPDF/Excelを生成
@@ -173,6 +187,18 @@ pub enum Commands {
         /// API key従量課金モード（GEMINI_API_KEY環境変数が必要）
         #[arg(long)]
         pay_per_use: bool,
+
+        /// AI提供元を選択（auto/gemini/claude/codex）
+        #[arg(long, value_enum, default_value_t = ProviderArg::Auto)]
+        provider: ProviderArg,
+
+        /// 課金系統を選択（auto/subscription/pay_per_use）
+        #[arg(long, value_enum, default_value_t = BillingArg::Auto)]
+        billing: BillingArg,
+
+        /// 呼び出し経路を選択（内部用）
+        #[arg(long, value_enum, default_value_t = TransportArg::Auto, hide = true)]
+        transport: TransportArg,
     },
 
     /// 設定を表示/編集
@@ -450,6 +476,68 @@ pub enum LaneArg {
     Both,
 }
 
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+pub enum ProviderArg {
+    #[default]
+    Auto,
+    Gemini,
+    Claude,
+    Codex,
+}
+
+impl ProviderArg {
+    pub fn to_provider(self) -> AiProvider {
+        match self {
+            ProviderArg::Auto => AiProvider::Auto,
+            ProviderArg::Gemini => AiProvider::Gemini,
+            ProviderArg::Claude => AiProvider::Claude,
+            ProviderArg::Codex => AiProvider::Codex,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+pub enum BillingArg {
+    #[default]
+    Auto,
+    Subscription,
+    #[value(name = "pay_per_use", alias = "pay-per-use")]
+    PayPerUse,
+}
+
+impl BillingArg {
+    pub fn to_billing(self) -> BillingMode {
+        match self {
+            BillingArg::Auto => BillingMode::Auto,
+            BillingArg::Subscription => BillingMode::Subscription,
+            BillingArg::PayPerUse => BillingMode::PayPerUse,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+pub enum TransportArg {
+    #[default]
+    Auto,
+    #[value(name = "agent_api", alias = "agent-api")]
+    AgentApi,
+    #[value(name = "resident_agent", alias = "resident-agent")]
+    ResidentAgent,
+    #[value(name = "direct_cli", alias = "direct-cli")]
+    DirectCli,
+}
+
+impl TransportArg {
+    pub fn to_transport(self) -> TransportMode {
+        match self {
+            TransportArg::Auto => TransportMode::Auto,
+            TransportArg::AgentApi => TransportMode::AgentApi,
+            TransportArg::ResidentAgent => TransportMode::ResidentAgent,
+            TransportArg::DirectCli => TransportMode::DirectCli,
+        }
+    }
+}
+
 impl LaneArg {
     pub fn to_lane(self) -> crate::normalizer::Lane {
         match self {
@@ -472,4 +560,3 @@ impl std::str::FromStr for LaneArg {
         }
     }
 }
-

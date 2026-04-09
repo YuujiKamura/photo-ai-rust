@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use photo_engine::analysis::{self, UsageMode};
+use photo_engine::analysis::{self, CarrierConfig, UsageMode};
+use photo_ai_rust::grouping::{AiProvider, BillingMode, TransportMode};
 use photo_engine::types::{to_json_string, EngineResponse};
 use serde::Serialize;
 use std::path::PathBuf;
@@ -23,6 +24,12 @@ enum Command {
         vocabulary: Option<String>,
         #[arg(short, long, default_value = "time_based_quota")]
         usage_mode: String,
+        #[arg(long, default_value = "auto")]
+        provider: String,
+        #[arg(long, default_value = "auto")]
+        billing: String,
+        #[arg(long, default_value = "auto")]
+        transport: String,
     },
     Step1 {
         #[arg(short, long)]
@@ -100,6 +107,9 @@ fn run(cli: Cli) -> Result<String> {
             batch_size,
             vocabulary,
             usage_mode,
+            provider,
+            billing,
+            transport,
         } => {
             let vocab = vocabulary.map(|v| {
                 v.split(',')
@@ -112,11 +122,31 @@ fn run(cli: Cli) -> Result<String> {
                 "resident" => UsageMode::Resident,
                 _ => UsageMode::TimeBasedQuota,
             };
+            let carrier = CarrierConfig {
+                provider: match provider.as_str() {
+                    "gemini" => AiProvider::Gemini,
+                    "claude" => AiProvider::Claude,
+                    "codex" => AiProvider::Codex,
+                    _ => AiProvider::Auto,
+                },
+                billing: match billing.as_str() {
+                    "subscription" => BillingMode::Subscription,
+                    "pay_per_use" => BillingMode::PayPerUse,
+                    _ => BillingMode::Auto,
+                },
+                transport: match transport.as_str() {
+                    "agent_api" => TransportMode::AgentApi,
+                    "resident_agent" => TransportMode::ResidentAgent,
+                    "direct_cli" => TransportMode::DirectCli,
+                    _ => TransportMode::Auto,
+                },
+            };
             emit(analysis::tag_groups(
                 &folder,
                 batch_size,
                 vocab.as_deref(),
                 usage_mode,
+                carrier,
             )?)
         }
         Command::Step1 { folder } => emit(analysis::analyze_step1(&folder)?),

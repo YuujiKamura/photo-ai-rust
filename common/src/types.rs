@@ -97,6 +97,46 @@ pub struct AnalysisResult {
     /// ラベル上書き（例: {"measurements": "測定内容"}）
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub label_overrides: HashMap<String, String>,
+
+    /// 解析実行日時（JSTローカル時刻文字列）
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub analysis_timestamp: String,
+
+    /// 解析時のAI提供元
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub analysis_provider: String,
+
+    /// 解析時の課金系統
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub analysis_billing: String,
+
+    /// 解析時の呼び出し経路
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub analysis_transport: String,
+
+    /// 解析バイナリのコミットID
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub analysis_commit: String,
+
+    /// 解析時に使ったマスタ選択方式（single/all）
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub analysis_master_selection: String,
+
+    /// 解析時に使ったマスタパス
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub analysis_master_path: String,
+
+    /// 解析時に適用した工種スコープ
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub analysis_scope_work_type: String,
+
+    /// 解析時に適用した写真区分スコープ
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub analysis_scope_photo_type: String,
+
+    /// 解析時に適用した種別スコープ
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub analysis_scope_variety: String,
 }
 
 fn is_false(v: &bool) -> bool {
@@ -284,6 +324,16 @@ mod tests {
             measurements: "厚さ50mm".to_string(),
             photo_category: "品質管理写真".to_string(),
             reasoning: "分類理由".to_string(),
+            analysis_timestamp: "2026-04-09 13:00:00 +0900".to_string(),
+            analysis_provider: "claude".to_string(),
+            analysis_billing: "subscription".to_string(),
+            analysis_transport: "agent_api".to_string(),
+            analysis_commit: "370fea0cc5b8aa2201bad392c3415b32af78a13a".to_string(),
+            analysis_master_selection: "single".to_string(),
+            analysis_master_path: "master/by_work_type/舗装工.csv".to_string(),
+            analysis_scope_work_type: "舗装工".to_string(),
+            analysis_scope_photo_type: "施工状況写真".to_string(),
+            analysis_scope_variety: "路面切削工".to_string(),
             ..Default::default()
         };
 
@@ -294,6 +344,27 @@ mod tests {
         assert_eq!(original.work_type, restored.work_type);
         assert_eq!(original.has_board, restored.has_board);
         assert_eq!(original.photo_category, restored.photo_category);
+        assert_eq!(original.analysis_timestamp, restored.analysis_timestamp);
+        assert_eq!(original.analysis_provider, restored.analysis_provider);
+        assert_eq!(original.analysis_commit, restored.analysis_commit);
+        assert_eq!(original.analysis_master_selection, restored.analysis_master_selection);
+        assert_eq!(original.analysis_scope_work_type, restored.analysis_scope_work_type);
+    }
+
+    #[test]
+    fn test_analysis_metadata_missing_in_json_defaults_empty() {
+        let json = r#"{"fileName": "minimal.jpg"}"#;
+        let result: AnalysisResult = serde_json::from_str(json).expect("デシリアライズ失敗");
+        assert_eq!(result.analysis_timestamp, "");
+        assert_eq!(result.analysis_provider, "");
+        assert_eq!(result.analysis_billing, "");
+        assert_eq!(result.analysis_transport, "");
+        assert_eq!(result.analysis_commit, "");
+        assert_eq!(result.analysis_master_selection, "");
+        assert_eq!(result.analysis_master_path, "");
+        assert_eq!(result.analysis_scope_work_type, "");
+        assert_eq!(result.analysis_scope_photo_type, "");
+        assert_eq!(result.analysis_scope_variety, "");
     }
 
     // =============================================

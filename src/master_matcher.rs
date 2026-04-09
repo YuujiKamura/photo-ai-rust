@@ -62,6 +62,89 @@ fn extract_variety_from_folder(master: &HierarchyMaster, folder_name: &str) -> O
     best.map(|(v, _)| v.to_string())
 }
 
+/// マスタ由来の既知語をフォルダ名から抽出する
+///
+/// ノイズ語を先に定義して削るのではなく、マスタ側に存在する「意味のある語」を
+/// 長い順にフォルダ名から拾う。これにより `疎通_施工状況_1枚` のような検証用名でも
+/// `施工状況` のような強い語を抽出できる。
+fn extract_known_folder_terms(master: &HierarchyMaster, folder_name: &str) -> Vec<String> {
+    if folder_name.is_empty() {
+        return Vec::new();
+    }
+
+    let mut terms: Vec<String> = Vec::new();
+    for row in master.rows() {
+        for raw in [
+            row.photo_type.as_str(),
+            row.remarks.as_str(),
+            row.variety.as_str(),
+            row.subphase.as_str(),
+        ] {
+            for term in expand_folder_term_variants(raw) {
+                if term.chars().count() >= 2 {
+                    terms.push(term);
+                }
+            }
+        }
+
+        for pat in row.search_patterns.split('|') {
+            let pat = pat.trim();
+            if pat.is_empty() {
+                continue;
+            }
+            for term in expand_folder_term_variants(pat) {
+                if term.chars().count() >= 2 {
+                    terms.push(term);
+                }
+            }
+        }
+    }
+
+    terms.sort_by_key(|s| std::cmp::Reverse(s.chars().count()));
+    terms.dedup();
+
+    let mut remaining = folder_name.to_string();
+    let mut hits = Vec::new();
+    for term in terms {
+        if remaining.contains(&term) {
+            hits.push(term.clone());
+            remaining = remaining.replace(&term, " ");
+        }
+    }
+
+    hits
+}
+
+fn expand_folder_term_variants(term: &str) -> Vec<String> {
+    let mut variants = Vec::new();
+    let trimmed = term.trim();
+    if trimmed.is_empty() {
+        return variants;
+    }
+
+    variants.push(trimmed.to_string());
+
+    if let Some(stripped) = trimmed.strip_suffix("写真") {
+        let stripped = stripped.trim();
+        if stripped.chars().count() >= 2 {
+            variants.push(stripped.to_string());
+        }
+    }
+
+    variants.sort_by_key(|s| std::cmp::Reverse(s.chars().count()));
+    variants.dedup();
+    variants
+}
+
+fn should_exclude_other_for_folder(master: &HierarchyMaster, folder_name: &str) -> bool {
+    if folder_name.is_empty() {
+        return false;
+    }
+    extract_known_folder_terms(master, folder_name)
+        .iter()
+        .any(|term| term == "施工状況" || term == "施工状況写真")
+}
+
 /// 全景を先頭にするためのロール優先度
 pub(crate) fn role_priority(role: &str) -> u8 {
     if role.contains("全景") { 0 }
@@ -119,7 +202,20 @@ fn extract_match_keywords(
     for text in detected_texts {
         for (key, value) in extract_kv_from_text(text) {
             match key.as_str() {
-                "工種" => { if !value.is_empty() { work_type = Some(normalize_work_type(&value)); } }
+                "工種" => {
+                    if !value.is_empty() {
+                        let normalized = normalize_work_type(&value);
+                        let has_work_type = master.rows().iter().any(|r| r.work_type == normalized);
+                        let has_variety = master.rows().iter().any(|r| r.variety == value || r.subphase == value);
+                        if has_work_type {
+                            work_type = Some(normalized);
+                        } else if has_variety {
+                            variety_hint = Some(value);
+                        } else {
+                            keywords.push(value);
+                        }
+                    }
+                }
                 "工事名" | "車番" | "車両番号" => {} // 照合に不要
                 "場所" | "測点" => {} // 測点は別管理
                 "" => {
@@ -155,15 +251,9 @@ fn extract_match_keywords(
         keywords.retain(|kw| kw != vh);
     }
 
-    // フォルダ名のトークンもキーワードに追加（ただし汎用的すぎる語は除外）
-    const GENERIC_FOLDER_NAMES: &[&str] = &[
-        "施工状況", "品質管理", "出来形管理", "安全管理", "使用材料", "完成写真", "着手前",
-    ];
-    for token in folder_name.split(&['_', '　', ' ', '・'][..]) {
-        let t = token.trim();
-        if !t.is_empty() && !GENERIC_FOLDER_NAMES.contains(&t) {
-            keywords.push(t.to_string());
-        }
+    // フォルダ名はノイズ除去ではなく、マスタ由来の既知語だけを抽出して使う。
+    for term in extract_known_folder_terms(master, folder_name) {
+        keywords.push(term);
     }
 
     // フォルダ名からvariety_hintを部分一致で抽出（OCRにvariety名がない場合のフォールバック）
@@ -185,10 +275,14 @@ fn score_candidates(
     work_type_hint: Option<&str>,
     variety_hint: Option<&str>,
     focus_target: Option<&str>,
+    exclude_other: bool,
 ) -> Vec<(HierarchyRow, usize)> {
     // 工種・種別でマスタをフィルタ
     let candidates: Vec<_> = master.rows().iter()
         .filter(|r| {
+            if exclude_other && r.photo_type == "その他" {
+                return false;
+            }
             // work_type フィルタ
             if let Some(wt) = work_type_hint {
                 if r.work_type != wt && !r.work_type.is_empty() {
@@ -252,9 +346,15 @@ fn score_candidates(
 
     // Phase 2: remarks列にキーワード部分一致（トークンベース：語順違いに対応）
     for row in &candidates {
-        if row.remarks.is_empty() { continue; }
+        if row.remarks.is_empty() && row.photo_type.is_empty() {
+            continue;
+        }
         let kw_score: usize = keywords.iter()
-            .map(|kw| token_overlap_score(kw, &row.remarks))
+            .map(|kw| {
+                let remarks_score = token_overlap_score(kw, &row.remarks);
+                let photo_type_score = token_overlap_score(kw, &row.photo_type);
+                remarks_score.max(photo_type_score)
+            })
             .sum();
         let ft_boost = if !ft.is_empty() {
             token_overlap_score(ft, &row.remarks) * FOCUS_TARGET_BOOST_MULTIPLIER
@@ -281,6 +381,7 @@ pub(crate) fn match_master_from_detected_texts(
     focus_target: Option<&str>,
 ) -> Option<HierarchyRow> {
     let (keywords, work_type_hint, variety_hint) = extract_match_keywords(master, detected_texts, folder_name);
+    let exclude_other = should_exclude_other_for_folder(master, folder_name);
 
     let scored = score_candidates(
         master,
@@ -288,6 +389,7 @@ pub(crate) fn match_master_from_detected_texts(
         work_type_hint.as_deref(),
         variety_hint.as_deref(),
         focus_target,
+        exclude_other,
     );
 
     scored.into_iter()
@@ -320,7 +422,7 @@ pub(crate) fn folder_has_master_entry(master: &HierarchyMaster, folder_name: &st
             }
         }
     }
-    false
+    !extract_known_folder_terms(master, folder_name).is_empty()
 }
 
 /// "2026-02-09 21:23:53" → "2月9日"
@@ -497,6 +599,45 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_known_folder_terms_from_noisy_folder_name() {
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,路面切削状況,切削状況|施工状況
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+
+        let terms = extract_known_folder_terms(&master, "疎通_施工状況_1枚");
+        assert!(terms.iter().any(|t| t == "施工状況"));
+    }
+
+    #[test]
+    fn test_folder_has_master_entry_with_noisy_folder_name() {
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,路面切削状況,切削状況|施工状況
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+
+        assert!(folder_has_master_entry(&master, "疎通_施工状況_1枚"));
+    }
+
+    #[test]
+    fn test_folder_keyword_can_match_photo_type_without_exact_folder_match() {
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,路面切削状況,
+直接工事費,品質管理写真,舗装工,舗装打換え工,表層工,到着温度,
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+
+        let text = "工種：舗装工";
+        let texts = vec![text];
+        let result = match_master_from_detected_texts(&master, &texts, "疎通_施工状況_1枚", None);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().photo_type, "施工状況写真");
+    }
+
+    #[test]
     fn test_focus_target_no_effect_when_empty() {
         // focusTargetが空の場合、従来通りの動作
         let csv = "\
@@ -512,6 +653,23 @@ mod tests {
         let result_empty = match_master_from_detected_texts(&master, &texts, "", Some(""));
         assert_eq!(result_none.as_ref().unwrap().remarks, result_empty.as_ref().unwrap().remarks);
         assert_eq!(result_none.unwrap().remarks, "舗設状況");
+    }
+
+    #[test]
+    fn test_construction_status_folder_excludes_other_candidates() {
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,その他,舗装工,,,コンバインドローラー,
+直接工事費,施工状況写真,舗装工,切削オーバーレイ工,表層工,初期転圧状況,初期転圧|転圧状況
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+        let texts = vec!["表層工\n初期転圧状況\nコンバインドローラー"];
+
+        let result = match_master_from_detected_texts(&master, &texts, "施工状況", Some("初期転圧状況"));
+        assert!(result.is_some());
+        let row = result.unwrap();
+        assert_eq!(row.photo_type, "施工状況写真");
+        assert_eq!(row.remarks, "初期転圧状況");
     }
 
     #[test]
@@ -582,5 +740,22 @@ mod tests {
         let result2 = match_master_from_detected_texts(&master, &texts2, "施工状況", Some("端部舗装版撤去状況"));
         assert!(result2.is_some(), "should match 端部舗装版撤去状況");
         assert_eq!(result2.unwrap().remarks, "端部舗装版撤去状況");
+    }
+
+    #[test]
+    fn test_koushu_value_that_is_actually_variety_does_not_filter_out_work_type() {
+        let csv = "\
+費目,写真区分,工種,種別,細別,備考,検索パターン
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,路面切削状況,
+直接工事費,施工状況写真,舗装工,路面切削工,路面切削,切削殻積込状況,
+";
+        let master = HierarchyMaster::from_csv_str(csv).unwrap();
+
+        let text = "場所: 取付 No.1 L\n工種: 路面切削工\n状況: 切削・積込状況";
+        let texts = vec![text];
+
+        let result = match_master_from_detected_texts(&master, &texts, "疎通_施工状況_1枚", Some("作業状況"));
+        assert!(result.is_some(), "variety-like 工種 should not filter out 舗装工 rows");
+        assert_eq!(result.unwrap().photo_type, "施工状況写真");
     }
 }

@@ -1,3 +1,4 @@
+#[cfg(feature = "ffi-stubs")]
 pub mod ffi;
 pub mod api_key_guard;
 pub mod cli;

@@ -4,13 +4,15 @@
 
 use crate::analysis::{apply_station, ScanAnalysisConfig, prepare_analysis, scan_and_analyze};
 use crate::api_key_guard::ApiKeyGuard;
-use crate::cli::{Commands, ExportFormat, GtAction, PdfQuality};
+use crate::cli::{
+    BillingArg, Commands, ExportFormat, GtAction, PdfQuality, ProviderArg, TransportArg,
+};
 use crate::config::Config;
 use crate::error::{self, Result};
-use crate::grouping::UsageMode;
+use crate::grouping::{BillingMode, CarrierConfig, TransportMode, UsageMode};
 use crate::normalizer::{self, NormalizationOptions};
-use crate::{analyzer, export, master_selector};
-use photo_ai_common::{LineTypeEntry, LineTypesConfig};
+use crate::{analyzer, export, master_selector, scanner};
+use photo_ai_common::{LineTypeEntry, LineTypesConfig, RawImageData, PHOTO_CATEGORIES};
 use std::path::{Path, PathBuf};
 
 // MasterConfig を再エクスポート
@@ -37,7 +39,7 @@ pub struct AnalyzeCommandArgs {
     pub include_all: bool,
     pub line_types: Option<Vec<LineTypeEntry>>,
     pub folder_rules: Option<PathBuf>,
-    pub usage_mode: UsageMode,
+    pub carrier: CarrierConfig,
     pub cli_args: CommonCliArgs,
 }
 
@@ -58,7 +60,7 @@ pub struct RunCommandArgs {
     pub include_all: bool,
     pub line_types: Option<Vec<LineTypeEntry>>,
     pub folder_rules: Option<PathBuf>,
-    pub usage_mode: UsageMode,
+    pub carrier: CarrierConfig,
     pub cli_args: CommonCliArgs,
 }
 
@@ -192,7 +194,102 @@ struct CommonAnalysisParams {
     verbose: bool,
     line_types: Option<Vec<LineTypeEntry>>,
     folder_rules: Option<PathBuf>,
-    usage_mode: UsageMode,
+    carrier: CarrierConfig,
+}
+
+struct AnalysisStampContext<'a> {
+    carrier: CarrierConfig,
+    master_config: &'a MasterConfig,
+    photo_type: Option<&'a str>,
+    variety: Option<&'a str>,
+}
+
+struct ScopeInference {
+    photo_type_candidates: Vec<String>,
+    work_type_candidates: Vec<String>,
+    sample_count: usize,
+}
+
+fn resolve_carrier_config(
+    pay_per_use: bool,
+    provider: ProviderArg,
+    billing: BillingArg,
+    transport: TransportArg,
+) -> Result<CarrierConfig> {
+    let billing = if pay_per_use {
+        BillingMode::PayPerUse
+    } else {
+        billing.to_billing()
+    };
+    let carrier = CarrierConfig {
+        provider: provider.to_provider(),
+        billing,
+        transport: transport.to_transport(),
+    };
+
+    if carrier.transport == TransportMode::DirectCli {
+        return Err(error::PhotoAiError::Config(
+            "4月版は direct_cli 未対応です。agent_api か resident_agent を使ってください。"
+                .to_string(),
+        ));
+    }
+
+    if carrier.billing == BillingMode::PayPerUse
+        && carrier.transport == TransportMode::ResidentAgent
+    {
+        return Err(error::PhotoAiError::Config(
+            "resident_agent と pay_per_use は同時指定できません。".to_string(),
+        ));
+    }
+
+    Ok(carrier)
+}
+
+fn stamp_analysis_metadata(
+    results: &mut [analyzer::AnalysisResult],
+    context: AnalysisStampContext<'_>,
+) {
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S %z").to_string();
+    let commit = option_env!("PHOTO_AI_GIT_COMMIT").unwrap_or("unknown");
+    let provider = match context.carrier.provider {
+        crate::grouping::AiProvider::Auto => "auto",
+        crate::grouping::AiProvider::Gemini => "gemini",
+        crate::grouping::AiProvider::Claude => "claude",
+        crate::grouping::AiProvider::Codex => "codex",
+    };
+    let billing = match context.carrier.billing {
+        crate::grouping::BillingMode::Auto => "auto",
+        crate::grouping::BillingMode::Subscription => "subscription",
+        crate::grouping::BillingMode::PayPerUse => "pay_per_use",
+    };
+    let transport = match context.carrier.transport {
+        crate::grouping::TransportMode::Auto => "auto",
+        crate::grouping::TransportMode::AgentApi => "agent_api",
+        crate::grouping::TransportMode::ResidentAgent => "resident_agent",
+        crate::grouping::TransportMode::DirectCli => "direct_cli",
+    };
+    let master_selection = context.master_config.selection_label();
+    let master_path = context.master_config.primary_path_display();
+    let scope_work_type = context
+        .master_config
+        .effective_work_type
+        .as_deref()
+        .unwrap_or("");
+    let scope_photo_type = context.photo_type.unwrap_or("");
+    let scope_variety = context.variety.unwrap_or("");
+
+    for result in results {
+        result.analysis_timestamp = timestamp.clone();
+        result.analysis_provider = provider.to_string();
+        result.analysis_billing = billing.to_string();
+        result.analysis_transport = transport.to_string();
+        result.analysis_commit = commit.to_string();
+        result.analysis_master_selection = master_selection.to_string();
+        result.analysis_master_path = master_path.clone();
+        result.analysis_scope_work_type = scope_work_type.to_string();
+        result.analysis_scope_photo_type = scope_photo_type.to_string();
+        result.analysis_scope_variety = scope_variety.to_string();
+    }
 }
 
 /// CLIで指定されたマスタパスからMasterSelectionを解決（純粋ロジック、UI無し）
@@ -254,6 +351,191 @@ fn resolve_master_path(master: Vec<PathBuf>, interactive: bool) -> Option<master
     }
 }
 
+fn normalize_scope_candidates(values: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut values = values
+        .into_iter()
+        .filter(|v| !v.trim().is_empty())
+        .collect::<Vec<_>>();
+    values.sort();
+    values.dedup();
+    values
+}
+
+async fn infer_outer_scope(
+    folder: &Path,
+    recursive: bool,
+    include_all: bool,
+    verbose: bool,
+) -> Result<ScopeInference> {
+    let images = scanner::scan_folder_full(folder, recursive, !include_all)?;
+    if images.is_empty() {
+        return Err(error::PhotoAiError::NoImagesFound(folder.display().to_string()));
+    }
+
+    let sample_images = images.into_iter().take(5).collect::<Vec<_>>();
+    let sample_count = sample_images.len();
+    let step1 = analyzer::analyze_images(&sample_images, sample_count.max(1), verbose).await?;
+
+    let raw_data = step1
+        .iter()
+        .map(|r| RawImageData {
+            file_name: r.file_name.clone(),
+            has_board: r.has_board,
+            detected_text: r.detected_text.clone(),
+            measurements: r.measurements.clone(),
+            scene_description: r.description.clone(),
+            photo_category: r.photo_category.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    let photo_type_candidates =
+        normalize_scope_candidates(step1.iter().map(|r| r.photo_category.clone()));
+    let work_type_candidates = normalize_scope_candidates(analyzer::detect_work_types(&raw_data));
+
+    Ok(ScopeInference {
+        photo_type_candidates,
+        work_type_candidates,
+        sample_count,
+    })
+}
+
+fn prompt_select_from_candidates(
+    title: &str,
+    inferred: &[String],
+    full_list: &[String],
+) -> Result<String> {
+    use std::io::{self, Write};
+
+    println!();
+    println!("📌 {}を確認してください", title);
+    if !inferred.is_empty() {
+        println!("  推定候補:");
+        for (idx, value) in inferred.iter().enumerate() {
+            println!("    {}) {}", idx + 1, value);
+        }
+        println!("    L) 一覧から選ぶ");
+        println!("    Q) 中止");
+        print!("選択: ");
+    } else {
+        println!("  推定候補が出なかったため、一覧から選んでください。");
+        println!("    L) 一覧を表示");
+        println!("    Q) 中止");
+        print!("選択: ");
+    }
+
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let first_input = input.trim().to_string();
+
+    if first_input.eq_ignore_ascii_case("q") || first_input.is_empty() {
+        return Err(error::PhotoAiError::Config(format!(
+            "{}未指定のため解析を中止しました",
+            title
+        )));
+    }
+
+    if !inferred.is_empty() {
+        if let Ok(n) = first_input.parse::<usize>() {
+            if (1..=inferred.len()).contains(&n) {
+                return Ok(inferred[n - 1].clone());
+            }
+        }
+    }
+
+    if !first_input.eq_ignore_ascii_case("l") {
+        return Err(error::PhotoAiError::Config(format!(
+            "{}の選択が不正です",
+            title
+        )));
+    }
+
+    println!();
+    println!("📋 {}一覧", title);
+    for (idx, value) in full_list.iter().enumerate() {
+        println!("  {}) {}", idx + 1, value);
+    }
+    print!("番号を入力: ");
+    io::stdout().flush()?;
+    input.clear();
+    io::stdin().read_line(&mut input)?;
+    let selected = input
+        .trim()
+        .parse::<usize>()
+        .ok()
+        .and_then(|n| full_list.get(n - 1))
+        .cloned()
+        .ok_or_else(|| error::PhotoAiError::Config(format!("{}の選択が不正です", title)))?;
+    Ok(selected)
+}
+
+fn resolve_master_path_for_work_type(work_type: &str) -> Result<PathBuf> {
+    master_selector::list_available_masters()
+        .into_iter()
+        .find(|(name, _)| name == work_type)
+        .map(|(_, path)| path)
+        .ok_or_else(|| error::PhotoAiError::MasterLoad(format!(
+            "工種「{}」のマスタが見つかりません",
+            work_type
+        )))
+}
+
+async fn confirm_outer_scope_if_needed(
+    folder: &Path,
+    master: &mut Vec<PathBuf>,
+    work_type: &mut Option<String>,
+    photo_type: &mut Option<String>,
+    recursive: bool,
+    include_all: bool,
+    verbose: bool,
+) -> Result<()> {
+    let needs_work_type = master.is_empty() && work_type.is_none();
+    let needs_photo_type = photo_type.is_none();
+
+    if !needs_work_type && !needs_photo_type {
+        return Ok(());
+    }
+
+    let inference = infer_outer_scope(folder, recursive, include_all, verbose).await?;
+    println!();
+    println!("⚠ 外枠が未指定のため、本解析の前に確認します。");
+    println!("  先読みサンプル: {}枚", inference.sample_count);
+    if !inference.photo_type_candidates.is_empty() {
+        println!("  写真区分候補: {}", inference.photo_type_candidates.join(", "));
+    }
+    if !inference.work_type_candidates.is_empty() {
+        println!("  工種候補: {}", inference.work_type_candidates.join(", "));
+    }
+
+    if needs_photo_type {
+        let photo_type_list = PHOTO_CATEGORIES
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        let selected_photo_type = prompt_select_from_candidates(
+            "写真区分",
+            &inference.photo_type_candidates,
+            &photo_type_list,
+        )?;
+        *photo_type = Some(selected_photo_type);
+    }
+
+    if needs_work_type {
+        let all_work_types = master_selector::list_available_masters()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>();
+        let selected_work_type = prompt_select_from_candidates(
+            "工種",
+            &inference.work_type_candidates,
+            &all_work_types,
+        )?;
+        *work_type = Some(selected_work_type.clone());
+        *master = vec![resolve_master_path_for_work_type(&selected_work_type)?];
+    }
+    Ok(())
+}
+
 /// 共通の解析処理を実行（ヘッダー表示→prepare_analysis→scan_and_analyze）
 ///
 /// PayPerUseモードの場合、呼び出し元がApiKeyGuardを保持している前提。
@@ -263,7 +545,7 @@ async fn run_common_analysis(
     header: &str,
     step_prefix_scan: &str,
     step_prefix_analyze: &str,
-) -> Result<Vec<analyzer::AnalysisResult>> {
+) -> Result<(Vec<analyzer::AnalysisResult>, MasterConfig)> {
     println!("{}\n", header);
 
     // フォルダルールの読み込み
@@ -293,10 +575,11 @@ async fn run_common_analysis(
         step_prefix_analyze,
         line_types: params.line_types.as_deref(),
         folder_rules: folder_rules.as_deref(),
-        usage_mode: params.usage_mode,
+        carrier: params.carrier,
     };
 
-    scan_and_analyze(&scan_config).await
+    let results = scan_and_analyze(&scan_config).await?;
+    Ok((results, master_config))
 }
 
 /// エクスポート共通パラメータ
@@ -360,9 +643,19 @@ pub fn handle_export_command(args: ExportCommandArgs) -> Result<()> {
 }
 
 /// Analyzeコマンドを処理
-pub async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
+pub async fn handle_analyze_command(mut args: AnalyzeCommandArgs) -> Result<()> {
+    confirm_outer_scope_if_needed(
+        &args.folder,
+        &mut args.master,
+        &mut args.work_type,
+        &mut args.photo_type,
+        args.recursive,
+        args.include_all,
+        args.cli_args.verbose,
+    ).await?;
+
     // PayPerUseモード: APIキーを対話入力→暗号化保持
-    let _api_key_guard = if args.usage_mode == UsageMode::PayPerUse {
+    let _api_key_guard = if args.carrier.effective_usage_mode() == UsageMode::PayPerUse {
         Some(ApiKeyGuard::prompt().map_err(|e| error::PhotoAiError::Config(e.to_string()))?)
     } else {
         None
@@ -383,14 +676,23 @@ pub async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
         verbose: args.cli_args.verbose,
         line_types: args.line_types,
         folder_rules: args.folder_rules,
-        usage_mode: args.usage_mode,
+        carrier: args.carrier,
     };
-    let results = run_common_analysis(
+    let (mut results, master_config) = run_common_analysis(
         &params,
         "📸 photo-ai-rust - 写真解析",
         "[1/3]",
         "[2/3]",
     ).await?;
+    stamp_analysis_metadata(
+        &mut results,
+        AnalysisStampContext {
+            carrier: params.carrier,
+            master_config: &master_config,
+            photo_type: params.photo_type.as_deref(),
+            variety: params.variety.as_deref(),
+        },
+    );
 
     // 3. 結果保存
     println!("[3/3] 結果を保存中...");
@@ -404,9 +706,19 @@ pub async fn handle_analyze_command(args: AnalyzeCommandArgs) -> Result<()> {
 }
 
 /// Runコマンドを処理する（スキャン→解析→保存→エクスポート）
-pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
+pub async fn handle_run_command(mut args: RunCommandArgs) -> Result<()> {
+    confirm_outer_scope_if_needed(
+        &args.folder,
+        &mut args.master,
+        &mut args.work_type,
+        &mut args.photo_type,
+        args.recursive,
+        args.include_all,
+        args.cli_args.verbose,
+    ).await?;
+
     // PayPerUseモード: APIキーを対話入力→暗号化保持
-    let _api_key_guard = if args.usage_mode == UsageMode::PayPerUse {
+    let _api_key_guard = if args.carrier.effective_usage_mode() == UsageMode::PayPerUse {
         Some(ApiKeyGuard::prompt().map_err(|e| error::PhotoAiError::Config(e.to_string()))?)
     } else {
         None
@@ -427,14 +739,23 @@ pub async fn handle_run_command(args: RunCommandArgs) -> Result<()> {
         verbose: args.cli_args.verbose,
         line_types: args.line_types,
         folder_rules: args.folder_rules,
-        usage_mode: args.usage_mode,
+        carrier: args.carrier,
     };
-    let results = run_common_analysis(
+    let (mut results, master_config) = run_common_analysis(
         &params,
         "🚀 photo-ai-rust - 一括処理",
         "[1/4]",
         "[2/4]",
     ).await?;
+    stamp_analysis_metadata(
+        &mut results,
+        AnalysisStampContext {
+            carrier: params.carrier,
+            master_config: &master_config,
+            photo_type: params.photo_type.as_deref(),
+            variety: params.variety.as_deref(),
+        },
+    );
 
     // 3. 結果保存
     let output_paths = resolve_output_paths(&args.folder, args.output.as_ref());
@@ -1052,9 +1373,9 @@ impl Commands {
     /// コマンドを実行する
     pub async fn execute(self, cli_args: &CommonCliArgs, config: Config) -> Result<()> {
         match self {
-            Commands::Analyze { folder, output, batch_size, master, work_type, photo_type, variety, station, use_cache, recursive, include_all, line_types, folder_rules, pay_per_use } => {
+            Commands::Analyze { folder, output, batch_size, master, work_type, photo_type, variety, station, use_cache, recursive, include_all, line_types, folder_rules, pay_per_use, provider, billing, transport } => {
                 let line_types = load_line_types(line_types.as_ref())?;
-                let usage_mode = if pay_per_use { UsageMode::PayPerUse } else { UsageMode::TimeBasedQuota };
+                let carrier = resolve_carrier_config(pay_per_use, provider, billing, transport)?;
                 handle_analyze_command(AnalyzeCommandArgs {
                     folder,
                     output,
@@ -1069,7 +1390,7 @@ impl Commands {
                     include_all,
                     line_types,
                     folder_rules,
-                    usage_mode,
+                    carrier,
                     cli_args: cli_args.clone(),
                 }).await?;
             }
@@ -1086,9 +1407,9 @@ impl Commands {
                 })?;
             }
 
-            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all, line_types, folder_rules, pay_per_use } => {
+            Commands::Run { folder, output, format, batch_size, master, work_type, photo_type, variety, station, pdf_quality, use_cache, recursive, include_all, line_types, folder_rules, pay_per_use, provider, billing, transport } => {
                 let line_types = load_line_types(line_types.as_ref())?;
-                let usage_mode = if pay_per_use { UsageMode::PayPerUse } else { UsageMode::TimeBasedQuota };
+                let carrier = resolve_carrier_config(pay_per_use, provider, billing, transport)?;
                 handle_run_command(RunCommandArgs {
                     folder,
                     output,
@@ -1105,7 +1426,7 @@ impl Commands {
                     include_all,
                     line_types,
                     folder_rules,
-                    usage_mode,
+                    carrier,
                     cli_args: cli_args.clone(),
                 }).await?;
             }
@@ -1214,5 +1535,45 @@ mod tests {
             analyzer::AnalysisResult { date: "2026-02-13 02:00:00".into(), ..Default::default() },
         ];
         assert_eq!(extract_mmdd_from_results(&results), Some("0212".into()));
+    }
+
+    #[test]
+    fn test_resolve_carrier_config_rejects_direct_cli() {
+        let result = resolve_carrier_config(
+            false,
+            ProviderArg::Codex,
+            BillingArg::Subscription,
+            TransportArg::DirectCli,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_carrier_config_rejects_resident_pay_per_use_combo() {
+        let result = resolve_carrier_config(
+            false,
+            ProviderArg::Gemini,
+            BillingArg::PayPerUse,
+            TransportArg::ResidentAgent,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_carrier_config_keeps_split_axes() {
+        let carrier = resolve_carrier_config(
+            false,
+            ProviderArg::Claude,
+            BillingArg::Subscription,
+            TransportArg::AgentApi,
+        )
+        .unwrap();
+
+        assert_eq!(carrier.provider, crate::grouping::AiProvider::Claude);
+        assert_eq!(carrier.billing, crate::grouping::BillingMode::Subscription);
+        assert_eq!(carrier.transport, crate::grouping::TransportMode::AgentApi);
+        assert_eq!(carrier.effective_usage_mode(), UsageMode::TimeBasedQuota);
     }
 }

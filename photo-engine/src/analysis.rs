@@ -4,6 +4,7 @@ use photo_ai_common::{
     build_prompt_for_category, build_step1_prompt, parse_single_step_response,
     parse_step1_response, AnalysisResult, HierarchyMaster, RawImageData,
 };
+use photo_ai_rust::grouping::{GroupCore, GroupRecord, GroupRecords};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,6 +18,8 @@ const CONFIDENCE_FINAL_ONLY: f64 = 0.67;
 const CONFIDENCE_FALLBACK: f64 = 0.33;
 const GROUP_GAP_SECS: i64 = 5 * 60;
 const GROUP_FILE: &str = "photo-groups.json";
+
+pub use photo_ai_rust::grouping::{CarrierConfig, UsageMode};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ScanImage {
@@ -44,50 +47,19 @@ pub struct PairEnsembleOutput {
     pub confidence: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UsageMode {
-    PayPerUse,
-    Resident,
-    TimeBasedQuota,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct GroupCore {
-    pub role: String,
-    pub machine_type: String,
-    pub machine_id: String,
-    #[serde(default)]
-    pub has_board: bool,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub detected_text: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub description: String,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct GroupItem {
     file: String,
     #[serde(flatten)]
     core: GroupCore,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupRecord {
-    #[serde(flatten)]
-    pub core: GroupCore,
-    pub group: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub captured_at: Option<i64>,
-}
-
-pub type GroupRecords = HashMap<String, GroupRecord>;
-
 pub fn tag_groups(
     folder: &Path,
     batch_size: usize,
     vocabulary: Option<&[String]>,
     usage_mode: UsageMode,
+    carrier: CarrierConfig,
 ) -> Result<GroupRecords> {
     let mut records = load_group_records(folder);
     let images = collect_images_flat(folder);
@@ -97,18 +69,11 @@ pub fn tag_groups(
         return Ok(records);
     }
 
-    let pending: Vec<_> = images
-        .iter()
-        .filter(|img| {
-            let name = img.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
-            !records.contains_key(name.as_ref())
-        })
-        .cloned()
-        .collect();
+    let pending = collect_pending_images(&images, &records);
 
     if !pending.is_empty() {
-        for batch in pending.chunks(batch_size) {
-            let results = classify_group_batch(batch, vocabulary, usage_mode)?;
+        for batch in batch_images(&pending, batch_size) {
+            let results = classify_group_batch(batch, vocabulary, usage_mode, carrier)?;
             for (fname, item) in results {
                 records.insert(
                     fname,
@@ -175,7 +140,7 @@ pub fn analyze_step1(folder: &Path) -> Result<Step1Output> {
     let image_paths = to_path_bufs(&images);
     let image_meta = to_image_meta(&images);
     let prompt = build_step1_prompt(&image_meta);
-    let response = agentapi::analyze(&prompt, &image_paths)?;
+    let response = agentapi::analyze(&prompt, &image_paths, CarrierConfig::default())?;
     let raw = parse_step1_response(&response).context("Step1 JSONパース失敗")?;
     Ok(Step1Output { images, raw })
 }
@@ -193,7 +158,7 @@ pub fn analyze_single_step(
     let master = HierarchyMaster::from_csv(master_path)
         .map_err(|e| anyhow!("マスタ読み込み失敗: {e}"))?;
     let prompt = build_prompt_for_category(&image_meta, &master, work_type, variety, photo_type);
-    let response = agentapi::analyze(&prompt, &image_paths)?;
+    let response = agentapi::analyze(&prompt, &image_paths, CarrierConfig::default())?;
     let mut results = parse_single_step_response(&response).context("1ステップ解析 JSONパース失敗")?;
     fill_image_metadata(&mut results, &images);
     sanitize_classification(&mut results, &master);
@@ -225,7 +190,7 @@ Final: A?? (majority vote)"
     );
 
     let files = vec![before_sheet.to_path_buf(), after_sheet.to_path_buf()];
-    let response = agentapi::analyze(&prompt, &files)?;
+    let response = agentapi::analyze(&prompt, &files, CarrierConfig::default())?;
     let (after_number, confidence) = parse_ensemble_response(&response, after_max)?;
 
     Ok(PairEnsembleOutput {
@@ -369,24 +334,14 @@ fn classify_group_batch(
     images: &[PathBuf],
     vocabulary: Option<&[String]>,
     _usage_mode: UsageMode,
+    carrier: CarrierConfig,
 ) -> Result<Vec<(String, GroupItem)>> {
-    let names: Vec<String> = images
-        .iter()
-        .enumerate()
-        .map(|(idx, p)| {
-            p.file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| format!("unknown_{idx}"))
-        })
-        .collect();
+    let names = build_group_file_names(images);
     let names_ref: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
 
     let prompt = group_prompt(&names_ref, vocabulary);
-    let raw = agentapi::analyze(&prompt, images)?;
-    let json_val = extract_json_array(&raw)
-        .with_context(|| format!("No JSON array in: {raw}"))?;
-    let items: Vec<GroupItem> =
-        serde_json::from_value(json_val).context("Failed to parse group JSON")?;
+    let raw = agentapi::analyze(&prompt, images, carrier)?;
+    let items = parse_group_items(&raw)?;
 
     Ok(items
         .into_iter()
@@ -397,12 +352,48 @@ fn classify_group_batch(
         .collect())
 }
 
+fn build_group_file_names(images: &[PathBuf]) -> Vec<String> {
+    images
+        .iter()
+        .enumerate()
+        .map(|(idx, p)| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| format!("unknown_{idx}"))
+        })
+        .collect()
+}
+
+fn collect_pending_images(images: &[PathBuf], records: &GroupRecords) -> Vec<PathBuf> {
+    images
+        .iter()
+        .filter(|img| {
+            let name = img.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+            !records.contains_key(name.as_ref())
+        })
+        .cloned()
+        .collect()
+}
+
+fn batch_images(images: &[PathBuf], batch_size: usize) -> Vec<&[PathBuf]> {
+    if batch_size == 0 {
+        return vec![images];
+    }
+    images.chunks(batch_size).collect()
+}
+
 fn extract_json_array(s: &str) -> Option<serde_json::Value> {
     let start = s.find('[')?;
     let end = s.rfind(']')? + 1;
     let candidate = &s[start..end];
     let val: serde_json::Value = serde_json::from_str(candidate).ok()?;
     if val.is_array() { Some(val) } else { None }
+}
+
+fn parse_group_items(raw: &str) -> Result<Vec<GroupItem>> {
+    let json_val = extract_json_array(raw)
+        .with_context(|| format!("No JSON array in: {raw}"))?;
+    serde_json::from_value(json_val).context("Failed to parse group JSON")
 }
 
 fn group_prompt(filenames: &[&str], vocabulary: Option<&[String]>) -> String {
@@ -854,6 +845,7 @@ fn sanitize_classification(results: &mut [AnalysisResult], master: &HierarchyMas
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn pair_response_prefers_final() {
@@ -869,6 +861,260 @@ mod tests {
         let (num, confidence) = parse_ensemble_response(response, 10).unwrap();
         assert_eq!(num, 4);
         assert!(confidence > 0.6);
+    }
+
+    #[test]
+    fn tagger_step_collect_pending_images_skips_existing_records() {
+        let images = vec![
+            PathBuf::from("R0010525.JPG"),
+            PathBuf::from("R0010526.JPG"),
+            PathBuf::from("R0010527.JPG"),
+        ];
+        let mut records = GroupRecords::new();
+        records.insert(
+            "R0010526.JPG".to_string(),
+            GroupRecord {
+                core: GroupCore::default(),
+                group: 1,
+                captured_at: None,
+            },
+        );
+
+        let pending = collect_pending_images(&images, &records);
+        let names: Vec<_> = pending
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        assert_eq!(names, vec!["R0010525.JPG", "R0010527.JPG"]);
+    }
+
+    #[test]
+    fn tagger_step_batch_images_keeps_three_image_cycle_together_when_batch_size_three() {
+        let images = vec![
+            PathBuf::from("R0010525.JPG"),
+            PathBuf::from("R0010526.JPG"),
+            PathBuf::from("R0010527.JPG"),
+        ];
+
+        let batches = batch_images(&images, 3);
+
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].len(), 3);
+    }
+
+    #[test]
+    fn tagger_step_batch_images_splits_when_batch_size_two() {
+        let images = vec![
+            PathBuf::from("R0010525.JPG"),
+            PathBuf::from("R0010526.JPG"),
+            PathBuf::from("R0010527.JPG"),
+        ];
+
+        let batches = batch_images(&images, 2);
+
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].len(), 2);
+        assert_eq!(batches[1].len(), 1);
+    }
+
+    #[test]
+    fn tagger_step_build_group_file_names_preserves_filenames() {
+        let images = vec![
+            PathBuf::from(r"C:\tmp\R0010525.JPG"),
+            PathBuf::from(r"C:\tmp\R0010526.JPG"),
+        ];
+
+        let names = build_group_file_names(&images);
+
+        assert_eq!(names, vec!["R0010525.JPG", "R0010526.JPG"]);
+    }
+
+    #[test]
+    fn tagger_step_group_prompt_contains_files_and_vocab() {
+        let prompt = group_prompt(
+            &["R0010525.JPG", "R0010526.JPG", "R0010527.JPG"],
+            Some(&["到着温度測定".to_string(), "黒板アップ".to_string()]),
+        );
+
+        assert!(prompt.contains("R0010525.JPG, R0010526.JPG, R0010527.JPG"));
+        assert!(prompt.contains("到着温度測定, 黒板アップ"));
+    }
+
+    #[test]
+    fn tagger_step_extract_json_array_from_wrapped_response() {
+        let raw = "analysis start\n[{\"file\":\"R0010525.JPG\",\"role\":\"作業状況\",\"machine_type\":\"切削機\",\"machine_id\":\"No.1\",\"has_board\":true,\"detected_text\":\"黒板\",\"description\":\"作業\"}]\nanalysis end";
+
+        let value = extract_json_array(raw).unwrap();
+
+        assert!(value.is_array());
+        assert_eq!(value.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn tagger_step_parse_group_items_reads_group_json() {
+        let raw = r#"[{"file":"R0010525.JPG","role":"作業状況","machine_type":"切削機","machine_id":"No.1","has_board":true,"detected_text":"黒板","description":"作業"}]"#;
+
+        let items = parse_group_items(raw).unwrap();
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].file, "R0010525.JPG");
+        assert_eq!(items[0].core.machine_id, "No.1");
+        assert!(items[0].core.has_board);
+    }
+
+    #[test]
+    fn tagger_step_apply_capture_times_sets_missing_timestamp() {
+        let mut records = GroupRecords::new();
+        records.insert(
+            "R0010525.JPG".to_string(),
+            GroupRecord {
+                core: GroupCore::default(),
+                group: 0,
+                captured_at: None,
+            },
+        );
+        let capture_times = HashMap::from([("R0010525.JPG".to_string(), 1234_i64)]);
+
+        apply_capture_times(&mut records, &capture_times);
+
+        assert_eq!(records["R0010525.JPG"].captured_at, Some(1234));
+    }
+
+    #[test]
+    fn tagger_step_normalize_machine_id_marks_attachment_road() {
+        let mut rec = GroupRecord {
+            core: GroupCore {
+                description: "取付道路 No.1 測定".to_string(),
+                ..GroupCore::default()
+            },
+            group: 0,
+            captured_at: None,
+        };
+
+        normalize_machine_id(&mut rec);
+
+        assert_eq!(rec.core.machine_id, "取付道路 No.1");
+    }
+
+    #[test]
+    fn tagger_step_propagate_attachment_by_time_spreads_attachment_label_within_chunk() {
+        let mut records = GroupRecords::new();
+        records.insert(
+            "A.JPG".to_string(),
+            GroupRecord {
+                core: GroupCore {
+                    detected_text: "No.1".to_string(),
+                    machine_id: "No.1".to_string(),
+                    ..GroupCore::default()
+                },
+                group: 0,
+                captured_at: Some(100),
+            },
+        );
+        records.insert(
+            "B.JPG".to_string(),
+            GroupRecord {
+                core: GroupCore {
+                    detected_text: "取付道路 No.1".to_string(),
+                    machine_id: "取付道路 No.1".to_string(),
+                    ..GroupCore::default()
+                },
+                group: 0,
+                captured_at: Some(120),
+            },
+        );
+
+        propagate_attachment_by_time(&mut records);
+
+        assert_eq!(records["A.JPG"].core.machine_id, "取付道路 No.1");
+        assert_eq!(records["B.JPG"].core.machine_id, "取付道路 No.1");
+    }
+
+    #[test]
+    fn tagger_step_assign_groups_splits_on_large_time_gap() {
+        let mut records = GroupRecords::new();
+        records.insert(
+            "A.JPG".to_string(),
+            GroupRecord {
+                core: GroupCore {
+                    machine_id: "No.1".to_string(),
+                    ..GroupCore::default()
+                },
+                group: 0,
+                captured_at: Some(100),
+            },
+        );
+        records.insert(
+            "B.JPG".to_string(),
+            GroupRecord {
+                core: GroupCore {
+                    machine_id: "No.1".to_string(),
+                    ..GroupCore::default()
+                },
+                group: 0,
+                captured_at: Some(100 + GROUP_GAP_SECS + 1),
+            },
+        );
+
+        assign_groups(&mut records);
+
+        assert_ne!(records["A.JPG"].group, records["B.JPG"].group);
+    }
+
+    #[test]
+    fn tagger_step_assign_groups_splits_attachment_and_mainline_even_when_close_in_time() {
+        let mut records = GroupRecords::new();
+        records.insert(
+            "A.JPG".to_string(),
+            GroupRecord {
+                core: GroupCore {
+                    machine_id: "No.1".to_string(),
+                    ..GroupCore::default()
+                },
+                group: 0,
+                captured_at: Some(100),
+            },
+        );
+        records.insert(
+            "B.JPG".to_string(),
+            GroupRecord {
+                core: GroupCore {
+                    machine_id: "取付道路 No.1".to_string(),
+                    detected_text: "取付道路 No.1".to_string(),
+                    ..GroupCore::default()
+                },
+                group: 0,
+                captured_at: Some(101),
+            },
+        );
+
+        assign_groups(&mut records);
+
+        assert_ne!(records["A.JPG"].group, records["B.JPG"].group);
+    }
+
+    #[test]
+    fn tagger_step_collect_images_flat_sorts_names() {
+        let base = std::env::temp_dir().join(format!(
+            "photo-ai-rust-tagger-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        fs::write(base.join("R0010527.JPG"), b"x").unwrap();
+        fs::write(base.join("R0010525.JPG"), b"x").unwrap();
+        fs::write(base.join("memo.txt"), b"x").unwrap();
+
+        let images = collect_images_flat(&base);
+        let names: Vec<_> = images
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        assert_eq!(names, vec!["R0010525.JPG", "R0010527.JPG"]);
+
+        let _ = fs::remove_dir_all(&base);
     }
 }
 

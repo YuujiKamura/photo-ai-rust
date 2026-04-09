@@ -7,7 +7,7 @@
 use crate::{analyzer, engine, error, scanner};
 use crate::domain::*;
 use crate::folder_rules::FolderRule;
-use crate::grouping::{GroupRecords, UsageMode};
+use crate::grouping::{CarrierConfig, GroupRecords, UsageMode};
 use crate::normalizer::{self, NormalizationOptions};
 use crate::ocr_parser::{extract_kv_from_text, normalize_station};
 use crate::master_matcher::{
@@ -64,7 +64,7 @@ pub struct ScanAnalysisConfig<'a> {
     pub step_prefix_analyze: &'a str,
     pub line_types: Option<&'a [LineTypeEntry]>,
     pub folder_rules: Option<&'a [FolderRule]>,
-    pub usage_mode: UsageMode,
+    pub carrier: CarrierConfig,
 }
 
 /// マスタ選択結果
@@ -73,6 +73,27 @@ pub struct MasterConfig {
     pub effective_work_type: Option<String>,
     /// 全工種時のマージ用パス一覧（by_work_type/*.csv + メインCSV）
     pub all_paths: Option<Vec<PathBuf>>,
+}
+
+impl MasterConfig {
+    pub fn selection_label(&self) -> &'static str {
+        if self.all_paths.is_some() { "all" } else { "single" }
+    }
+
+    pub fn primary_path_display(&self) -> String {
+        if let Some(paths) = &self.all_paths {
+            let joined = paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(";");
+            return joined;
+        }
+        self.master_path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+    }
 }
 
 /// マスタ選択と検証を行う共通関数
@@ -157,13 +178,13 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
     let vocabulary = master.extract_vocabulary();
 
     // 3. 解析engine（語彙リスト付き）
-    if config.usage_mode == UsageMode::PayPerUse {
+    if config.carrier.effective_usage_mode() == UsageMode::PayPerUse {
         println!("{} photo-analysis-engine実行中... [従量課金API]", config.step_prefix_analyze);
     } else {
         println!("{} photo-analysis-engine実行中...", config.step_prefix_analyze);
     }
     let vocab_ref = if vocabulary.is_empty() { None } else { Some(vocabulary.as_slice()) };
-    let group_records = engine::run_tag_groups(config.folder, config.batch_size, vocab_ref, config.usage_mode)?;
+    let group_records = engine::run_tag_groups(config.folder, config.batch_size, vocab_ref, config.carrier)?;
 
     if group_records.is_empty() {
         return Err(error::PhotoAiError::NoImagesFound(
@@ -257,6 +278,384 @@ pub fn scan_images(
     }
 
     Ok(images)
+}
+
+#[cfg(test)]
+mod pipeline_checkpoint_tests {
+    use super::*;
+    use crate::grouping::{GroupCore, GroupRecord};
+    use crate::scanner::ImageInfo;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn unique_temp_dir(test_name: &str) -> PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("photo-ai-analysis-{}-{}", test_name, timestamp))
+    }
+
+    struct TempDirGuard(PathBuf);
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_master_csv(path: &Path, rows: &[&str]) {
+        let header = "費目,写真区分,工種,種別,細別,備考,検索パターン\n";
+        let body = rows.join("\n");
+        fs::write(path, format!("{header}{body}\n")).unwrap();
+    }
+
+    fn test_master(rows: &[&str]) -> HierarchyMaster {
+        let dir = unique_temp_dir("master");
+        let _guard = TempDirGuard(dir.clone());
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("master.csv");
+        write_master_csv(&path, rows);
+        HierarchyMaster::from_csv(&path).unwrap()
+    }
+
+    fn test_image(file_name: &str, date: &str) -> ImageInfo {
+        ImageInfo {
+            path: std::env::temp_dir().join(file_name),
+            file_name: file_name.to_string(),
+            date: Some(date.to_string()),
+        }
+    }
+
+    fn test_group(
+        file_name: &str,
+        group: u32,
+        role: &str,
+        machine_type: &str,
+        machine_id: &str,
+        detected_text: &str,
+        description: &str,
+    ) -> GroupRecords {
+        let mut groups = HashMap::new();
+        groups.insert(
+            file_name.to_string(),
+            GroupRecord {
+                core: GroupCore {
+                    role: role.to_string(),
+                    machine_type: machine_type.to_string(),
+                    machine_id: machine_id.to_string(),
+                    has_board: true,
+                    detected_text: detected_text.to_string(),
+                    description: description.to_string(),
+                },
+                group,
+                captured_at: None,
+            },
+        );
+        groups
+    }
+
+    #[test]
+    fn prepare_analysis_rejects_variety_without_work_type() {
+        let result = prepare_analysis(
+            Vec::new(),
+            None,
+            Some(&"舗装打換え工".to_string()),
+            |_master, _interactive| None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn prepare_analysis_rejects_work_type_without_master() {
+        let result = prepare_analysis(
+            Vec::new(),
+            Some("舗装工".to_string()),
+            None,
+            |_master, _interactive| None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn load_master_from_config_merges_all_paths() {
+        let dir = unique_temp_dir("merge-master");
+        let _guard = TempDirGuard(dir.clone());
+        fs::create_dir_all(&dir).unwrap();
+
+        let path1 = dir.join("a.csv");
+        let path2 = dir.join("b.csv");
+        write_master_csv(
+            &path1,
+            &[
+                "直接工事費,施工状況写真,舗装工,舗装打換え工,切削工,切削状況,切削",
+            ],
+        );
+        write_master_csv(
+            &path2,
+            &[
+                "直接工事費,品質管理写真,舗装工,舗装打換え工,表層工,温度管理,温度",
+            ],
+        );
+
+        let config = MasterConfig {
+            master_path: None,
+            effective_work_type: None,
+            all_paths: Some(vec![path1, path2]),
+        };
+
+        let master = load_master_from_config(&config).unwrap();
+        assert_eq!(master.rows().len(), 2);
+        assert!(master.extract_vocabulary().contains(&"切削状況".to_string()));
+        assert!(master.extract_vocabulary().contains(&"温度管理".to_string()));
+    }
+
+    #[test]
+    fn scan_images_excludes_non_use_folder_by_default() {
+        let dir = unique_temp_dir("scan-exclude");
+        let _guard = TempDirGuard(dir.clone());
+        fs::create_dir_all(dir.join("非使用")).unwrap();
+        fs::write(dir.join("a.jpg"), b"ok").unwrap();
+        fs::write(dir.join("非使用").join("b.jpg"), b"skip").unwrap();
+
+        let images = scan_images(&dir, true, false, "[test]").unwrap();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].file_name, "a.jpg");
+    }
+
+    #[test]
+    fn convert_groups_to_results_extracts_station_from_ocr_key() {
+        let master = test_master(&[
+            "直接工事費,施工状況写真,舗装工,舗装打換え工,切削工,切削状況,切削"
+        ]);
+        let images = vec![test_image("a.jpg", "2026:02:13 08:00:00")];
+        let groups = test_group(
+            "a.jpg",
+            1,
+            "全景",
+            "",
+            "",
+            "場所: No.9\n切削",
+            "切削状況",
+        );
+
+        let results = convert_groups_to_results(
+            &images,
+            &groups,
+            &master,
+            "施工状況",
+            r"C:\fixtures\施工状況",
+            None,
+            None,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].station, "No.9");
+    }
+
+    #[test]
+    fn convert_groups_to_results_extracts_dekigata_station_without_key() {
+        let master = test_master(&[
+            "直接工事費,出来形管理写真,舗装工,舗装打換え工,切削工,出来形管理,出来形"
+        ]);
+        let images = vec![test_image("a.jpg", "2026:02:13 08:00:00")];
+        let groups = test_group(
+            "a.jpg",
+            1,
+            "黒板アップ",
+            "",
+            "",
+            "出来形管理用紙 No.9",
+            "出来形管理",
+        );
+
+        let results = convert_groups_to_results(
+            &images,
+            &groups,
+            &master,
+            "切削出来形",
+            r"C:\fixtures\切削出来形",
+            None,
+            None,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].station, "No.9");
+    }
+
+    #[test]
+    fn convert_groups_to_results_matches_machine_type_when_detected_text_empty() {
+        let master = test_master(&[
+            "直接工事費,その他,舗装工,,,使用機械,路面切削機"
+        ]);
+        let images = vec![test_image("a.jpg", "2026:02:10 08:00:00")];
+        let groups = test_group(
+            "a.jpg",
+            1,
+            "全景",
+            "路面切削機",
+            "ER552F",
+            "",
+            "使用機械",
+        );
+
+        let results = convert_groups_to_results(
+            &images,
+            &groups,
+            &master,
+            "使用機械",
+            r"C:\fixtures\使用機械",
+            None,
+            None,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].remarks, "使用機械");
+        assert_eq!(results[0].station, "路面切削機 ER552F");
+    }
+
+    #[test]
+    fn convert_groups_to_results_auto_dates_specific_safety_remarks() {
+        let master = test_master(&[
+            "直接工事費,安全管理写真,,,,安全朝礼実施状況,朝礼"
+        ]);
+        let images = vec![test_image("a.jpg", "2026:02:13 08:00:00")];
+        let groups = test_group(
+            "a.jpg",
+            1,
+            "全景",
+            "",
+            "",
+            "朝礼実施",
+            "朝礼",
+        );
+
+        let results = convert_groups_to_results(
+            &images,
+            &groups,
+            &master,
+            "朝礼",
+            r"C:\fixtures\朝礼",
+            None,
+            None,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].photo_category, PHOTO_CAT_SAFETY);
+        assert_eq!(results[0].station, "2月13日");
+    }
+
+    #[test]
+    fn convert_groups_to_results_overrides_cutting_machine_folder_output() {
+        let master = test_master(&[
+            "直接工事費,その他,舗装工,,,使用機械,路面切削機"
+        ]);
+        let images = vec![test_image("a.jpg", "2026:02:10 08:00:00")];
+        let groups = test_group(
+            "a.jpg",
+            1,
+            "全景",
+            "路面切削機",
+            "ER552F 1234",
+            "",
+            "使用機械",
+        );
+
+        let results = convert_groups_to_results(
+            &images,
+            &groups,
+            &master,
+            "切削機",
+            r"C:\fixtures\切削機",
+            None,
+            None,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].photo_category, PHOTO_CAT_OTHER);
+        assert_eq!(results[0].work_type, "舗装工");
+        assert_eq!(results[0].remarks, "使用機械（路面切削機 ER552F）");
+        assert_eq!(results[0].station, "");
+    }
+
+    #[test]
+    fn normalize_results_with_station_applies_manual_station() {
+        let mut results = vec![
+            analyzer::AnalysisResult {
+                file_name: "a.jpg".to_string(),
+                station: "".to_string(),
+                ..Default::default()
+            },
+            analyzer::AnalysisResult {
+                file_name: "b.jpg".to_string(),
+                station: "No.1".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        normalize_results_with_station(&mut results, Some("No.9"), false);
+
+        assert_eq!(results[0].station, "No.9");
+        assert_eq!(results[1].station, "No.9");
+    }
+
+    #[test]
+    fn convert_groups_to_results_sorts_full_view_before_others() {
+        let master = test_master(&[
+            "直接工事費,施工状況写真,舗装工,舗装打換え工,切削工,切削状況,切削"
+        ]);
+        let images = vec![
+            test_image("b.jpg", "2026:02:13 08:00:00"),
+            test_image("a.jpg", "2026:02:13 08:01:00"),
+        ];
+        let mut groups = HashMap::new();
+        groups.insert(
+            "b.jpg".to_string(),
+            GroupRecord {
+                core: GroupCore {
+                    role: "黒板アップ".to_string(),
+                    machine_type: "".to_string(),
+                    machine_id: "".to_string(),
+                    has_board: true,
+                    detected_text: "切削".to_string(),
+                    description: "".to_string(),
+                },
+                group: 1,
+                captured_at: None,
+            },
+        );
+        groups.insert(
+            "a.jpg".to_string(),
+            GroupRecord {
+                core: GroupCore {
+                    role: "全景".to_string(),
+                    machine_type: "".to_string(),
+                    machine_id: "".to_string(),
+                    has_board: true,
+                    detected_text: "切削".to_string(),
+                    description: "".to_string(),
+                },
+                group: 1,
+                captured_at: None,
+            },
+        );
+
+        let results = convert_groups_to_results(
+            &images,
+            &groups,
+            &master,
+            "施工状況",
+            r"C:\fixtures\施工状況",
+            None,
+            None,
+        );
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].file_name, "a.jpg");
+        assert_eq!(results[1].file_name, "b.jpg");
+    }
 }
 
 /// 測点適用と正規化を実行

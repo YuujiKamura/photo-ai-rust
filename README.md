@@ -16,13 +16,27 @@
 
 ### AIバックエンド
 
-`photo-analysis-engine` は AgentAPI 経由で常駐CLIエージェントを利用する。
+`4月版` では、ユーザー向けには次の2つを選べる。
+
+- `provider`: `auto` / `gemini` / `claude` / `codex`
+- `billing`: `subscription` / `pay_per_use`
+
+現在の実装では、実解析は `photo-analysis-engine -> AgentAPI` を通る。
+呼び出し経路は内部設定として保持する。
+
+フォールバック:
+- `billing=subscription` のときは、指定 `provider` がつながらなければ他の常駐CLIへ順に退避する
+- `billing=pay_per_use` のときは、指定 `provider` のみを使い、勝手に他へ逃がさない
 
 | バックエンド | 認証 | 備考 |
 |--------|------|------|
 | Claude Code | Claude CLI側の認証 | AgentAPIから起動・再利用 |
 | Codex | Codex CLI側の認証 | AgentAPIから起動・再利用 |
 | Gemini | Gemini CLI側の認証 | AgentAPIから起動・再利用 |
+
+注記:
+- `direct_cli` はまだ未対応
+- `resident_agent` は AgentAPI 配下の常駐CLIエージェント利用を意味する
 
 解析 engine 単体をビルドする場合:
 
@@ -58,6 +72,12 @@ cargo build --release
 ```bash
 # 基本: フォルダ指定 → PDF
 photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv
+
+# APIキー従量課金を明示したい場合
+photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv --billing pay_per_use
+
+# Claude を優先し、だめなら月額側で他へ退避
+photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv --provider claude --billing subscription
 
 # 測点が全部同じ場合
 photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv -s "No.5+10.0"
@@ -191,6 +211,9 @@ photo-ai-rust export result.json --alias my_alias.json
 | `--include-all` | 「非使用」フォルダも含める | off |
 | `--line-types` | 区画線の線種リストJSON | - |
 | `--folder-rules` | フォルダルールJSON | - |
+| `--provider` | AI提供元 (auto/gemini/claude/codex) | auto |
+| `--billing` | 課金系統 (auto/subscription/pay_per_use) | auto |
+| `--pay-per-use` | 旧オプション。`--billing pay_per_use` と同義 | off |
 
 ### export固有オプション
 
