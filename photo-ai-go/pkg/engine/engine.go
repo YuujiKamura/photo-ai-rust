@@ -8,6 +8,7 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,6 +27,11 @@ import (
 // when the main command exits. This prevents hangs caused by zombie processes
 // holding onto pipe handles.
 func runCommandWithJobObject(cmd *exec.Cmd) ([]byte, error) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create job object: %w", err)
@@ -54,11 +60,17 @@ func runCommandWithJobObject(cmd *exec.Cmd) ([]byte, error) {
 	defer windows.CloseHandle(processHandle)
 
 	if err := windows.AssignProcessToJobObject(job, processHandle); err != nil {
-		// Ignore error if process already exited
-		return cmd.CombinedOutput()
+		if waitErr := cmd.Wait(); waitErr != nil {
+			return append(stdout.Bytes(), stderr.Bytes()...), fmt.Errorf("command failed: %w", waitErr)
+		}
+		return append(stdout.Bytes(), stderr.Bytes()...), nil
 	}
 
-	return cmd.CombinedOutput()
+	if err := cmd.Wait(); err != nil {
+		return append(stdout.Bytes(), stderr.Bytes()...), fmt.Errorf("command failed: %w", err)
+	}
+
+	return append(stdout.Bytes(), stderr.Bytes()...), nil
 }
 
 // runCommand is a wrapper for non-windows platforms.

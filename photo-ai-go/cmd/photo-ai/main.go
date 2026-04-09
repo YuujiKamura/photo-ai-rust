@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/YuujiKamura/photo-ai-go/internal/export"
 	"github.com/YuujiKamura/photo-ai-go/pkg/engine"
 )
+
+var gitCommit = "unknown"
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
@@ -25,8 +28,8 @@ var rootCmd = &cobra.Command{
 	Short: "工事写真AI解析・写真台帳生成ツール (Go frontend)",
 	Long: `photo-ai — Construction photo AI analysis and photo ledger generation tool.
 
-The Go frontend delegates PDF/Excel rendering and image analysis to the
-photo-engine shared library. Set PHOTO_ENGINE_LIB to override the library path.`,
+The Go frontend is the primary entrypoint. It delegates tagging, analysis,
+PDF rendering, and Excel rendering to Rust engine executables.`,
 }
 
 func init() {
@@ -37,7 +40,7 @@ func init() {
 	exportCmd.AddCommand(exportPDFCmd)
 	exportCmd.AddCommand(exportExcelCmd)
 
-	// analyze flags — match Rust CLI flag names exactly
+	// analyze flags
 	analyzeCmd.Flags().StringP("output", "o", "", "Output JSON file (default: <folder>/result.json)")
 	analyzeCmd.Flags().IntP("batch-size", "b", 5, "Number of photos per AI batch")
 	analyzeCmd.Flags().StringP("master", "m", "", "Work-type master CSV/JSON file")
@@ -50,7 +53,7 @@ func init() {
 	analyzeCmd.Flags().Bool("include-all", false, "Include folders normally excluded (e.g. 非使用)")
 	analyzeCmd.Flags().String("line-types", "", "Line-type list JSON file (区画線工)")
 	analyzeCmd.Flags().String("folder-rules", "", "Folder-rule override JSON file")
-	analyzeCmd.Flags().Bool("pay-per-use", false, "Enable pay-per-use Gemini API mode")
+	analyzeCmd.Flags().Bool("pay-per-use", false, "Use pay-per-use billing instead of subscription/resident mode")
 
 	// export pdf flags
 	exportPDFCmd.Flags().StringP("output", "o", "", "Output PDF file or directory")
@@ -134,8 +137,13 @@ var analyzeCmd = &cobra.Command{
 
 			// 保存（一時ファイル）
 			matchedJSON := filepath.Join(folder, "matched-results.json")
-			data, _ := json.MarshalIndent(matchedResults, "", "  ")
-			os.WriteFile(matchedJSON, data, 0o644)
+			data, err := json.MarshalIndent(matchedResults, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to serialize matched results: %w", err)
+			}
+			if err := os.WriteFile(matchedJSON, data, 0o644); err != nil {
+				return fmt.Errorf("failed to save matched results: %w", err)
+			}
 
 			// --- Stage 3: Normalization ---
 			fmt.Fprintln(os.Stderr, "正規化を開始しています...")
@@ -143,9 +151,19 @@ var analyzeCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("analyze (normalization): %w", err)
 			}
+			stampAnalysisMetadata(finalResults, analyzeMetadata{
+				MasterPath: master,
+				WorkType:   workType,
+				PhotoType:  photoType,
+				Variety:    variety,
+				PayPerUse:  payPerUse,
+			})
 
 			// 最終結果を保存
-			finalData, _ := json.MarshalIndent(finalResults, "", "  ")
+			finalData, err := json.MarshalIndent(finalResults, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to serialize final result: %w", err)
+			}
 			if err := os.WriteFile(destJSON, finalData, 0o644); err != nil {
 				return fmt.Errorf("failed to save final result: %w", err)
 			}
@@ -296,4 +314,37 @@ func resolveOutputJSON(folder, outputFlag string) string {
 		return outputFlag
 	}
 	return filepath.Join(folder, export.DefaultResultFileName)
+}
+
+type analyzeMetadata struct {
+	MasterPath string
+	WorkType   string
+	PhotoType  string
+	Variety    string
+	PayPerUse  bool
+}
+
+func stampAnalysisMetadata(results []engine.AnalysisResult, meta analyzeMetadata) {
+	timestamp := time.Now().Format("2006-01-02 15:04:05 -0700")
+	billing := "subscription"
+	if meta.PayPerUse {
+		billing = "pay_per_use"
+	}
+	masterSelection := "all"
+	if meta.MasterPath != "" {
+		masterSelection = "single"
+	}
+
+	for i := range results {
+		results[i].AnalysisTimestamp = timestamp
+		results[i].AnalysisProvider = "auto"
+		results[i].AnalysisBilling = billing
+		results[i].AnalysisTransport = "binary_engine"
+		results[i].AnalysisCommit = gitCommit
+		results[i].AnalysisMasterSelection = masterSelection
+		results[i].AnalysisMasterPath = meta.MasterPath
+		results[i].AnalysisScopeWorkType = meta.WorkType
+		results[i].AnalysisScopePhotoType = meta.PhotoType
+		results[i].AnalysisScopeVariety = meta.Variety
+	}
 }

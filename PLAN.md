@@ -132,7 +132,8 @@ photo-ai analyze ./photos -o result.json
 photo-ai export result.json --format pdf -o 写真台帳.pdf
 
 # 一括処理
-photo-ai run ./photos -o 写真台帳.pdf
+photo-ai analyze ./photos
+photo-ai export pdf ./photos/result.json -o 写真台帳.pdf
 ```
 
 ## TypeScript版からの改善点

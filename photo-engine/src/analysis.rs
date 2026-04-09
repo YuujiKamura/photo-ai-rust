@@ -64,6 +64,7 @@ pub fn tag_groups(
     let mut records = load_group_records(folder);
     let images = collect_images_flat(folder);
     let capture_times = collect_capture_times(&images);
+    prune_group_records(&mut records, &images);
 
     if images.is_empty() {
         return Ok(records);
@@ -214,6 +215,11 @@ pub fn match_master(
     let groups: GroupRecords = serde_json::from_str(&content)?;
     let master = HierarchyMaster::from_csv(master_path)
         .map_err(|e| anyhow!("Failed to load master: {e}"))?;
+    let scanned_dates: HashMap<String, String> = photo_ai_rust::scanner::scan_folder_with_options(folder, false)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|img| img.date.map(|date| (img.file_name, date)))
+        .collect();
 
     let line_types = if let Some(p) = line_types_path {
         let s = std::fs::read_to_string(p)?;
@@ -239,11 +245,10 @@ pub fn match_master(
             path: folder.join(file_name),
             date: None,
         };
-        if let Some(ts) = rec.captured_at {
-            // Convert timestamp to YYYY-MM-DD HH:MM:SS
-            let dt = chrono::DateTime::from_timestamp(ts, 0)
-                .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string());
-            img.date = dt;
+        if let Some(date) = scanned_dates.get(file_name) {
+            img.date = Some(date.clone());
+        } else if let Some(ts) = rec.captured_at {
+            img.date = format_capture_time_local(ts);
         }
         images.push(img);
     }
@@ -439,6 +444,20 @@ fn load_group_records(base: &Path) -> GroupRecords {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+fn format_capture_time_local(ts: i64) -> Option<String> {
+    chrono::DateTime::from_timestamp(ts, 0)
+        .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string())
+}
+
+fn prune_group_records(records: &mut GroupRecords, images: &[PathBuf]) {
+    let valid_names: std::collections::HashSet<String> = images
+        .iter()
+        .filter_map(|p| p.file_name().and_then(|n| n.to_str()))
+        .map(|s| s.to_string())
+        .collect();
+    records.retain(|fname, _| valid_names.contains(fname));
 }
 
 fn save_group_records(base: &Path, records: &GroupRecords) -> Result<()> {
@@ -1115,6 +1134,49 @@ mod tests {
         assert_eq!(names, vec!["R0010525.JPG", "R0010527.JPG"]);
 
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn tagger_step_prune_group_records_removes_stale_entries() {
+        let images = vec![
+            PathBuf::from("R0010534.JPG"),
+            PathBuf::from("R0010535.JPG"),
+            PathBuf::from("R0010536.JPG"),
+        ];
+        let mut records = GroupRecords::new();
+        records.insert(
+            "R0010534.JPG".to_string(),
+            GroupRecord {
+                core: GroupCore::default(),
+                group: 0,
+                captured_at: None,
+            },
+        );
+        records.insert(
+            "image_0.JPG".to_string(),
+            GroupRecord {
+                core: GroupCore::default(),
+                group: 0,
+                captured_at: None,
+            },
+        );
+
+        prune_group_records(&mut records, &images);
+
+        assert!(records.contains_key("R0010534.JPG"));
+        assert!(!records.contains_key("image_0.JPG"));
+    }
+
+    #[test]
+    fn tagger_step_format_capture_time_local_uses_local_timezone() {
+        let actual = format_capture_time_local(0).unwrap();
+        let expected = chrono::DateTime::from_timestamp(0, 0)
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+
+        assert_eq!(actual, expected);
     }
 }
 

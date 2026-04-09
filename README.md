@@ -1,293 +1,129 @@
-# photo-ai-rust
+# photo-ai
 
-工事写真AI解析・写真台帳生成CLI（Rust）
+工事写真AI解析・写真台帳生成ツール。
 
-## 概要
+今後のメイン入口は Go フロントエンドの `photo-ai.exe` です。  
+解析・PDF・Excel の実処理は Rust 製 engine バイナリに分離したまま使います。
 
-建設工事の写真をAIで自動解析し、工種階層マスタと照合して写真台帳（PDF/Excel）を生成する。
+## 構成
 
-現在の解析層は `photo-analysis-engine` という単独バイナリに分離されており、`photo-ai-rust` 本体はこの engine を呼び出す構成になっている。
+```text
+photo-ai-go/cmd/photo-ai        # メインCLI（Go）
+src/bin/tag_engine.rs           # タグ付け engine（Rust）
+photo-engine/src/bin/photo-analysis-engine.rs
+src/bin/pdf_engine.rs
+src/bin/excel_engine.rs
+```
+
+実行時の流れ:
+
+```text
+photo-ai.exe
+  -> photo-tag-engine.exe
+  -> photo-analysis-engine.exe
+  -> photo-pdf-engine.exe / photo-excel-engine.exe
+```
+
+## ビルド
+
+メインのビルドは Go 側から行う。
+
+```bash
+cd photo-ai-go
+make all
+```
+
+これで次の成果物を作る。
+
+- `photo-ai.exe`
+- `target/release/photo-tag-engine.exe`
+- `target/release/photo-analysis-engine.exe`
+- `target/release/photo-pdf-engine.exe`
+- `target/release/photo-excel-engine.exe`
+
+Go フロントだけを再ビルドする場合:
+
+```bash
+cd photo-ai-go
+make build
+```
 
 ## 前提条件
 
-- Rust 1.70+
+- Go 1.25+
+- Rust toolchain
 - AgentAPI サーバー
-- Claude / Codex / Gemini のいずれかの常駐CLIエージェント
+- 常駐CLIエージェント
+  - Gemini / Claude / Codex のいずれか
 
-### AIバックエンド
+## 使い方
 
-`4月版` では、ユーザー向けには次の2つを選べる。
+詳しい手順は [docs/QUICKSTART.md](./docs/QUICKSTART.md) を見る。
 
-- `provider`: `auto` / `gemini` / `claude` / `codex`
-- `billing`: `subscription` / `pay_per_use`
-
-現在の実装では、実解析は `photo-analysis-engine -> AgentAPI` を通る。
-呼び出し経路は内部設定として保持する。
-
-フォールバック:
-- `billing=subscription` のときは、指定 `provider` がつながらなければ他の常駐CLIへ順に退避する
-- `billing=pay_per_use` のときは、指定 `provider` のみを使い、勝手に他へ逃がさない
-
-| バックエンド | 認証 | 備考 |
-|--------|------|------|
-| Claude Code | Claude CLI側の認証 | AgentAPIから起動・再利用 |
-| Codex | Codex CLI側の認証 | AgentAPIから起動・再利用 |
-| Gemini | Gemini CLI側の認証 | AgentAPIから起動・再利用 |
-
-注記:
-- `direct_cli` はまだ未対応
-- `resident_agent` は AgentAPI 配下の常駐CLIエージェント利用を意味する
-
-解析 engine 単体をビルドする場合:
+### 解析
 
 ```bash
-cargo build --release -p photo-engine --bin photo-analysis-engine
+photo-ai analyze ./0213舗装 -m master/by_work_type/舗装工.csv
 ```
 
-## インストール
+主なオプション:
+
+- `-m, --master`: 工種マスタCSV
+- `-w, --work-type`: 工種スコープ
+- `-t, --photo-type`: 写真区分スコープ
+- `--variety`: 種別スコープ
+- `-s, --station`: 測点一括指定
+- `-r, --recursive`: サブフォルダ再帰
+- `--use-cache`: 既存グループ結果を再利用
+- `--pay-per-use`: 従量課金モード
+
+### PDF生成
 
 ```bash
-cargo build --release
+photo-ai export pdf ./0213舗装/result.json -o ./0213舗装/工事写真帳.pdf
 ```
 
-## 解析パイプライン
-
-```
-写真フォルダ
-  → scan（画像収集）
-  → photo-analysis-engine（グループ分け・OCR・focus target抽出）
-  → マスタ照合（detected_text + folder_name → 工種階層マッチング）
-  → グループ伝播（リーダーのマッチ結果を同一グループに適用）
-  → ドメイン補正（工種変換・線種検出）
-  → 正規化（測定値統一・測点適用）
-  → export（PDF/Excel）
-```
-
-詳細は [Issue #104](https://github.com/YuujiKamura/photo-ai-rust/issues/104) を参照。
-
-## ユースケース別レシピ
-
-### 1. 舗装工の施工写真を写真帳にしたい
+### Excel生成
 
 ```bash
-# 基本: フォルダ指定 → PDF
-photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv
-
-# APIキー従量課金を明示したい場合
-photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv --billing pay_per_use
-
-# Claude を優先し、だめなら月額側で他へ退避
-photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv --provider claude --billing subscription
-
-# 測点が全部同じ場合
-photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv -s "No.5+10.0"
-
-# PDF品質を上げたい（印刷用）
-photo-ai-rust run ./0213舗装 -m master/by_work_type/舗装工.csv --pdf-quality high
+photo-ai export excel ./0213舗装/result.json -o ./0213舗装/工事写真帳.xlsx
 ```
 
-### 2. 区画線工・撤去工など舗装以外
-
-マスタを変えるだけ。使い方は同じ。
+### ペアリング
 
 ```bash
-photo-ai-rust run ./区画線 -m master/by_work_type/区画線工.csv
-photo-ai-rust run ./撤去 -m master/by_work_type/構造物撤去工.csv
+photo-ai pair -i ./result.json -o ./paired.json
 ```
 
-区画線工で線種リストがある場合:
-```bash
-photo-ai-rust run ./区画線 -m master/by_work_type/区画線工.csv --line-types line_types.json
-```
+## 出力JSON
 
-### 3. 使用機械・安全管理など写真種類が特定
+`analyze` の最終 `result.json` には、解析結果に加えて次のメタデータを残す。
 
-```bash
-# 使用機械写真だけ
-photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv -t 使用機械
+- `analysisTimestamp`
+- `analysisProvider`
+- `analysisBilling`
+- `analysisTransport`
+- `analysisCommit`
+- `analysisMasterSelection`
+- `analysisMasterPath`
+- `analysisScopeWorkType`
+- `analysisScopePhotoType`
+- `analysisScopeVariety`
 
-# 安全管理写真
-photo-ai-rust run ./安全 -m master/by_work_type/舗装工.csv -t 安全管理写真
-```
-
-### 4. サブフォルダに日付ごとに写真がある
-
-```bash
-# 再帰スキャン: 0211/, 0212/, 0213/ をまとめて解析
-photo-ai-rust run ./写真 -m master/by_work_type/舗装工.csv -r
-```
-
-### 5. 解析結果を手修正してからPDF再生成
-
-```bash
-# Step 1: 解析（JSONが出る）
-photo-ai-rust analyze ./photos -m master/by_work_type/舗装工.csv -o result.json
-
-# Step 2: result.jsonをエディタで手修正（工種・測点・備考など）
-
-# Step 3: 修正済みJSONからPDF/Excel生成
-photo-ai-rust export result.json --format pdf
-photo-ai-rust export result.json --format both
-```
-
-### 6. 測点・計測値を後から一括設定
-
-```bash
-# 全エントリに測点を一括適用
-photo-ai-rust normalize result.json -S "No.9"
-
-# 出来形管理写真に車線と備考を設定
-photo-ai-rust normalize result.json --lane left --dekigata-remarks "切削基準高"
-
-# 変更前にプレビュー（ドライラン）
-photo-ai-rust normalize result.json -S "No.9" --dry-run
-```
-
-### 7. 前回解析済みのフォルダを再出力（AIコスト節約）
-
-```bash
-# --use-cache: 解析 engine のグループ分けをスキップし、前回のphoto-groups.jsonを再利用
-photo-ai-rust run ./photos -m master/by_work_type/舗装工.csv --use-cache
-```
-
-### 8. 着手前・竣工写真のペアリング
-
-```bash
-# 着手前PDF + 竣工写真フォルダ → ペアリング → フォルダ作成 → PDF
-photo-ai-rust pair-completion \
-  --before ./着手前写真帳.pdf \
-  --after ./竣工写真/ \
-  --project-name "[PLACE_B]舗装" \
-  --build
-
-# ペアリングJSONだけ出す（手修正してからPDF化したい場合）
-photo-ai-rust pair-completion --before ./着手前.pdf --after ./竣工/ -o pairing.json
-
-# 手修正済みJSONからPDF生成
-photo-ai-rust pair-pdf --json pairing_manual.json --project-name "[PLACE_B]舗装" ./竣工写真/
-```
-
-### 9. 解析精度を検証したい
-
-```bash
-# GTファイル（手動正解）と比較
-photo-ai-rust evaluate result.json --gt gt.json
-
-# 特定フィールドだけ評価
-photo-ai-rust evaluate result.json --gt gt.json --fields remarks,station
-
-# CI用JSON出力
-photo-ai-rust evaluate result.json --gt gt.json --json
-```
-
-### 10. エイリアスプリセット（ラベル変換）
-
-```bash
-# 舗装工向けラベル変換（例: 種別→打換え工種 等）
-photo-ai-rust export result.json --preset pavement
-
-# 区画線工向け
-photo-ai-rust export result.json --preset marking
-
-# カスタムエイリアスファイル
-photo-ai-rust export result.json --alias my_alias.json
-```
-
-## コマンドリファレンス
-
-### 主要オプション（run / analyze 共通）
-
-| オプション | 説明 | デフォルト |
-|-----------|------|-----------|
-| `-m, --master` | 工種マスタCSV | - |
-| `-f, --format` | 出力形式 (pdf/excel/xml/both) | pdf |
-| `-w, --work-type` | 工種を限定 | - |
-| `-t, --photo-type` | 写真種類を限定 | - |
-| `--variety` | 種別を限定 | - |
-| `-s, --station` | 測点一括指定 | - |
-| `--pdf-quality` | PDF品質 (high/medium/low) | medium |
-| `--use-cache` | 前回のphoto-groups.jsonを再利用 | off |
-| `-r, --recursive` | サブフォルダ再帰スキャン | off |
-| `--include-all` | 「非使用」フォルダも含める | off |
-| `--line-types` | 区画線の線種リストJSON | - |
-| `--folder-rules` | フォルダルールJSON | - |
-| `--provider` | AI提供元 (auto/gemini/claude/codex) | auto |
-| `--billing` | 課金系統 (auto/subscription/pay_per_use) | auto |
-| `--pay-per-use` | 旧オプション。`--billing pay_per_use` と同義 | off |
-
-### export固有オプション
-
-| オプション | 説明 | デフォルト |
-|-----------|------|-----------|
-| `-p, --photos-per-page` | 1ページあたり写真数 (2/3) | 3 |
-| `--preset` | エイリアスプリセット (pavement/marking/general) | - |
-| `--alias` | カスタムエイリアスJSON | - |
-
-### normalize固有オプション
-
-| オプション | 説明 | デフォルト |
-|-----------|------|-----------|
-| `-S, --station` | 測点一括指定 | - |
-| `--lane` | 車線 (left/right) | - |
-| `--dekigata-remarks` | 出来形備考テキスト | - |
-| `--dry-run` | 変更プレビュー | off |
-| `--line-types` | 線種リストJSON | - |
+これで「いつ」「どのバイナリ」「どの大枠指定」で解析したかを後追いできる。
 
 ## 工種マスタ
 
-`master/by_work_type/` に工種別CSVを配置:
-
-```
+```text
 master/by_work_type/
 ├── 舗装工.csv
 ├── 区画線工.csv
 ├── 構造物撤去工.csv
-├── 道路土工.csv
 └── ...
 ```
 
-CSV列: 費目, 写真区分, 工種, 種別, 細別, 備考, 検索パターン
+## 補足
 
-## プロジェクト構成
-
-```
-photo-ai-rust/
-├── src/                    # CLI本体
-│   ├── main.rs             # エントリポイント
-│   ├── commands.rs         # コマンドハンドラ
-│   ├── analysis.rs         # パイプライン制御
-│   ├── master_matcher.rs   # マスタ照合
-│   ├── normalizer/         # 正規化（測定値統一・測点）
-│   ├── export/             # PDF/Excel出力
-│   ├── scanner/            # 画像スキャン
-│   └── temperature.rs      # 温度管理写真処理
-├── common/                 # 共有ライブラリ（photo-ai-common）
-│   └── src/
-│       ├── types.rs        # AnalysisResult, PhotoDataトレイト
-│       ├── hierarchy/      # 工種階層マスタ読み込み
-│       ├── export/         # PDF/Excelコア（レイアウト・描画）
-│       └── layout.rs       # レイアウト定数・FieldKey
-├── master/                 # 工種マスタCSV
-├── web-wasm/               # WASM版（未完成・凍結）
-└── desktop-rust/           # デスクトップ版（未完成・凍結）
-```
-
-## サブコマンド一覧
-
-| コマンド | 用途 |
-|---------|------|
-| `run` | 解析→出力の一括実行 |
-| `analyze` | 写真解析（JSON出力） |
-| `export` | JSON→PDF/Excel変換 |
-| `normalize` | 正規化（計測値統一・測点適用） |
-| `evaluate` | 解析精度評価（GT比較） |
-| `pair-completion` | 着手前・竣工写真の自動ペアリング |
-| `pair-pdf` | 着手前竣工写真帳PDF生成 |
-| `station` | 対話的測点入力 |
-| `cache` | キャッシュ管理 |
-| `doctor` | 前提条件チェック |
-| `config` | 設定表示/編集 |
-
-## ライセンス
-
-MIT
+- Rust CLI の `photo-ai-rust` は開発用・比較用として残っている
+- ユーザー向けの主系CLIは `photo-ai.exe`
+- CI / リリースも Go フロントエンド前提で組んでいる

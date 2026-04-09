@@ -42,6 +42,7 @@ photo-engine/Cargo.lock
 # Go build artifacts
 photo-ai-go/*.exe
 photo-ai-go/*.dll
+photo-ai.exe
 
 # Web server artifacts
 web/server.exe

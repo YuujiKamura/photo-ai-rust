@@ -5,43 +5,40 @@ This file provides guidance to the AI agent when working with code in this repos
 ## コマンド
 
 ```bash
-# ビルド前に LLVM Linker (lld-link) 用の PATH を設定
-$env:PATH = "C:\\LLVM\\bin;" + $env:PATH;
+# Goフロント + Rust engine をまとめてビルド
+cd photo-ai-go && make all
 
-# ビルド
-cargo build --release
-```
+# Go フロントだけ再ビルド
+cd photo-ai-go && make build
 
 # テスト
 cargo test                      # 全テスト
 cargo test normalizer           # モジュール指定
 cargo test -p photo-ai-common   # commonクレートのみ
 
-# 一括処理（推奨）: scan → tagger → master → export
-cargo run --release -- run <folder> --master master/construction_hierarchy.csv
-
-# 個別コマンド
-cargo run --release -- analyze <folder>              # scan + tagger + master
-cargo run --release -- normalize result.json -S "No.1" # 測点一括適用
-cargo run --release -- export result.json --format pdf  # PDF/Excel出力
+# 推奨フロー: analyze → export
+photo-ai analyze <folder> -m master/by_work_type/舗装工.csv
+photo-ai export pdf result.json
 ```
 
 ## アーキテクチャ
 
 ### ワークスペース構成
 ```
-photo-ai-rust/          # CLI本体（メインクレート）
+photo-ai-rust/          # リポジトリルート
+├── photo-ai-go/        # メインCLI（Go）
 ├── common/             # 共有ライブラリ（photo-ai-common）
+├── photo-engine/       # 解析 engine
 ├── web-wasm/           # WASM版（未完成）
 └── desktop-rust/       # デスクトップ版（未完成）
 ```
 
 ### 解析フロー
 ```
-写真 → scan → photo-tagger（AI解析、必須） → マスタ照合 → 正規化 → export(PDF/Excel)
-                    ↓                              ↓
-            photo-groups.json              construction_hierarchy.csv
-           （インクリメンタル）              （フォルダ名→備考で照合）
+photo-ai.exe
+  → photo-tag-engine.exe
+  → photo-analysis-engine.exe
+  → photo-pdf-engine.exe / photo-excel-engine.exe
 ```
 
 ### 主要モジュール（CLIクレート: src/）
@@ -66,13 +63,11 @@ photo-ai-rust/          # CLI本体（メインクレート）
   - `excel.rs` - Excel生成コア
 - `error.rs` - Error合成ハブ（ExportError/HierarchyError/AnalyzerErrorをre-export）
 
-### 外部依存
-- `photo-tagger` (別リポ) - AIで写真グループ分け
-
 ### 工種マスタ
 ```
 master/
-└── construction_hierarchy.csv  # 工種マスタ（費目,写真区分,工種,種別,細別,備考,検索パターン）
+├── by_work_type/               # 工種別CSV
+└── common.csv                  # 共通エントリ
 ```
 
 ## エージェントの社会性とアイデンティティ（鉄則）
@@ -105,3 +100,4 @@ master/
 - **エラー型は各モジュールで定義** - error.rsは合成ハブ（#[from]で集約）
 - **PhotoDataトレイト** - get_field_value/get_label_for_fieldでPDF/Excel共通化
 - **CSVパースはcsv crate+serde** - CsvRow DTOで外部形式と内部型を分離
+- **主系CLIは Go** - Rust CLI `photo-ai-rust` は比較用・開発用

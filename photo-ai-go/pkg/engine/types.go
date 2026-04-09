@@ -85,24 +85,35 @@ type EXIFResult struct {
 // AnalysisResult mirrors common/src/types.rs AnalysisResult.
 // Used for in-process manipulation of analysis JSON.
 type AnalysisResult struct {
-	FileName       string            `json:"fileName"`
-	FilePath       string            `json:"filePath,omitempty"`
-	Date           string            `json:"date,omitempty"`
-	WorkType       string            `json:"workType,omitempty"`
-	Variety        string            `json:"variety,omitempty"`
-	Subphase       string            `json:"subphase,omitempty"`
-	Station        string            `json:"station,omitempty"`
-	Remarks        string            `json:"remarks,omitempty"`
-	Description    string            `json:"description,omitempty"`
-	HasBoard       bool              `json:"hasBoard,omitempty"`
-	DetectedText   string            `json:"detectedText,omitempty"`
-	Measurements   string            `json:"measurements,omitempty"`
-	PhotoCategory  string            `json:"photoCategory,omitempty"`
-	Reasoning      string            `json:"reasoning,omitempty"`
-	FocusTarget    string            `json:"focusTarget,omitempty"`
-	Skip           bool              `json:"skip,omitempty"`
-	Group          uint32            `json:"group,omitempty"`
-	LabelOverrides map[string]string `json:"labelOverrides,omitempty"`
+	FileName                string            `json:"fileName"`
+	FilePath                string            `json:"filePath"`
+	Date                    string            `json:"date"`
+	WorkType                string            `json:"workType"`
+	Variety                 string            `json:"variety"`
+	Subphase                string            `json:"subphase"`
+	Station                 string            `json:"station"`
+	Remarks                 string            `json:"remarks"`
+	RemarksCandidates       []string          `json:"remarksCandidates"`
+	Description             string            `json:"description"`
+	HasBoard                bool              `json:"hasBoard"`
+	DetectedText            string            `json:"detectedText"`
+	Measurements            string            `json:"measurements"`
+	PhotoCategory           string            `json:"photoCategory"`
+	Reasoning               string            `json:"reasoning"`
+	FocusTarget             string            `json:"focusTarget"`
+	Skip                    bool              `json:"skip,omitempty"`
+	Group                   uint32            `json:"group,omitempty"`
+	LabelOverrides          map[string]string `json:"labelOverrides,omitempty"`
+	AnalysisTimestamp       string            `json:"analysisTimestamp,omitempty"`
+	AnalysisProvider        string            `json:"analysisProvider,omitempty"`
+	AnalysisBilling         string            `json:"analysisBilling,omitempty"`
+	AnalysisTransport       string            `json:"analysisTransport,omitempty"`
+	AnalysisCommit          string            `json:"analysisCommit,omitempty"`
+	AnalysisMasterSelection string            `json:"analysisMasterSelection,omitempty"`
+	AnalysisMasterPath      string            `json:"analysisMasterPath,omitempty"`
+	AnalysisScopeWorkType   string            `json:"analysisScopeWorkType,omitempty"`
+	AnalysisScopePhotoType  string            `json:"analysisScopePhotoType,omitempty"`
+	AnalysisScopeVariety    string            `json:"analysisScopeVariety,omitempty"`
 }
 
 // RawImageData mirrors common/src/types.rs RawImageData.
