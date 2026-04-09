@@ -202,6 +202,70 @@
             align-content: start;
         }
 
+        /* Mockup for new result panel with thumbnails */
+        .result-mock {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: var(--surface);
+            padding: 16px;
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 14px;
+            align-items: start;
+        }
+
+        .result-mock-thumb {
+            width: 140px;
+            height: 105px;
+            border-radius: 8px;
+            background: var(--surface-strong);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--muted);
+            font-size: 11px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .result-mock-thumb::after {
+            content: "IMG_0085.JPG";
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            background: rgba(0,0,0,0.5);
+            padding: 2px 4px;
+            text-align: center;
+        }
+
+        .result-mock-meta {
+            min-width: 0;
+        }
+
+        .result-mock-field {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        .result-mock-label {
+            width: 60px;
+            color: var(--muted);
+        }
+
+        .result-mock-value {
+            flex: 1;
+            padding: 2px 8px;
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .card-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -368,6 +432,25 @@
                         </div>
                     </aside>
                     <div class="workspace">
+                        <div class="result-mock">
+                            <div class="result-mock-thumb">
+                                <span>画像プレビュー</span>
+                            </div>
+                            <div class="result-mock-meta">
+                                <div class="result-mock-field">
+                                    <span class="result-mock-label">工種</span>
+                                    <span class="result-mock-value">舗装工</span>
+                                </div>
+                                <div class="result-mock-field">
+                                    <span class="result-mock-label">種別</span>
+                                    <span class="result-mock-value">路面切削工</span>
+                                </div>
+                                <div class="result-mock-field">
+                                    <span class="result-mock-label">測点</span>
+                                    <span class="result-mock-value">No.1 + 15.0</span>
+                                </div>
+                            </div>
+                        </div>
                         <div class="card-grid">
                             <div class="mini-card">
                                 <div class="label">写真区分</div>
@@ -376,14 +459,6 @@
                             <div class="mini-card">
                                 <div class="label">解析スコープ</div>
                                 <div class="value">舗装工 / 路面切削工</div>
-                            </div>
-                            <div class="mini-card">
-                                <div class="label">出力</div>
-                                <div class="value">PDF / Excel / JSON</div>
-                            </div>
-                            <div class="mini-card">
-                                <div class="label">実行経路</div>
-                                <div class="value">photo-ai.exe → engines</div>
                             </div>
                         </div>
                         <div class="terminal">photo-ai analyze ./0213切削 --work-type 舗装工 --photo-type 施工状況写真
