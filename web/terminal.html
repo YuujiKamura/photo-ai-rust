@@ -222,10 +222,28 @@ body.cp-open #cp-toggle { bottom: 220px; }
     const gPort = cfg.ghosttyPort || '8888';
     const wsUrl = 'ws://' + location.hostname + ':' + gPort + '/ws?cols=' + term.cols + '&rows=' + term.rows;
     let ws;
+    const pendingCommands = [];
+
+    function sendOrQueueCommand(cmd) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(cmd + '\r');
+        return true;
+      }
+      pendingCommands.push(cmd);
+      return false;
+    }
 
     function connect() {
       ws = new WebSocket(wsUrl);
-      ws.onopen = () => { console.log('[ghostty-web] WS connected'); };
+      ws.onopen = () => {
+        console.log('[ghostty-web] WS connected');
+        while (pendingCommands.length > 0) {
+          ws.send(pendingCommands.shift() + '\r');
+        }
+        if (window.parent) {
+          window.parent.postMessage({ type: 'terminal-ready', mode: 'pty' }, '*');
+        }
+      };
       ws.onmessage = (e) => term.write(e.data);
       ws.onclose = () => {
         term.write('\r\n\x1b[31mDisconnected. Reconnecting...\x1b[0m\r\n');
@@ -252,8 +270,8 @@ body.cp-open #cp-toggle { bottom: 220px; }
 
     // Listen for commands from parent window
     window.addEventListener('message', (e) => {
-      if (e.data && e.data.type === 'command' && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(e.data.cmd + '\r');
+      if (e.data && e.data.type === 'command' && e.data.cmd) {
+        sendOrQueueCommand(e.data.cmd);
       }
     });
   } catch (err) {

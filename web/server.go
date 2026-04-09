@@ -320,6 +320,26 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("/api/master/rename", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "POST only", 405)
+			return
+		}
+		var req struct {
+			OldName string `json:"oldName"`
+			NewName string `json:"newName"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if err := renameMasterFile(repoDir, req.OldName, req.NewName); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "oldName": req.OldName, "newName": req.NewName})
+	})
 	mux.HandleFunc("/api/job", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			http.Error(w, "GET only", 405)
@@ -852,6 +872,100 @@ func updateCSVRow(csvPath string, rowIndex int, row MasterRow) error {
 	return w.Error()
 }
 
+func renameMasterFile(repoDir, oldName, newName string) error {
+	oldName = strings.TrimSpace(oldName)
+	newName = strings.TrimSpace(newName)
+	if oldName == "" || newName == "" {
+		return errors.New("oldName and newName are required")
+	}
+	if strings.ContainsAny(oldName, `\/`) || strings.ContainsAny(newName, `\/`) {
+		return errors.New("master name must not contain path separators")
+	}
+	if strings.HasSuffix(oldName, ".csv") || strings.HasSuffix(newName, ".csv") {
+		return errors.New("master name must not include .csv")
+	}
+	if oldName == newName {
+		return nil
+	}
+
+	masterDir := filepath.Join(repoDir, "master", "by_work_type")
+	oldPath := filepath.Join(masterDir, oldName+".csv")
+	newPath := filepath.Join(masterDir, newName+".csv")
+
+	if _, err := os.Stat(oldPath); err != nil {
+		return fmt.Errorf("source master not found: %s (%v)", oldPath, err)
+	}
+	if _, err := os.Stat(newPath); err == nil {
+		return fmt.Errorf("target master already exists: %s", newPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to check target master: %v", err)
+	}
+
+	f, err := os.Open(oldPath)
+	if err != nil {
+		return fmt.Errorf("failed to open source master: %v", err)
+	}
+
+	reader := csv.NewReader(f)
+	records, err := reader.ReadAll()
+	if err != nil {
+		f.Close()
+		return fmt.Errorf("failed to read source master: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close source master: %v", err)
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("source master is empty: %s", oldPath)
+	}
+
+	workTypeIdx := -1
+	for i, h := range records[0] {
+		if strings.TrimPrefix(h, "\ufeff") == "工種" {
+			workTypeIdx = i
+			break
+		}
+	}
+	if workTypeIdx >= 0 {
+		for i := 1; i < len(records); i++ {
+			if workTypeIdx < len(records[i]) {
+				records[i][workTypeIdx] = newName
+			}
+		}
+	}
+
+	tmpPath := filepath.Join(masterDir, newName+".csv.tmp")
+	tmpFile, err := os.Create(tmpPath)
+	if err != nil {
+		return fmt.Errorf("failed to create temp master: %v", err)
+	}
+	writer := csv.NewWriter(tmpFile)
+	if err := writer.WriteAll(records); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to write temp master: %v", err)
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to flush temp master: %v", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to close temp master: %v", err)
+	}
+
+	if err := os.Rename(tmpPath, newPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to move temp master into place: %v", err)
+	}
+	if err := os.Remove(oldPath); err != nil {
+		return fmt.Errorf("renamed to %s but failed to remove old master %s: %v", newPath, oldPath, err)
+	}
+	return nil
+}
+
 func findMainCLI(repoDir string) (string, error) {
 	candidates := []string{
 		filepath.Join(repoDir, "photo-ai-go", "photo-ai.exe"),
@@ -868,8 +982,8 @@ func findMainCLI(repoDir string) (string, error) {
 func getRuntimeStatus(repoDir string) RuntimeStatus {
 	status := RuntimeStatus{
 		WebReady:          true,
-		AgentTerminalMode: "optional",
-		AgentOptional:     true,
+		AgentTerminalMode: "required_for_analysis",
+		AgentOptional:     false,
 	}
 	if cliPath, err := findMainCLIFunc(repoDir); err == nil {
 		status.MainCLIPath = cliPath

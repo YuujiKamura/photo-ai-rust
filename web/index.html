@@ -293,6 +293,139 @@ body {
   color: var(--text-muted);
   font-size: 14px;
 }
+.guide-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 24px 24px;
+  min-height: 0;
+}
+.intro-panel {
+  width: min(760px, 100%);
+  background: linear-gradient(180deg, rgba(124,111,224,0.08), rgba(255,255,255,0.02));
+  border: 1px solid rgba(124,111,224,0.28);
+  border-radius: 16px;
+  padding: 22px 24px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.22);
+  margin-right: auto;
+  margin-bottom: 8px;
+}
+.intro-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.intro-lead {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+.intro-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.intro-step {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.intro-step .num {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.intro-step-copy { min-width: 0; }
+.intro-step h4 {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.intro-step p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.intro-detail-toggle {
+  margin-top: 8px;
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.intro-detail-toggle:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.intro-detail {
+  display: none;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+.intro-detail.open {
+  display: block;
+}
+.intro-detail p {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.intro-detail-code {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 10px;
+  color: var(--text);
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.intro-detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.intro-detail-btn {
+  padding: 5px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.intro-detail-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+@media (max-width: 980px) {
+  .intro-step {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
 .master-tree-scroll {
   flex: 1;
   overflow-y: auto;
@@ -599,11 +732,95 @@ body {
     <div class="master-right">
       <div class="master-right-upper">
         <div class="right-tabs">
-          <button class="right-tab active" id="tabMaster">マスタツリー</button>
+          <button class="right-tab active" id="tabGuide">ガイド</button>
+          <button class="right-tab" id="tabMaster">マスタツリー</button>
+          <button class="right-tab" id="tabResult">リザルト</button>
           <button class="right-tab" id="tabReview">問診票</button>
         </div>
+        <div id="panelGuide" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+          <div class="master-right-header">
+            <span>使い方ガイド</span>
+          </div>
+          <div class="guide-scroll">
+            <div class="intro-panel">
+              <div class="intro-title">ここから始めれば進められます</div>
+              <div class="intro-lead">
+                この画面は、左を上から順に触っていけば、写真解析から確認、出力まで進められる作りです。
+                ただし写真解析は単体では動かず、裏でエージェント系の実行環境が動いている前提です。まずは「いま解析できる状態か」を見てから進めるのがコツです。
+              </div>
+              <div class="intro-steps">
+                <div class="intro-step">
+                  <div class="num">1</div>
+                  <div class="intro-step-copy">
+                    <h4>起動状態を確認する</h4>
+                    <p>最初に見るのは左下の「起動状態」です。`photo-ai.exe` や各 engine が揃っていても、それだけでは足りません。写真解析は AgentAPI 側の実行環境も使うので、Claude / Gemini などのエージェント系 CLI や常駐側が無いと、解析そのものが止まります。ここで missing や required が出ているなら、先にセットアップを済ませます。</p>
+                    <button class="intro-detail-toggle" type="button" data-detail-target="setupGuideDetail">エージェントAIのセットアップ手順を開く</button>
+                    <div class="intro-detail" id="setupGuideDetail">
+                      <p>ここでやるのは、写真解析の裏で使うエージェントAI実行環境のセットアップです。初回セットアップで一番迷いやすいのは、解析がアプリ単体で完結していないことです。まず Node.js / npm を使える状態にして、そのあと Gemini CLI を入れて認証します。Gemini を先に案内しているのは、最初に試す候補として分かりやすいからです。</p>
+                      <p style="margin-top:8px;">もし `npm` 自体が無ければ、先に Node.js を入れます。やり方は環境ごとに違います。Windows はダウンロードページを開き、macOS / Ubuntu-Debian は下のボタンからコマンドを送れます。</p>
+                      <div class="intro-detail-actions">
+                        <button class="intro-detail-btn" type="button" id="openNodeInstallWindowsBtn">Node導入: Windows</button>
+                        <button class="intro-detail-btn" type="button" id="sendNodeInstallMacBtn">Node導入: macOS (brew)</button>
+                        <button class="intro-detail-btn" type="button" id="sendNodeInstallUbuntuBtn">Node導入: Ubuntu/Debian</button>
+                      </div>
+                      <div class="intro-detail-code">npm install -g @google/gemini-cli
+gemini auth</div>
+                      <div class="intro-detail-actions">
+                        <button class="intro-detail-btn" type="button" id="sendGeminiInstallBtn">インストールコマンドを送る</button>
+                        <button class="intro-detail-btn" type="button" id="sendGeminiAuthBtn">認証コマンドを送る</button>
+                      </div>
+                      <p style="margin-top:8px;">認証まで通ったら、AgentAPI 側を起動してからこの画面に戻ります。詰まったら <code>docs/QUICKSTART.md</code> のトラブルシューティングを見れば、どこが欠けているか追えます。</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="intro-step">
+                  <div class="num">2</div>
+                  <div class="intro-step-copy">
+                    <h4>工種を選ぶ</h4>
+                    <p>次に、左の工種マスタから今回の解析対象に近い工種を選びます。右上のマスタツリーは「その工種で何を拾う想定なのか」を見る場所です。解析結果がおかしい時は、まずここで選んだ工種が合っているかを疑うと早いです。</p>
+                  </div>
+                </div>
+                <div class="intro-step">
+                  <div class="num">3</div>
+                  <div class="intro-step-copy">
+                    <h4>フォルダを指定</h4>
+                    <p>写真フォルダを選ぶか、パスを直接入力します。ここまで終わると Analyze を押せます。逆に言うと、工種とフォルダのどちらかが曖昧なままだと、その後の解析全体がずれやすいです。</p>
+                  </div>
+                </div>
+                <div class="intro-step">
+                  <div class="num">4</div>
+                  <div class="intro-step-copy">
+                    <h4>解析する</h4>
+                    <p>Analyze を押すと、選んだ工種マスタと写真フォルダを前提に解析が走り、result.json が生成されます。ここで大事なのは「正しく選んだ前提で解析が進む」ことです。工種や写真区分に迷う時や、途中で止まる時は、右下ターミナルからエージェント側の状態を見ると切り分けしやすいです。</p>
+                  </div>
+                </div>
+                <div class="intro-step">
+                  <div class="num">5</div>
+                  <div class="intro-step-copy">
+                    <h4>リザルトを確認する</h4>
+                    <p>解析直後の result.json は完成品ではなく、まず確認するための中間結果です。測点や備考が空欄のこともあるので、リザルトタブで未設定警告を見ます。手で直した同じ result.json を見直したい時は、ここからディスク再読込します。</p>
+                  </div>
+                </div>
+                <div class="intro-step">
+                  <div class="num">6</div>
+                  <div class="intro-step-copy">
+                    <h4>問診票で整える</h4>
+                    <p>問診票タブは補正専用です。リザルトで不足や違和感を見つけたあとで、ここで測点や備考を整えます。未保存の編集がある時は、再読込しても黙って潰さないようにしてあります。</p>
+                  </div>
+                </div>
+                <div class="intro-step">
+                  <div class="num">7</div>
+                  <div class="intro-step-copy">
+                    <h4>PDF / Excel を出力する</h4>
+                    <p>PDF / Excel は、いまこの画面で扱っている result.json からそのまま出ます。生成時に別のソースを選び直す作りではないので、確認と補正が終わってから出力するのが前提です。</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
         <!-- Master Tree Panel (existing) -->
-        <div id="panelMaster" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+        <div id="panelMaster" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
           <div class="master-right-header">
             <span id="rightHeaderLabel">工種を左から選択</span>
             <span class="spacer"></span>
@@ -616,8 +833,12 @@ body {
           </div>
           <div class="master-right-empty" id="masterRightEmpty">左の工種をクリックして展開</div>
         </div>
-        <!-- Review Panel (new) -->
-        <div class="review-panel" id="panelReview">
+        <div class="review-panel" id="panelResult" style="display:none;">
+          <div class="review-summary" id="resultSummary"></div>
+          <div class="review-scroll" id="resultScroll"></div>
+        </div>
+        <!-- Review Panel -->
+        <div class="review-panel" id="panelReview" style="display:none;">
           <div class="review-summary" id="reviewSummary"></div>
           <div class="review-scroll" id="reviewScroll"></div>
         </div>
@@ -733,10 +954,11 @@ let currentPdfPath = '';
 let currentExcelPath = '';
 let jobRunning = false;
 let runtimeStatus = null;
+let selectedMasterFiles = new Set();
 
 function updateButtonStates() {
   const hasFolder = selectedFolder.length > 0;
-  const hasWorkTypes = selectedWorkTypes.size > 0;
+  const hasWorkTypes = selectedMasterFiles.size > 0;
   const hasResult = currentResultPath.length > 0;
   document.querySelectorAll('.cli-btn[data-cmd]').forEach(btn => {
     btn.disabled = false;
@@ -780,7 +1002,7 @@ function renderRuntimeStatus() {
     { label: '解析CLI', value: runtimeStatus.mainCliAvailable ? 'ready' : 'missing', tone: runtimeStatus.mainCliAvailable ? 'ok' : 'warn', detail: runtimeStatus.mainCliPath || 'photo-ai.exe が必要' },
     { label: '解析engine', value: engineReady ? 'ready' : 'missing', tone: engineReady ? 'ok' : 'warn', detail: runtimeStatus.tagEnginePath || runtimeStatus.analysisEnginePath || 'tag/analysis engine が必要' },
     { label: '出力engine', value: exportReady ? 'ready' : 'partial', tone: exportReady ? 'ok' : 'warn', detail: runtimeStatus.pdfEnginePath || runtimeStatus.excelEnginePath || 'pdf/excel engine が必要' },
-    { label: 'ターミナル', value: terminalReady ? 'connected' : 'optional', tone: terminalReady ? 'ok' : 'muted', detail: terminalReady ? 'agent available' : '解析はエージェントなしで実行可' },
+    { label: 'AgentAPI/CLI', value: terminalReady ? 'connected' : 'required', tone: terminalReady ? 'ok' : 'warn', detail: terminalReady ? 'agent session connected' : '写真解析にはエージェント実行環境が必要' },
   ];
 
   el.innerHTML = rows.map(row => `
@@ -791,6 +1013,15 @@ function renderRuntimeStatus() {
     <div style="font-size:10px;color:var(--text-muted);margin-top:-2px;margin-bottom:4px;"><code>${escHtml(row.detail)}</code></div>
   `).join('');
 }
+
+document.addEventListener('click', (e) => {
+  if (!e.target.matches('.intro-detail-toggle')) return;
+  const targetId = e.target.dataset.detailTarget;
+  const detail = targetId ? document.getElementById(targetId) : null;
+  if (!detail) return;
+  const open = detail.classList.toggle('open');
+  e.target.textContent = open ? 'セットアップ手順を閉じる' : 'セットアップ手順を開く';
+});
 
 async function loadRuntimeStatus() {
   try {
@@ -822,7 +1053,13 @@ async function invokeApiJob(url, body, options = {}) {
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify(body)
     });
-    const data = await res.json();
+    const raw = await res.text();
+    let data = null;
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch (_) {
+      data = { error: raw };
+    }
     jobRunning = false;
 
     if (!res.ok || data.exitCode !== 0) {
@@ -857,6 +1094,7 @@ let treeRoot = null;
 let selectedWorkTypes = new Set();
 
 async function loadMaster() {
+  selectedLeafIds = new Set();
   try {
     const res = await fetch('/api/master');
     if (!res.ok) throw new Error('API server unreachable');
@@ -866,15 +1104,16 @@ async function loadMaster() {
     masterData = SAMPLE_MASTER;
   }
   buildTreeModel();
+  restoreState();
+  normalizeSelectedMasterFiles();
   renderCardList();
   
   // Restore state after master load
-  restoreState();
   renderRuntimeStatus();
   await loadRuntimeStatus();
   await syncJobState();
   document.querySelectorAll('.wt-card').forEach(card => {
-    if (card._node && selectedWorkTypes.has(card._node.label)) {
+    if (card._node && selectedMasterFiles.has(card._node.masterFile)) {
       card.classList.add('selected');
       for (const id of card._node.leafIds) selectedLeafIds.add(id);
     }
@@ -893,18 +1132,23 @@ function renderCardList() {
     card.className = 'wt-card';
     card.innerHTML = `<span class="wt-cb">\u2713</span><span class="wt-name">${node.label}</span><span class="wt-count">${node.leafIds.length}</span>`;
     card.addEventListener('click', () => {
-      if (selectedWorkTypes.has(node.label)) {
-        selectedWorkTypes.delete(node.label);
+      if (selectedMasterFiles.has(node.masterFile)) {
+        selectedMasterFiles.delete(node.masterFile);
         card.classList.remove('selected');
         for (const id of node.leafIds) selectedLeafIds.delete(id);
       } else {
-        selectedWorkTypes.add(node.label);
+        selectedMasterFiles.add(node.masterFile);
         card.classList.add('selected');
         for (const id of node.leafIds) selectedLeafIds.add(id);
       }
+      if (selectedMasterFiles.size > 0) switchTab('master');
       renderRightPanel();
       refreshAllCheckboxes();
       updateSummary();
+    });
+    card.addEventListener('dblclick', async (e) => {
+      e.stopPropagation();
+      await promptRenameMaster(node.masterFile);
     });
     card._node = node;
     list.appendChild(card);
@@ -915,15 +1159,15 @@ function renderRightPanel() {
   const container = document.getElementById('masterTreeContainer');
   const empty = document.getElementById('masterRightEmpty');
   container.innerHTML = '';
-  if (selectedWorkTypes.size === 0) {
+  if (selectedMasterFiles.size === 0) {
     empty.style.display = 'flex';
     document.getElementById('rightHeaderLabel').textContent = '工種を左から選択';
     return;
   }
   empty.style.display = 'none';
-  document.getElementById('rightHeaderLabel').textContent = [...selectedWorkTypes].join(' + ');
+  document.getElementById('rightHeaderLabel').textContent = [...selectedMasterFiles].join(' + ');
   for (const node of treeRoot) {
-    if (!selectedWorkTypes.has(node.label)) continue;
+    if (!selectedMasterFiles.has(node.masterFile)) continue;
     renderNodeExpanded(container, node);
   }
 }
@@ -934,7 +1178,7 @@ function buildTreeModel() {
   treeRoot = [];
 
   for (const [wtName, rows] of Object.entries(masterData)) {
-    const wtNode = { label: wtName, children: [], leafIds: [], depth: 0 };
+    const wtNode = { label: wtName, masterFile: wtName, children: [], leafIds: [], depth: 0 };
     const byPhotoType = new Map();
     for (const r of rows) {
       const pt = r.photoType || '';
@@ -984,6 +1228,46 @@ function buildTreeModel() {
       wtNode.leafIds.push(...ptNode.leafIds);
     }
     treeRoot.push(wtNode);
+  }
+}
+
+function normalizeSelectedMasterFiles() {
+  const valid = new Set(Object.keys(masterData));
+  selectedMasterFiles = new Set([...selectedMasterFiles].filter(name => valid.has(name)));
+}
+
+async function promptRenameMaster(oldName) {
+  const nextName = window.prompt('工種マスタ名を変更します。CSVファイル名ごと変わります。', oldName);
+  if (nextName == null) return;
+  const newName = nextName.trim();
+  if (!newName || newName === oldName) return;
+  if (/[\\\/]/.test(newName) || /\.csv$/i.test(newName)) {
+    alert('工種名にはパス区切りや .csv を含められません');
+    return;
+  }
+
+  setRunStatus(`工種マスタ名を変更中: ${oldName} -> ${newName}`, 'warn');
+  try {
+    const res = await fetch('/api/master/rename', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ oldName, newName })
+    });
+    const raw = await res.text();
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch (_) { data = { error: raw }; }
+    if (!res.ok) throw new Error(data.error || raw || 'rename failed');
+
+    if (selectedMasterFiles.has(oldName)) {
+      selectedMasterFiles.delete(oldName);
+      selectedMasterFiles.add(newName);
+    }
+    saveState();
+    await loadMaster();
+    setRunStatus(`工種マスタ名を変更しました: ${oldName} -> ${newName}`, 'ok');
+  } catch (err) {
+    setRunStatus(`工種マスタ名変更失敗: ${err.message}`, 'error');
+    alert(`工種マスタ名変更失敗: ${err.message}`);
   }
 }
 
@@ -1088,6 +1372,12 @@ function renderNodeExpanded(parent, node) {
       });
       form.querySelector('input').focus();
     });
+  } else if (node.depth === 0) {
+    row.addEventListener('dblclick', async (e) => {
+      if (e.target === toggle) return;
+      e.stopPropagation();
+      await promptRenameMaster(node.masterFile);
+    });
   }
 }
 
@@ -1097,10 +1387,10 @@ function refreshAllCheckboxes() {
     const state = getCheckState(card._node);
     if (state === 'checked') {
       card.classList.add('selected');
-      selectedWorkTypes.add(card._node.label);
+      selectedMasterFiles.add(card._node.masterFile);
     } else if (state === 'unchecked') {
       card.classList.remove('selected');
-      selectedWorkTypes.delete(card._node.label);
+      selectedMasterFiles.delete(card._node.masterFile);
     }
   });
 }
@@ -1148,7 +1438,7 @@ document.getElementById('folderPathInput').addEventListener('input', () => {
 });
 
 async function runAnalyze(folder) {
-  const names = [...selectedWorkTypes];
+  const names = [...selectedMasterFiles];
   if (!names.includes('共通')) names.push('共通');
   await invokeApiJob('/api/analyze', { folder, masterFiles: names }, {
     startStatus: '解析中...',
@@ -1160,7 +1450,7 @@ async function runAnalyze(folder) {
 }
 
 document.getElementById('analyzeBtn').addEventListener('click', () => {
-  if (selectedWorkTypes.size === 0) return alert('工種を選択してください');
+  if (selectedMasterFiles.size === 0) return alert('工種を選択してください');
   if (!selectedFolder) return document.getElementById('folderPathInput').focus();
   runAnalyze(selectedFolder);
 });
@@ -1199,13 +1489,43 @@ function sendToTerminal(cmd) {
   if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'command', cmd: cmd }, '*');
 }
 
+function sendSetupCommand(cmd, statusText) {
+  sendToTerminal(cmd);
+  if (statusText) {
+    setRunStatus(statusText, terminalReady ? 'ok' : 'warn');
+  } else if (!terminalReady) {
+    setRunStatus('ターミナル未接続のため、コマンドをキューしました', 'warn');
+  }
+}
+
+document.getElementById('sendGeminiInstallBtn')?.addEventListener('click', () => {
+  sendSetupCommand('npm install -g @google/gemini-cli', terminalReady ? 'Gemini CLI インストールコマンドを送信しました' : 'Gemini CLI インストールコマンドをキューしました');
+});
+
+document.getElementById('sendGeminiAuthBtn')?.addEventListener('click', () => {
+  sendSetupCommand('gemini auth', terminalReady ? 'Gemini 認証コマンドを送信しました' : 'Gemini 認証コマンドをキューしました');
+});
+
+document.getElementById('openNodeInstallWindowsBtn')?.addEventListener('click', () => {
+  window.open('https://nodejs.org/en/download', '_blank', 'noopener');
+  setRunStatus('Windows 用 Node.js ダウンロードページを開きました', 'ok');
+});
+
+document.getElementById('sendNodeInstallMacBtn')?.addEventListener('click', () => {
+  sendSetupCommand('brew install node', terminalReady ? 'macOS 用 Node.js 導入コマンドを送信しました' : 'macOS 用 Node.js 導入コマンドをキューしました');
+});
+
+document.getElementById('sendNodeInstallUbuntuBtn')?.addEventListener('click', () => {
+  sendSetupCommand('sudo apt-get update && sudo apt-get install -y nodejs npm', terminalReady ? 'Ubuntu/Debian 用 Node.js 導入コマンドを送信しました' : 'Ubuntu/Debian 用 Node.js 導入コマンドをキューしました');
+});
+
 document.getElementById('addRowBtn').addEventListener('click', () => {
   const sel = document.getElementById('formWorkType');
   sel.innerHTML = '';
   Object.keys(masterData).forEach(name => {
     const opt = document.createElement('option');
     opt.value = name; opt.textContent = name;
-    if (selectedWorkTypes.has(name)) opt.selected = true;
+    if (selectedMasterFiles.has(name)) opt.selected = true;
     sel.appendChild(opt);
   });
   ['formPhotoType','formVariety','formSubphase','formRemarks','formSearchPatterns'].forEach(id => document.getElementById(id).value = '');
@@ -1282,7 +1602,7 @@ document.getElementById('dpRefreshBtn').addEventListener('click', () => {
 });
 
 function saveState() {
-  localStorage.setItem('photoai_workTypes', JSON.stringify([...selectedWorkTypes]));
+  localStorage.setItem('photoai_workTypes', JSON.stringify([...selectedMasterFiles]));
   localStorage.setItem('photoai_folder', selectedFolder);
   localStorage.setItem('photoai_result_path', currentResultPath);
   localStorage.setItem('photoai_pdf_path', currentPdfPath);
@@ -1291,7 +1611,7 @@ function saveState() {
 function restoreState() {
   try {
     const wt = JSON.parse(localStorage.getItem('photoai_workTypes'));
-    if (wt) wt.forEach(n => selectedWorkTypes.add(n));
+    if (wt) wt.forEach(n => selectedMasterFiles.add(n));
   } catch(e) {}
   selectedFolder = localStorage.getItem('photoai_folder') || '';
   currentResultPath = localStorage.getItem('photoai_result_path') || '';
@@ -1327,11 +1647,13 @@ async function syncJobState() {
 let reviewData = null;
 let reviewDirty = false;
 
+document.getElementById('tabGuide').addEventListener('click', () => switchTab('guide'));
 document.getElementById('tabMaster').addEventListener('click', () => switchTab('master'));
+document.getElementById('tabResult').addEventListener('click', () => switchTab('result'));
 document.getElementById('tabReview').addEventListener('click', () => switchTab('review'));
 
 function switchTab(tab) {
-  ['Master','Review'].forEach(t => {
+  ['Guide','Master','Result','Review'].forEach(t => {
     const el = document.getElementById('panel' + t);
     if (el) el.style.display = (tab.toLowerCase() === t.toLowerCase()) ? 'flex' : 'none';
     const btn = document.getElementById('tab' + t);
@@ -1339,11 +1661,22 @@ function switchTab(tab) {
   });
 }
 
-document.getElementById('loadResultBtn').addEventListener('click', loadReviewData);
+document.getElementById('loadResultBtn').addEventListener('click', () => loadReviewData({ force: false }));
 
-async function loadReviewData() {
+function canReloadResult(force = false) {
+  if (force) return true;
+  if (!reviewDirty) return true;
+  return window.confirm('未保存の問診票編集があります。ディスク上の result.json で上書きしますか？');
+}
+
+async function loadReviewData(options = {}) {
+  const { force = false } = options;
   if (!currentResultPath) {
     setRunStatus('先に解析を完了してください', 'warn');
+    return;
+  }
+  if (!canReloadResult(force)) {
+    setRunStatus('再読込を中止しました', 'warn');
     return;
   }
   try {
@@ -1355,12 +1688,39 @@ async function loadReviewData() {
     return;
   }
   reviewDirty = false;
+  renderResultPanel();
   renderReviewPanel();
-  switchTab('review');
+  switchTab('result');
+}
+
+function renderResultPanel() {
+  const summary = document.getElementById('resultSummary');
+  const scroll = document.getElementById('resultScroll');
+  if (!reviewData || !reviewData.length) {
+    summary.innerHTML = '<span class="badge badge-warn">result.json 未読込</span>';
+    scroll.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:13px;">左の「結果読み込み」で直近の result.json を開いてください。</div>';
+    return;
+  }
+
+  const total = reviewData.length;
+  const emptyStation = reviewData.filter(r => !r.station).length;
+  const emptyWorkType = reviewData.filter(r => !r.workType).length;
+  const emptyRemarks = reviewData.filter(r => !r.remarks).length;
+  summary.innerHTML = `<span class="badge badge-ok">${total}枚</span><span class="badge">${escHtml(currentResultPath || 'result.json')}</span>${emptyStation > 0 ? `<span class="badge badge-warn">測点未設定: ${emptyStation}</span>` : ''}${emptyWorkType > 0 ? `<span class="badge badge-warn">工種未設定: ${emptyWorkType}</span>` : ''}${emptyRemarks > 0 ? `<span class="badge badge-warn">備考未設定: ${emptyRemarks}</span>` : ''}<span class="spacer"></span><button class="review-save-btn" id="resultReloadBtn">ディスクから再読込</button>`;
+  document.getElementById('resultReloadBtn').addEventListener('click', () => loadReviewData({ force: false }));
+
+  scroll.innerHTML = reviewData.map((item, idx) => {
+    const label = item.remarks || item.focusTarget || item.fileName || `item-${idx + 1}`;
+    return `<div class="review-group open"><div class="review-group-header"><span class="review-group-title">${escHtml(label)}</span><span class="review-group-category">${escHtml(item.photoCategory || '未分類')}</span></div><div class="review-group-body"><div class="review-photos"><span class="review-photo-chip">${item.hasBoard ? '<span class="board-icon">&#9635;</span>' : ''}${escHtml(item.fileName || `photo-${idx + 1}`)}</span></div><div class="review-field"><span class="review-field-label">工種</span><span class="review-field-input" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.workType || '')}</span><span class="review-field-status">${item.workType ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">種別</span><span class="review-field-input" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.variety || '')}</span><span class="review-field-status">${item.variety ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">細別</span><span class="review-field-input" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.subphase || '')}</span><span class="review-field-status">${item.subphase ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">測点</span><span class="review-field-input ${item.station ? '' : 'empty'}" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.station || '')}</span><span class="review-field-status">${item.station ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div><div class="review-field"><span class="review-field-label">備考</span><span class="review-field-input ${item.remarks ? '' : 'empty'}" style="pointer-events:none;background:var(--input-bg);">${escHtml(item.remarks || '')}</span><span class="review-field-status">${item.remarks ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--yellow);">&#9888;</span>'}</span></div></div></div>`;
+  }).join('');
 }
 
 function renderReviewPanel() {
-  if (!reviewData || !reviewData.length) return;
+  if (!reviewData || !reviewData.length) {
+    document.getElementById('reviewSummary').innerHTML = '<span class="badge badge-warn">問診票データ未読込</span>';
+    document.getElementById('reviewScroll').innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:13px;">左の「結果読み込み」で result.json を読み込むと、ここで補正できます。</div>';
+    return;
+  }
   const groups = new Map();
   reviewData.forEach((item, idx) => {
     const gid = item.group || idx;
@@ -1428,6 +1788,7 @@ async function saveReviewData() {
     const r = await fetch('/api/result/update', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: currentResultPath, updates }) });
     if (!r.ok) throw new Error(await r.text());
     reviewDirty = false; document.getElementById('reviewSaveBtn').disabled = true;
+    renderResultPanel();
     renderReviewPanel();
     setRunStatus(`結果保存完了: ${currentResultPath}`, 'ok');
   } catch (e) { alert('保存に失敗: ' + e.message); }
@@ -1436,6 +1797,8 @@ async function saveReviewData() {
 function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 function escAttr(s) { return (s || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
+renderResultPanel();
+renderReviewPanel();
 loadMaster();
 </script>
 </body>

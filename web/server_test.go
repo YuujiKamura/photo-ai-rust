@@ -164,8 +164,11 @@ func TestGetRuntimeStatusWithoutCLI(t *testing.T) {
 	if status.MainCLIAvailable {
 		t.Fatal("cli should be unavailable")
 	}
-	if !status.AgentOptional {
-		t.Fatal("agent should be optional")
+	if status.AgentOptional {
+		t.Fatal("agent should not be optional for analysis")
+	}
+	if status.AgentTerminalMode != "required_for_analysis" {
+		t.Fatalf("unexpected agent mode: %q", status.AgentTerminalMode)
 	}
 }
 
@@ -242,6 +245,46 @@ func TestPrepareMasterFileMissing(t *testing.T) {
 	_, _, err := prepareMasterFile(t.TempDir(), []string{"missing"})
 	if err == nil {
 		t.Fatal("expected missing master error")
+	}
+}
+
+func TestRenameMasterFileRenamesCSVAndUpdatesWorkTypeColumn(t *testing.T) {
+	resetTestState(t)
+	repo := t.TempDir()
+	oldPath := filepath.Join(repo, "master", "by_work_type", "仮設工.csv")
+	mustWriteFile(t, oldPath, "費目,写真区分,工種,種別,細別,備考,検索パターン\n共通,施工状況写真,仮設工,仮設,準備,着工前,着工前\n")
+
+	if err := renameMasterFile(repo, "仮設工", "共通仮設"); err != nil {
+		t.Fatalf("renameMasterFile: %v", err)
+	}
+
+	if _, err := os.Stat(oldPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected old master removed, got err=%v", err)
+	}
+
+	newPath := filepath.Join(repo, "master", "by_work_type", "共通仮設.csv")
+	data, err := os.ReadFile(newPath)
+	if err != nil {
+		t.Fatalf("read renamed master: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "共通仮設") {
+		t.Fatalf("expected renamed work type in csv, got %s", text)
+	}
+	if strings.Contains(text, "仮設工,仮設") {
+		t.Fatalf("expected old work type value to be updated, got %s", text)
+	}
+}
+
+func TestRenameMasterFileRejectsExistingTarget(t *testing.T) {
+	resetTestState(t)
+	repo := t.TempDir()
+	mustWriteFile(t, filepath.Join(repo, "master", "by_work_type", "仮設工.csv"), "費目,写真区分,工種\n共通,施工状況写真,仮設工\n")
+	mustWriteFile(t, filepath.Join(repo, "master", "by_work_type", "共通仮設.csv"), "費目,写真区分,工種\n共通,施工状況写真,共通仮設\n")
+
+	err := renameMasterFile(repo, "仮設工", "共通仮設")
+	if err == nil {
+		t.Fatal("expected rename conflict")
 	}
 }
 
