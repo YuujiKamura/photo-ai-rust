@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/YuujiKamura/deckpilot/daemon"
 	"golang.org/x/net/websocket"
@@ -33,6 +35,47 @@ type MasterRow struct {
 	Subphase       string `json:"subphase"`
 	Remarks        string `json:"remarks"`
 	SearchPatterns string `json:"searchPatterns"`
+}
+
+type JobState struct {
+	Running      bool   `json:"running"`
+	Action       string `json:"action,omitempty"`
+	Folder       string `json:"folder,omitempty"`
+	MasterPath   string `json:"masterPath,omitempty"`
+	ResultPath   string `json:"resultPath,omitempty"`
+	PdfPath      string `json:"pdfPath,omitempty"`
+	ExcelPath    string `json:"excelPath,omitempty"`
+	LastExitCode int    `json:"lastExitCode"`
+	LastError    string `json:"lastError,omitempty"`
+	LastStdout   string `json:"lastStdout,omitempty"`
+	LastStderr   string `json:"lastStderr,omitempty"`
+	UpdatedAt    string `json:"updatedAt,omitempty"`
+}
+
+type AppState struct {
+	mu  sync.Mutex
+	job JobState
+}
+
+var appState AppState
+var (
+	findMainCLIFunc       = findMainCLI
+	runCLIFunc            = runCLI
+	prepareMasterFileFunc = prepareMasterFile
+)
+
+func (s *AppState) snapshot() JobState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.job
+}
+
+func (s *AppState) update(mutator func(*JobState)) JobState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	mutator(&s.job)
+	s.job.UpdatedAt = time.Now().Format(time.RFC3339)
+	return s.job
 }
 
 func loadMasterCSVs(repoDir string) (map[string][]MasterRow, error) {
@@ -261,6 +304,14 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("/api/job", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "GET only", 405)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(appState.snapshot())
+	})
 	mux.HandleFunc("/api/result", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			http.Error(w, "GET only", 405)
@@ -272,6 +323,10 @@ func main() {
 			return
 		}
 		resolved := resolvePath(repoDir, jsonPath)
+		if !isPathAllowed(repoDir, resolved) {
+			http.Error(w, "path not allowed", 403)
+			return
+		}
 		data, err := os.ReadFile(resolved)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to read %s: %v", resolved, err), 404)
@@ -303,6 +358,10 @@ func main() {
 			return
 		}
 		resolved := resolvePath(repoDir, req.Path)
+		if !isPathAllowed(repoDir, resolved) {
+			http.Error(w, "path not allowed", 403)
+			return
+		}
 		raw, err := os.ReadFile(resolved)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to read %s: %v", resolved, err), 404)
@@ -337,95 +396,15 @@ func main() {
 	})
 
 	mux.HandleFunc("/api/analyze", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
-			http.Error(w, "POST only", 405)
-			return
-		}
-		var req struct {
-			Folder      string   `json:"folder"`
-			MasterFiles []string `json:"masterFiles"`
-			Output      string   `json:"output"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		if req.Folder == "" {
-			http.Error(w, "folder is required", 400)
-			return
-		}
+		handleAnalyze(w, r, repoDir)
+	})
 
-		// Build cargo run arguments
-		args := []string{"run", "--release", "--", "analyze", req.Folder}
+	mux.HandleFunc("/api/export/pdf", func(w http.ResponseWriter, r *http.Request) {
+		handleExport(w, r, repoDir, "pdf")
+	})
 
-		// Handle master files: merge multiple CSVs into a temp file if needed
-		masterCleanup, masterPath, mergeErr := prepareMasterFile(repoDir, req.MasterFiles)
-		if mergeErr != nil {
-			http.Error(w, fmt.Sprintf("master file error: %v", mergeErr), 500)
-			return
-		}
-		if masterCleanup != nil {
-			defer masterCleanup()
-		}
-		if masterPath != "" {
-			args = append(args, "--master", masterPath)
-		}
-
-		if req.Output != "" {
-			args = append(args, "--output", req.Output)
-		}
-
-		// If ?via=cp is set, send the cargo command through CP instead of exec
-		if r.URL.Query().Get("via") == "cp" {
-			fullCmd := "cargo " + strings.Join(args, " ") + "\n"
-			encoded := base64.StdEncoding.EncodeToString([]byte(fullCmd))
-			cpCommand := "INPUT|web-server|" + encoded
-			resp, err := sendCPCommand(getCPURL(), cpCommand)
-			if err != nil {
-				w.Header().Set("Content-Type", "application/json; charset=utf-8")
-				w.WriteHeader(502)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"exitCode": -1,
-					"stdout":   "",
-					"stderr":   err.Error(),
-					"via":      "cp",
-				})
-				return
-			}
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"exitCode": 0,
-				"stdout":   resp,
-				"stderr":   "",
-				"via":      "cp",
-			})
-			return
-		}
-
-		cmd := exec.Command("cargo", args...)
-		cmd.Dir = repoDir
-
-		var stdout, stderr strings.Builder
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		runErr := cmd.Run()
-		exitCode := 0
-		if runErr != nil {
-			if exitErr, ok := runErr.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-			} else {
-				http.Error(w, fmt.Sprintf("exec error: %v", runErr), 500)
-				return
-			}
-		}
-
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"exitCode": exitCode,
-			"stdout":   stdout.String(),
-			"stderr":   stderr.String(),
-		})
+	mux.HandleFunc("/api/export/excel", func(w http.ResponseWriter, r *http.Request) {
+		handleExport(w, r, repoDir, "excel")
 	})
 
 	mux.HandleFunc("/api/download", func(w http.ResponseWriter, r *http.Request) {
@@ -439,16 +418,13 @@ func main() {
 			return
 		}
 		resolved := resolvePath(repoDir, filePath)
-
-		// Security: ensure the resolved path is within repoDir
+		if !isPathAllowed(repoDir, resolved) {
+			http.Error(w, "path traversal denied", 403)
+			return
+		}
 		absResolved, err := filepath.Abs(resolved)
 		if err != nil {
 			http.Error(w, "invalid path", 400)
-			return
-		}
-		absRepo, _ := filepath.Abs(repoDir)
-		if !strings.HasPrefix(absResolved, absRepo+string(filepath.Separator)) && absResolved != absRepo {
-			http.Error(w, "path traversal denied", 403)
 			return
 		}
 
@@ -485,7 +461,7 @@ func main() {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		cleanup, masterPath, err := prepareMasterFile(repoDir, req.MasterFiles)
+		cleanup, masterPath, err := prepareMasterFileFunc(repoDir, req.MasterFiles)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -610,6 +586,201 @@ if ($d.ShowDialog() -eq 'OK') {
 	}
 }
 
+func handleExport(w http.ResponseWriter, r *http.Request, repoDir, format string) {
+	if r.Method != "POST" {
+		http.Error(w, "POST only", 405)
+		return
+	}
+
+	var req struct {
+		ResultPath string `json:"resultPath"`
+		Output     string `json:"output"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	snap := appState.snapshot()
+	resultPath := req.ResultPath
+	if resultPath == "" {
+		resultPath = snap.ResultPath
+	}
+	if resultPath == "" {
+		http.Error(w, "result path is required", 400)
+		return
+	}
+
+	resultPath = resolvePath(repoDir, resultPath)
+	resultPath, err := filepath.Abs(resultPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid result path: %v", err), 400)
+		return
+	}
+	if !isPathAllowed(repoDir, resultPath) {
+		http.Error(w, "result path not allowed", 403)
+		return
+	}
+	if _, err := os.Stat(resultPath); err != nil {
+		http.Error(w, fmt.Sprintf("result file not found: %v", err), 404)
+		return
+	}
+
+	outputPath := req.Output
+	if outputPath == "" {
+		outputPath = defaultExportPath(resultPath, format)
+	}
+	outputPath, err = filepath.Abs(outputPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid output path: %v", err), 400)
+		return
+	}
+
+	cliPath, err := findMainCLIFunc(repoDir)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	args := []string{"export", format, resultPath, "-o", outputPath}
+	appState.update(func(job *JobState) {
+		job.Running = true
+		job.Action = "export_" + format
+		job.ResultPath = resultPath
+		job.LastError = ""
+		job.LastStdout = ""
+		job.LastStderr = ""
+		job.LastExitCode = 0
+	})
+
+	stdout, stderr, exitCode, runErr := runCLIFunc(repoDir, cliPath, args)
+	appState.update(func(job *JobState) {
+		job.Running = false
+		job.Action = "idle"
+		job.LastStdout = stdout
+		job.LastStderr = stderr
+		job.LastExitCode = exitCode
+		if runErr != nil {
+			job.LastError = runErr.Error()
+		}
+		if exitCode == 0 {
+			if format == "pdf" {
+				job.PdfPath = outputPath
+			} else if format == "excel" {
+				job.ExcelPath = outputPath
+			}
+		}
+	})
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"exitCode":   exitCode,
+		"stdout":     stdout,
+		"stderr":     stderr,
+		"resultPath": resultPath,
+		"outputPath": outputPath,
+		"error":      errorString(runErr),
+	})
+}
+
+func handleAnalyze(w http.ResponseWriter, r *http.Request, repoDir string) {
+	if r.Method != "POST" {
+		http.Error(w, "POST only", 405)
+		return
+	}
+	var req struct {
+		Folder      string   `json:"folder"`
+		MasterFiles []string `json:"masterFiles"`
+		Output      string   `json:"output"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	if req.Folder == "" {
+		http.Error(w, "folder is required", 400)
+		return
+	}
+	cliPath, err := findMainCLIFunc(repoDir)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	folderPath, err := filepath.Abs(req.Folder)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid folder path: %v", err), 400)
+		return
+	}
+	folderInfo, err := os.Stat(folderPath)
+	if err != nil || !folderInfo.IsDir() {
+		http.Error(w, "folder does not exist", 400)
+		return
+	}
+
+	masterCleanup, masterPath, mergeErr := prepareMasterFileFunc(repoDir, req.MasterFiles)
+	if mergeErr != nil {
+		http.Error(w, fmt.Sprintf("master file error: %v", mergeErr), 500)
+		return
+	}
+	if masterCleanup != nil {
+		defer masterCleanup()
+	}
+	resultPath := req.Output
+	if resultPath == "" {
+		resultPath = filepath.Join(folderPath, "result.json")
+	}
+	resultPath, err = filepath.Abs(resultPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid output path: %v", err), 400)
+		return
+	}
+
+	args := []string{"analyze", folderPath, "-o", resultPath}
+	if masterPath != "" {
+		args = append(args, "-m", masterPath)
+	}
+
+	appState.update(func(job *JobState) {
+		job.Running = true
+		job.Action = "analyze"
+		job.Folder = folderPath
+		job.MasterPath = masterPath
+		job.ResultPath = resultPath
+		job.PdfPath = ""
+		job.ExcelPath = ""
+		job.LastError = ""
+		job.LastStdout = ""
+		job.LastStderr = ""
+		job.LastExitCode = 0
+	})
+
+	stdout, stderr, exitCode, runErr := runCLIFunc(repoDir, cliPath, args)
+	appState.update(func(job *JobState) {
+		job.Running = false
+		job.Action = "idle"
+		job.LastStdout = stdout
+		job.LastStderr = stderr
+		job.LastExitCode = exitCode
+		if runErr != nil {
+			job.LastError = runErr.Error()
+		}
+		if exitCode != 0 {
+			job.PdfPath = ""
+			job.ExcelPath = ""
+		}
+	})
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"exitCode":   exitCode,
+		"stdout":     stdout,
+		"stderr":     stderr,
+		"resultPath": resultPath,
+		"error":      errorString(runErr),
+	})
+}
+
 func updateCSVRow(csvPath string, rowIndex int, row MasterRow) error {
 	f, err := os.Open(csvPath)
 	if err != nil {
@@ -659,6 +830,154 @@ func updateCSVRow(csvPath string, rowIndex int, row MasterRow) error {
 	w.WriteAll(allRows)
 	w.Flush()
 	return w.Error()
+}
+
+func findMainCLI(repoDir string) (string, error) {
+	candidates := []string{
+		filepath.Join(repoDir, "photo-ai-go", "photo-ai.exe"),
+		filepath.Join(repoDir, "photo-ai.exe"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("photo-ai.exe not found")
+}
+
+func resolveEngineBinaries(repoDir, cliPath string) map[string]string {
+	engineNames := map[string]string{
+		"PHOTO_TAG_ENGINE_EXE":      "photo-tag-engine.exe",
+		"PHOTO_ANALYSIS_ENGINE_EXE": "photo-analysis-engine.exe",
+		"PHOTO_PDF_ENGINE_EXE":      "photo-pdf-engine.exe",
+		"PHOTO_EXCEL_ENGINE_EXE":    "photo-excel-engine.exe",
+	}
+
+	searchDirs := []string{
+		filepath.Dir(cliPath),
+		filepath.Join(repoDir, "target", "release"),
+		filepath.Join(repoDir, "target", "debug"),
+		`F:\rust-targets\release`,
+		`F:\rust-targets\debug`,
+	}
+
+	resolved := make(map[string]string, len(engineNames))
+	for envVar, exeName := range engineNames {
+		if current := os.Getenv(envVar); current != "" {
+			if info, err := os.Stat(current); err == nil && !info.IsDir() {
+				resolved[envVar] = current
+				continue
+			}
+		}
+		for _, dir := range searchDirs {
+			if dir == "" {
+				continue
+			}
+			candidate := filepath.Join(dir, exeName)
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				resolved[envVar] = candidate
+				break
+			}
+		}
+	}
+	return resolved
+}
+
+func runCLI(repoDir, cliPath string, args []string) (stdout string, stderr string, exitCode int, err error) {
+	cmd := exec.Command(cliPath, args...)
+	cmd.Dir = repoDir
+
+	engineBinaries := resolveEngineBinaries(repoDir, cliPath)
+	env := os.Environ()
+	pathEntries := []string{filepath.Dir(cliPath)}
+	for envVar, exePath := range engineBinaries {
+		env = append(env, envVar+"="+exePath)
+		pathEntries = append(pathEntries, filepath.Dir(exePath))
+	}
+	if len(pathEntries) > 0 {
+		env = append(env, "PATH="+strings.Join(append(pathEntries, os.Getenv("PATH")), string(os.PathListSeparator)))
+	}
+	cmd.Env = env
+
+	var outBuf, errBuf strings.Builder
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	runErr := cmd.Run()
+	if runErr != nil {
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			return outBuf.String(), errBuf.String(), exitErr.ExitCode(), runErr
+		}
+		return outBuf.String(), errBuf.String(), -1, runErr
+	}
+	return outBuf.String(), errBuf.String(), 0, nil
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func defaultExportPath(resultPath, format string) string {
+	dir := filepath.Dir(resultPath)
+	switch format {
+	case "pdf":
+		return filepath.Join(dir, "工事写真帳.pdf")
+	case "excel":
+		return filepath.Join(dir, "工事写真帳.xlsx")
+	default:
+		return filepath.Join(dir, "output")
+	}
+}
+
+func isWithin(basePath, targetPath string) bool {
+	if basePath == "" {
+		return false
+	}
+	baseAbs, err := filepath.Abs(basePath)
+	if err != nil {
+		return false
+	}
+	targetAbs, err := filepath.Abs(targetPath)
+	if err != nil {
+		return false
+	}
+	if baseAbs == targetAbs {
+		return true
+	}
+	rel, err := filepath.Rel(baseAbs, targetAbs)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func isPathAllowed(repoDir, targetPath string) bool {
+	snap := appState.snapshot()
+	candidates := []string{
+		repoDir,
+		snap.Folder,
+		snap.ResultPath,
+		snap.PdfPath,
+		snap.ExcelPath,
+	}
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if strings.EqualFold(filepath.Ext(candidate), "") {
+			if isWithin(candidate, targetPath) {
+				return true
+			}
+			continue
+		}
+		if isWithin(candidate, targetPath) || isWithin(filepath.Dir(candidate), targetPath) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolvePath resolves a path relative to repoDir if it is not absolute.

@@ -100,33 +100,44 @@ func resolveEnginePath(envVar, defaultName string) (string, error) {
 	return defaultName, nil // Fallback to PATH
 }
 
-// parseEngineResponse parses the last line of output as a JSON EngineResponse.
+// parseEngineResponse parses the last JSON line of output as an EngineResponse.
 func parseEngineResponse(output []byte, target any) error {
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) == 0 {
 		return fmt.Errorf("empty output from engine")
 	}
-	lastLine := lines[len(lines)-1]
 
-	var resp struct {
-		OK    bool            `json:"ok"`
-		Data  json.RawMessage `json:"data"`
-		Error string          `json:"error"`
+	var (
+		resp     struct {
+			OK    bool            `json:"ok"`
+			Data  json.RawMessage `json:"data"`
+			Error string          `json:"error"`
+		}
+		parseErr error
+	)
+
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" || !(strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}")) {
+			continue
+		}
+		if err := json.Unmarshal([]byte(line), &resp); err == nil {
+			if !resp.OK {
+				return fmt.Errorf("engine error: %s", resp.Error)
+			}
+			if err := json.Unmarshal(resp.Data, target); err != nil {
+				return fmt.Errorf("failed to parse engine data: %w", err)
+			}
+			return nil
+		} else {
+			parseErr = err
+		}
 	}
 
-	if err := json.Unmarshal([]byte(lastLine), &resp); err != nil {
-		return fmt.Errorf("failed to parse engine JSON: %w\nraw output: %s", err, string(output))
+	if parseErr != nil {
+		return fmt.Errorf("failed to parse engine JSON: %w\nraw output: %s", parseErr, string(output))
 	}
-
-	if !resp.OK {
-		return fmt.Errorf("engine error: %s", resp.Error)
-	}
-
-	if err := json.Unmarshal(resp.Data, target); err != nil {
-		return fmt.Errorf("failed to parse engine data: %w", err)
-	}
-
-	return nil
+	return fmt.Errorf("failed to find engine JSON in output\nraw output: %s", string(output))
 }
 
 // GeneratePDF calls the photo-pdf-engine.exe to generate a PDF photo book.

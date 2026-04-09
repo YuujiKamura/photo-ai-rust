@@ -558,6 +558,7 @@ body {
         <button class="cli-btn" id="exportPdfBtn" disabled>Export PDF</button>
         <button class="cli-btn" id="exportExcelBtn" disabled>Export Excel</button>
         <button class="cli-btn load-result" id="loadResultBtn" disabled>結果読み込み</button>
+        <div id="runStatus" style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:8px;">解析待機中</div>
       </div>
       <div class="master-left-footer">
         <div><span class="summary-count" id="summaryCount">0</span> <span class="summary-label">行選択中</span></div>
@@ -696,18 +697,90 @@ function applyAlias(value, aliases) {
 // --- Internal state ---
 let selectedFolder = '';
 let terminalReady = false;
-let analyzeRun = false;
+let currentResultPath = '';
+let currentPdfPath = '';
+let currentExcelPath = '';
+let jobRunning = false;
 
 function updateButtonStates() {
   const hasFolder = selectedFolder.length > 0;
   const hasWorkTypes = selectedWorkTypes.size > 0;
+  const hasResult = currentResultPath.length > 0;
   document.querySelectorAll('.cli-btn[data-cmd]').forEach(btn => {
     btn.disabled = false;
   });
-  document.getElementById('analyzeBtn').disabled = !(hasFolder && hasWorkTypes);
-  document.getElementById('exportPdfBtn').disabled = !analyzeRun;
-  document.getElementById('exportExcelBtn').disabled = !analyzeRun;
-  document.getElementById('loadResultBtn').disabled = !analyzeRun;
+  document.getElementById('analyzeBtn').disabled = !(hasFolder && hasWorkTypes) || jobRunning;
+  document.getElementById('exportPdfBtn').disabled = !hasResult || jobRunning;
+  document.getElementById('exportExcelBtn').disabled = !hasResult || jobRunning;
+  document.getElementById('loadResultBtn').disabled = !hasResult || jobRunning;
+}
+
+function setRunStatus(text, tone = 'muted') {
+  const el = document.getElementById('runStatus');
+  if (!el) return;
+  el.textContent = text;
+  const colors = {
+    muted: 'var(--text-muted)',
+    ok: 'var(--green)',
+    warn: 'var(--yellow)',
+    error: 'var(--red)',
+  };
+  el.style.color = colors[tone] || colors.muted;
+}
+
+function updatePaths(resultPath, pdfPath, excelPath) {
+  if (resultPath !== undefined) currentResultPath = resultPath || '';
+  if (pdfPath !== undefined) currentPdfPath = pdfPath || '';
+  if (excelPath !== undefined) currentExcelPath = excelPath || '';
+}
+
+async function invokeApiJob(url, body, options = {}) {
+  const {
+    startStatus = '実行中...',
+    successStatus = null,
+    successTone = 'ok',
+    failurePrefix = '実行失敗',
+    onSuccess = null,
+    clearPathsOnFailure = false,
+    openDownload = false,
+  } = options;
+
+  jobRunning = true;
+  updateButtonStates();
+  setRunStatus(startStatus, 'warn');
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    jobRunning = false;
+
+    if (!res.ok || data.exitCode !== 0) {
+      if (clearPathsOnFailure) updatePaths('', '', '');
+      setRunStatus(`${failurePrefix}: ${data.error || data.stderr || 'unknown error'}`, 'error');
+      updateButtonStates();
+      return null;
+    }
+
+    if (onSuccess) onSuccess(data);
+    if (successStatus) setRunStatus(successStatus(data), successTone);
+    saveState();
+    updateButtonStates();
+
+    if (openDownload && data.outputPath) {
+      window.open(`/api/download?path=${encodeURIComponent(data.outputPath)}`, '_blank');
+    }
+    return data;
+  } catch (e) {
+    jobRunning = false;
+    if (clearPathsOnFailure) updatePaths('', '', '');
+    setRunStatus(`${failurePrefix}: ${e.message}`, 'error');
+    updateButtonStates();
+    return null;
+  }
 }
 
 // --- Tree data model ---
@@ -730,6 +803,7 @@ async function loadMaster() {
   
   // Restore state after master load
   restoreState();
+  await syncJobState();
   document.querySelectorAll('.wt-card').forEach(card => {
     if (card._node && selectedWorkTypes.has(card._node.label)) {
       card.classList.add('selected');
@@ -1007,16 +1081,13 @@ document.getElementById('folderPathInput').addEventListener('input', () => {
 async function runAnalyze(folder) {
   const names = [...selectedWorkTypes];
   if (!names.includes('共通')) names.push('共通');
-  const res = await fetch('/api/merge-master', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ masterFiles: names })
+  await invokeApiJob('/api/analyze', { folder, masterFiles: names }, {
+    startStatus: '解析中...',
+    successStatus: (data) => `解析完了: ${data.resultPath}`,
+    failurePrefix: '解析失敗',
+    clearPathsOnFailure: true,
+    onSuccess: (data) => updatePaths(data.resultPath, '', ''),
   });
-  const j = await res.json();
-  const cmd = `target/release/photo-ai-rust.exe analyze "${folder}" --master "${j.path}" --output result.json`;
-  sendToTerminal(cmd);
-  analyzeRun = true;
-  updateButtonStates();
 }
 
 document.getElementById('analyzeBtn').addEventListener('click', () => {
@@ -1025,8 +1096,27 @@ document.getElementById('analyzeBtn').addEventListener('click', () => {
   runAnalyze(selectedFolder);
 });
 
-document.getElementById('exportPdfBtn').addEventListener('click', () => sendToTerminal('target/release/photo-ai-rust.exe export result.json --format pdf'));
-document.getElementById('exportExcelBtn').addEventListener('click', () => sendToTerminal('target/release/photo-ai-rust.exe export result.json --format excel'));
+document.getElementById('exportPdfBtn').addEventListener('click', async () => {
+  if (!currentResultPath) return;
+  await invokeApiJob('/api/export/pdf', { resultPath: currentResultPath }, {
+    startStatus: 'PDF生成中...',
+    successStatus: (data) => `PDF生成完了: ${data.outputPath}`,
+    failurePrefix: 'PDF生成失敗',
+    openDownload: true,
+    onSuccess: (data) => updatePaths(undefined, data.outputPath, undefined),
+  });
+});
+
+document.getElementById('exportExcelBtn').addEventListener('click', async () => {
+  if (!currentResultPath) return;
+  await invokeApiJob('/api/export/excel', { resultPath: currentResultPath }, {
+    startStatus: 'Excel生成中...',
+    successStatus: (data) => `Excel生成完了: ${data.outputPath}`,
+    failurePrefix: 'Excel生成失敗',
+    openDownload: true,
+    onSuccess: (data) => updatePaths(undefined, undefined, data.outputPath),
+  });
+});
 document.querySelectorAll('.cli-btn[data-cmd]').forEach(btn => {
   btn.addEventListener('click', () => {
     const cmd = btn.dataset.cmd;
@@ -1124,6 +1214,9 @@ document.getElementById('dpRefreshBtn').addEventListener('click', () => {
 function saveState() {
   localStorage.setItem('photoai_workTypes', JSON.stringify([...selectedWorkTypes]));
   localStorage.setItem('photoai_folder', selectedFolder);
+  localStorage.setItem('photoai_result_path', currentResultPath);
+  localStorage.setItem('photoai_pdf_path', currentPdfPath);
+  localStorage.setItem('photoai_excel_path', currentExcelPath);
 }
 function restoreState() {
   try {
@@ -1131,7 +1224,33 @@ function restoreState() {
     if (wt) wt.forEach(n => selectedWorkTypes.add(n));
   } catch(e) {}
   selectedFolder = localStorage.getItem('photoai_folder') || '';
+  currentResultPath = localStorage.getItem('photoai_result_path') || '';
+  currentPdfPath = localStorage.getItem('photoai_pdf_path') || '';
+  currentExcelPath = localStorage.getItem('photoai_excel_path') || '';
   document.getElementById('folderPathInput').value = selectedFolder;
+}
+
+async function syncJobState() {
+  try {
+    const r = await fetch('/api/job');
+    if (!r.ok) return;
+    const job = await r.json();
+    jobRunning = !!job.running;
+    selectedFolder = job.folder || selectedFolder;
+    updatePaths(job.resultPath || '', job.pdfPath || '', job.excelPath || '');
+    if (job.folder) {
+      document.getElementById('folderPathInput').value = selectedFolder;
+    }
+    if (job.running) {
+      setRunStatus(`実行中: ${job.action || 'processing'}`, 'warn');
+    } else if (job.lastError) {
+      setRunStatus(`直近エラー: ${job.lastError}`, 'error');
+    } else if (job.resultPath) {
+      setRunStatus(`解析結果: ${job.resultPath}`, 'ok');
+    }
+    updateButtonStates();
+    saveState();
+  } catch (e) {}
 }
 
 // === Review Panel (問診票) ===
@@ -1153,13 +1272,17 @@ function switchTab(tab) {
 document.getElementById('loadResultBtn').addEventListener('click', loadReviewData);
 
 async function loadReviewData() {
+  if (!currentResultPath) {
+    setRunStatus('先に解析を完了してください', 'warn');
+    return;
+  }
   try {
-    const r = await fetch('/api/result?path=result.json');
+    const r = await fetch(`/api/result?path=${encodeURIComponent(currentResultPath)}`);
     if (!r.ok) throw new Error('Result file not found');
     reviewData = await r.json();
   } catch (e) {
-    console.warn('result.json が見つかりません。デモ用サンプルを使用します:', e.message);
-    reviewData = SAMPLE_RESULT;
+    setRunStatus(`結果読み込み失敗: ${e.message}`, 'error');
+    return;
   }
   reviewDirty = false;
   renderReviewPanel();
@@ -1228,14 +1351,15 @@ document.addEventListener('change', (e) => {
 });
 
 async function saveReviewData() {
-  if (!reviewData || !reviewDirty) return;
+  if (!reviewData || !reviewDirty || !currentResultPath) return;
   const updates = [];
   reviewData.forEach(r => ['station', 'workType', 'variety', 'subphase', 'remarks'].forEach(f => updates.push({ fileName: r.fileName, field: f, value: r[f] || '' })));
   try {
-    const r = await fetch('/api/result/update', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: 'result.json', updates }) });
+    const r = await fetch('/api/result/update', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: currentResultPath, updates }) });
     if (!r.ok) throw new Error(await r.text());
     reviewDirty = false; document.getElementById('reviewSaveBtn').disabled = true;
     renderReviewPanel();
+    setRunStatus(`結果保存完了: ${currentResultPath}`, 'ok');
   } catch (e) { alert('保存に失敗: ' + e.message); }
 }
 
