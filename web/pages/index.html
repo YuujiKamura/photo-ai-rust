@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>photo-ai | 工事写真AI解析</title>
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --bg-alt: #171717;
+            --surface: #1e1e1e;
+            --surface-strong: #242424;
+            --border: #2e2e2e;
+            --text: #ececec;
+            --muted: #9a9a9a;
+            --accent: #7c6fe0;
+            --accent-hover: #9589e8;
+            --green: #4ade80;
+            --yellow: #facc15;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: "Segoe UI", "Yu Gothic UI", sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(124, 111, 224, 0.2), transparent 30%),
+                radial-gradient(circle at top right, rgba(74, 222, 128, 0.12), transparent 25%),
+                var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        a { color: inherit; }
+
+        .wrap {
+            max-width: 1160px;
+            margin: 0 auto;
+            padding: 0 24px 72px;
+        }
+
+        .hero {
+            padding: 64px 0 40px;
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+            gap: 28px;
+            align-items: center;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(124, 111, 224, 0.35);
+            background: rgba(124, 111, 224, 0.12);
+            color: #c7c1f7;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 18px;
+        }
+
+        h1 {
+            font-size: clamp(40px, 6vw, 72px);
+            line-height: 1.02;
+            letter-spacing: -0.03em;
+            margin-bottom: 18px;
+        }
+
+        .lead {
+            color: var(--muted);
+            font-size: 18px;
+            max-width: 720px;
+            margin-bottom: 26px;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 46px;
+            padding: 0 18px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 600;
+            transition: 0.18s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            border-color: var(--accent);
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+            border-color: var(--accent-hover);
+        }
+
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 18px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .panel {
+            border: 1px solid var(--border);
+            background: linear-gradient(180deg, rgba(36, 36, 36, 0.95), rgba(23, 23, 23, 0.98));
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+        }
+
+        .panel-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.02);
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .panel-dots {
+            display: flex;
+            gap: 8px;
+        }
+
+        .panel-dots span {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4a4a4a;
+        }
+
+        .panel-dots span:first-child { background: #f87171; }
+        .panel-dots span:nth-child(2) { background: #facc15; }
+        .panel-dots span:nth-child(3) { background: #4ade80; }
+
+        .panel-body {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            min-height: 460px;
+        }
+
+        .sidebar {
+            border-right: 1px solid var(--border);
+            background: var(--bg-alt);
+            padding: 16px 14px;
+        }
+
+        .sidebar h2 {
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .work-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .work-item {
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            border-radius: 10px;
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        .work-item.active {
+            border-color: var(--accent);
+            color: var(--text);
+            background: rgba(124, 111, 224, 0.12);
+        }
+
+        .workspace {
+            padding: 18px;
+            display: grid;
+            gap: 16px;
+            align-content: start;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .mini-card {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: var(--surface);
+            padding: 16px;
+        }
+
+        .mini-card .label {
+            color: var(--muted);
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .mini-card .value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .terminal {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: #101010;
+            padding: 16px;
+            font-family: "Cascadia Code", Consolas, monospace;
+            font-size: 13px;
+            color: #d6d6d6;
+            white-space: pre-wrap;
+        }
+
+        section {
+            margin-top: 56px;
+        }
+
+        .section-head {
+            margin-bottom: 22px;
+        }
+
+        .section-head h2 {
+            font-size: 30px;
+            margin-bottom: 8px;
+        }
+
+        .section-head p {
+            color: var(--muted);
+            max-width: 820px;
+        }
+
+        .feature-grid,
+        .mode-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .feature,
+        .mode {
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: var(--surface);
+            padding: 18px;
+        }
+
+        .feature h3,
+        .mode h3 {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .feature p,
+        .mode p,
+        .mode li {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .mode ul {
+            list-style: none;
+            display: grid;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .mode li::before {
+            content: "• ";
+            color: var(--accent);
+        }
+
+        .callout {
+            border: 1px solid rgba(74, 222, 128, 0.25);
+            background: rgba(74, 222, 128, 0.08);
+            border-radius: 16px;
+            padding: 18px 20px;
+            margin-top: 20px;
+        }
+
+        .callout strong {
+            color: var(--green);
+        }
+
+        footer {
+            margin-top: 64px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        @media (max-width: 960px) {
+            .hero,
+            .panel-body,
+            .feature-grid,
+            .mode-grid,
+            .card-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .wrap {
+                padding: 0 18px 56px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <section class="hero">
+            <div>
+                <div class="eyebrow">Static Preview from <code>web/</code></div>
+                <h1>工事写真AI解析を<br>ローカル実務に寄せたまま使う</h1>
+                <p class="lead">
+                    photo-ai は、工事写真のグループ化、工種マスタ照合、PDF / Excel 台帳出力までをつなぐローカル主義の解析ツールです。
+                    GitHub Pages では静的プレビューだけを公開し、実務ではローカル Web UI と Go メイン CLI を使います。
+                </p>
+                <div class="actions">
+                    <a class="btn btn-primary" href="https://github.com/YuujiKamura/photo-ai-rust/releases/latest">最新版をダウンロード</a>
+                    <a class="btn" href="https://github.com/YuujiKamura/photo-ai-rust">GitHub</a>
+                    <a class="btn" href="https://github.com/YuujiKamura/photo-ai-rust/blob/master/docs/QUICKSTART.md">Quickstart</a>
+                </div>
+                <div class="meta">
+                    <span>Go メイン CLI + Rust engine</span>
+                    <span>AgentAPI / resident CLI</span>
+                    <span>施工写真向けマスタ照合</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-top">
+                    <div class="panel-dots"><span></span><span></span><span></span></div>
+                    <span>Local Web Console Preview</span>
+                </div>
+                <div class="panel-body">
+                    <aside class="sidebar">
+                        <h2>工種</h2>
+                        <div class="work-list">
+                            <div class="work-item active">舗装工</div>
+                            <div class="work-item">区画線工</div>
+                            <div class="work-item">構造物撤去工</div>
+                            <div class="work-item">仮設工</div>
+                        </div>
+                    </aside>
+                    <div class="workspace">
+                        <div class="card-grid">
+                            <div class="mini-card">
+                                <div class="label">写真区分</div>
+                                <div class="value">施工状況写真</div>
+                            </div>
+                            <div class="mini-card">
+                                <div class="label">解析スコープ</div>
+                                <div class="value">舗装工 / 路面切削工</div>
+                            </div>
+                            <div class="mini-card">
+                                <div class="label">出力</div>
+                                <div class="value">PDF / Excel / JSON</div>
+                            </div>
+                            <div class="mini-card">
+                                <div class="label">実行経路</div>
+                                <div class="value">photo-ai.exe → engines</div>
+                            </div>
+                        </div>
+                        <div class="terminal">photo-ai analyze ./0213切削 --work-type 舗装工 --photo-type 施工状況写真
+
+[1/4] photo-tag-engine.exe
+[2/4] photo-analysis-engine.exe
+[3/4] master matching
+[4/4] export ready
+
+result.json
+  analysisBilling: subscription
+  analysisProvider: auto
+  analysisCommit: &lt;git sha&gt;</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <div class="section-head">
+                <h2>いまの構成</h2>
+                <p>
+                    メイン入口は Go フロントエンドの <code>photo-ai.exe</code>。
+                    解析・帳票生成の本体は Rust の engine 群に分離し、Web UI はローカルサーバーとして運用します。
+                </p>
+            </div>
+            <div class="feature-grid">
+                <div class="feature">
+                    <h3>Go メイン</h3>
+                    <p>ユーザー向けの主系CLI。配布、CI、リリースはこの入口を基準に揃えています。</p>
+                </div>
+                <div class="feature">
+                    <h3>Rust engines</h3>
+                    <p>タグ付け、解析、PDF、Excel を個別バイナリに分離し、結果互換を保ったまま使います。</p>
+                </div>
+                <div class="feature">
+                    <h3>ローカル Web UI</h3>
+                    <p>最新UIは <code>web/</code> 側。Pages では静的プレビューだけを公開し、実働はローカルサーバーで使います。</p>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <div class="section-head">
+                <h2>使い分け</h2>
+                <p>静的に見せるものと、ローカルで動かすものを分けています。</p>
+            </div>
+            <div class="mode-grid">
+                <div class="mode">
+                    <h3>GitHub Pages</h3>
+                    <p>このページです。サーバーなしで見られる静的プレビューです。</p>
+                    <ul>
+                        <li>製品の入口説明</li>
+                        <li>構成の把握</li>
+                        <li>実務導入前の確認</li>
+                    </ul>
+                </div>
+                <div class="mode">
+                    <h3>ローカル Web UI</h3>
+                    <p><code>webserver.exe</code> で起動する実務用画面です。API と端末連携があるため Pages では動きません。</p>
+                    <ul>
+                        <li>工種マスタ編集</li>
+                        <li>端末ログ確認</li>
+                        <li>解析結果レビュー</li>
+                    </ul>
+                </div>
+                <div class="mode">
+                    <h3>Go メイン CLI</h3>
+                    <p><code>photo-ai.exe</code> から engine 群を呼び出して処理します。</p>
+                    <ul>
+                        <li>analyze</li>
+                        <li>export pdf / excel</li>
+                        <li>pair / completion</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="callout">
+                <strong>注意:</strong> `web/` の本体は `/api/*` とローカル terminal / websocket に依存します。
+                そのため Pages は `web/pages` の静的入口だけを配信し、実働UIはローカル実行に寄せています。
+            </div>
+        </section>
+
+        <footer>
+            <div>photo-ai | Go frontend + Rust engines</div>
+            <div>GitHub Pages source: <code>web/pages</code></div>
+        </footer>
+    </div>
+</body>
+</html>

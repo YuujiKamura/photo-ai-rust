@@ -127,3 +127,4 @@ master/by_work_type/
 - Rust CLI の `photo-ai-rust` は開発用・比較用として残っている
 - ユーザー向けの主系CLIは `photo-ai.exe`
 - CI / リリースも Go フロントエンド前提で組んでいる
+- GitHub Pages の静的入口は `web/pages` を正本にしている
