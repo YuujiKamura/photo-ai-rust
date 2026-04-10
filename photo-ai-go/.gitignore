@@ -10,3 +10,6 @@ internal/web/*.json
 internal/web/deckpilot/
 internal/web/ghostty-web/
 internal/web/pages/
+
+# Master CSVs copied from ../master/ (keep master.go, ignore copied files)
+internal/master/by_work_type/

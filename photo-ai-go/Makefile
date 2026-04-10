@@ -26,4 +26,6 @@ all:
 	cp -f ../target/release/photo-excel-engine.exe ./internal/engines/ 2>/dev/null || echo "WARN: photo-excel-engine.exe not found in target/release"
 	mkdir -p ./internal/web
 	cp -f ../web/*.html ../web/*.json ./internal/web/ 2>/dev/null || echo "WARN: web assets not found"
+	mkdir -p ./internal/master/by_work_type
+	cp -f ../master/by_work_type/*.csv ./internal/master/by_work_type/ 2>/dev/null || echo "WARN: master CSVs not found"
 	$(MAKE) build

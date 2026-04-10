@@ -33,14 +33,17 @@ jobs:
           echo "Downloaded engines:"
           ls -la photo-ai-go/internal/engines/
 
-      - name: Copy web assets for embedding
+      - name: Copy web assets and master CSVs for embedding
         shell: bash
         run: |
           mkdir -p photo-ai-go/internal/web
-          # Copy only static assets, exclude Go source files that would create a conflicting module
           cp web/*.html web/*.json photo-ai-go/internal/web/ 2>/dev/null || true
+          mkdir -p photo-ai-go/internal/master/by_work_type
+          cp master/by_work_type/*.csv photo-ai-go/internal/master/by_work_type/ 2>/dev/null || true
           echo "Web assets:"
           ls photo-ai-go/internal/web/
+          echo "Master CSVs:"
+          ls photo-ai-go/internal/master/by_work_type/
 
       - name: Build Go CLI (single binary with embedded engines)
         shell: bash

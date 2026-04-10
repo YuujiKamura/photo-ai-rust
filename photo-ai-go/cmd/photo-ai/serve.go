@@ -27,6 +27,7 @@ import (
 	"golang.org/x/net/websocket"
 
 	"github.com/YuujiKamura/deckpilot/daemon"
+	embeddedmaster "github.com/YuujiKamura/photo-ai-go/internal/master"
 	"github.com/YuujiKamura/photo-ai-go/internal/web"
 )
 
@@ -584,10 +585,13 @@ if ($d.ShowDialog() -eq 'OK') {
 
 func loadMasterCSVs(repoDir string) (map[string][]MasterRow, error) {
 	masterDir := filepath.Join(repoDir, "master", "by_work_type")
-	entries, err := os.ReadDir(masterDir)
-	if err != nil {
-		return nil, err
+
+	// Try filesystem first, fall back to embedded master
+	entries, fsErr := os.ReadDir(masterDir)
+	if fsErr != nil {
+		return loadMasterCSVsFromEmbed()
 	}
+
 	result := make(map[string][]MasterRow)
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".csv") {
@@ -598,45 +602,75 @@ func loadMasterCSVs(repoDir string) (map[string][]MasterRow, error) {
 		if err != nil {
 			continue
 		}
-		r := csv.NewReader(f)
-		header, err := r.Read()
-		if err != nil {
-			f.Close()
+		rows := parseMasterCSV(f)
+		f.Close()
+		result[name] = rows
+	}
+	if len(result) == 0 {
+		return loadMasterCSVsFromEmbed()
+	}
+	return result, nil
+}
+
+func loadMasterCSVsFromEmbed() (map[string][]MasterRow, error) {
+	entries, err := embeddedmaster.EmbeddedMaster.ReadDir("by_work_type")
+	if err != nil {
+		return nil, fmt.Errorf("no master files on disk or embedded: %w", err)
+	}
+	log.Printf("Loading %d master files from embedded binary", len(entries))
+	result := make(map[string][]MasterRow)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".csv") {
 			continue
 		}
-		if len(header) > 0 {
-			header[0] = strings.TrimPrefix(header[0], "\ufeff")
+		name := strings.TrimSuffix(e.Name(), ".csv")
+		f, err := embeddedmaster.EmbeddedMaster.Open("by_work_type/" + e.Name())
+		if err != nil {
+			continue
 		}
-		colIdx := make(map[string]int)
-		for i, h := range header {
-			colIdx[h] = i
-		}
-		var rows []MasterRow
-		for {
-			record, err := r.Read()
-			if err != nil {
-				break
-			}
-			get := func(key string) string {
-				if idx, ok := colIdx[key]; ok && idx < len(record) {
-					return record[idx]
-				}
-				return ""
-			}
-			rows = append(rows, MasterRow{
-				Division:       get("費目"),
-				PhotoType:      get("写真区分"),
-				WorkType:       get("工種"),
-				Variety:        get("種別"),
-				Subphase:       get("細別"),
-				Remarks:        get("備考"),
-				SearchPatterns: get("検索パターン"),
-			})
-		}
+		rows := parseMasterCSV(f)
 		f.Close()
 		result[name] = rows
 	}
 	return result, nil
+}
+
+func parseMasterCSV(r io.Reader) []MasterRow {
+	cr := csv.NewReader(r)
+	header, err := cr.Read()
+	if err != nil {
+		return nil
+	}
+	if len(header) > 0 {
+		header[0] = strings.TrimPrefix(header[0], "\ufeff")
+	}
+	colIdx := make(map[string]int)
+	for i, h := range header {
+		colIdx[h] = i
+	}
+	var rows []MasterRow
+	for {
+		record, err := cr.Read()
+		if err != nil {
+			break
+		}
+		get := func(key string) string {
+			if idx, ok := colIdx[key]; ok && idx < len(record) {
+				return record[idx]
+			}
+			return ""
+		}
+		rows = append(rows, MasterRow{
+			Division:       get("費目"),
+			PhotoType:      get("写真区分"),
+			WorkType:       get("工種"),
+			Variety:        get("種別"),
+			Subphase:       get("細別"),
+			Remarks:        get("備考"),
+			SearchPatterns: get("検索パターン"),
+		})
+	}
+	return rows
 }
 
 func getGhosttyPort() string {
