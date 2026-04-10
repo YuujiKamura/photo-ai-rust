@@ -1,0 +1,8 @@
+# Built binary
+photo-ai.exe
+
+# Embedded engine binaries (copied during make all, not committed)
+internal/engines/*.exe
+
+# Web assets copied from ../web/
+internal/web/

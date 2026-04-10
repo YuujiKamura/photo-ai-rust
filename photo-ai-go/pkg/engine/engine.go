@@ -19,8 +19,46 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/YuujiKamura/photo-ai-go/internal/engines"
 	"golang.org/x/sys/windows"
 )
+
+var GitCommit = "unknown"
+
+// EnsureEngines extracts embedded engine binaries to a temporary directory.
+func EnsureEngines() (string, error) {
+	tempDir := filepath.Join(os.TempDir(), "photo-ai", "bin", GitCommit)
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create temp dir: %w", err)
+	}
+
+	engineNames := []string{
+		"photo-tag-engine.exe",
+		"photo-analysis-engine.exe",
+		"photo-pdf-engine.exe",
+		"photo-excel-engine.exe",
+	}
+
+	for _, name := range engineNames {
+		targetPath := filepath.Join(tempDir, name)
+		if _, err := os.Stat(targetPath); err == nil {
+			// Already exists, skip extraction
+			continue
+		}
+
+		data, err := engines.EmbeddedEngines.ReadFile(name)
+		if err != nil {
+			// If not in embedded FS, skip (might be in dev mode)
+			continue
+		}
+
+		if err := os.WriteFile(targetPath, data, 0755); err != nil {
+			return "", fmt.Errorf("failed to extract %s: %w", name, err)
+		}
+	}
+
+	return tempDir, nil
+}
 
 // runCommandWithJobObject executes a command within a Job Object to ensure
 // that the entire process tree (including grandchild processes) is terminated
@@ -83,16 +121,25 @@ func resolveEnginePath(envVar, defaultName string) (string, error) {
 	if v := os.Getenv(envVar); v != "" {
 		return v, nil
 	}
+
+	// 1. Try extracted temp directory
+	if extractedDir, err := EnsureEngines(); err == nil {
+		p := filepath.Join(extractedDir, defaultName)
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve executable path: %w", err)
 	}
-	// Try same directory as executable
+	// 2. Try same directory as executable
 	p := filepath.Join(filepath.Dir(exe), defaultName)
 	if _, err := os.Stat(p); err == nil {
 		return p, nil
 	}
-	// Try parent directory's target/release (for dev)
+	// 3. Try parent directory's target/release (for dev)
 	p = filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(exe))), "target", "release", defaultName)
 	if _, err := os.Stat(p); err == nil {
 		return p, nil

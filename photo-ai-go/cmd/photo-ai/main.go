@@ -30,12 +30,16 @@ var rootCmd = &cobra.Command{
 
 The Go frontend is the primary entrypoint. It delegates tagging, analysis,
 PDF rendering, and Excel rendering to Rust engine executables.`,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		engine.GitCommit = gitCommit
+	},
 }
 
 func init() {
 	rootCmd.AddCommand(analyzeCmd)
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(pairCmd)
+	rootCmd.AddCommand(serveCmd)
 
 	exportCmd.AddCommand(exportPDFCmd)
 	exportCmd.AddCommand(exportExcelCmd)
