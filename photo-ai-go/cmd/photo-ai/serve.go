@@ -564,19 +564,42 @@ if ($d.ShowDialog() -eq 'OK') {
 		json.NewEncoder(w).Encode(getRuntimeStatus(repoDir))
 	})
 
-	ghosttyOrigin, _ := url.Parse("http://localhost:" + ghosttyPort)
-	ghosttyProxy := httputil.NewSingleHostReverseProxy(ghosttyOrigin)
-	mux.HandleFunc("/ghostty/", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/ghostty")
-		r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, "/ghostty")
-		r.Host = ghosttyOrigin.Host
-		ghosttyProxy.ModifyResponse = func(resp *http.Response) error {
-			resp.Header.Del("Cross-Origin-Embedder-Policy")
-			resp.Header.Del("Cross-Origin-Opener-Policy")
-			return nil
-		}
-		ghosttyProxy.ServeHTTP(w, r)
-	})
+	if webDir != "" {
+		// Dev mode: proxy to local ghostty-web demo server
+		ghosttyOrigin, _ := url.Parse("http://localhost:" + ghosttyPort)
+		ghosttyProxy := httputil.NewSingleHostReverseProxy(ghosttyOrigin)
+		mux.HandleFunc("/ghostty/", func(w http.ResponseWriter, r *http.Request) {
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/ghostty")
+			r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, "/ghostty")
+			r.Host = ghosttyOrigin.Host
+			ghosttyProxy.ModifyResponse = func(resp *http.Response) error {
+				resp.Header.Del("Cross-Origin-Embedder-Policy")
+				resp.Header.Del("Cross-Origin-Opener-Policy")
+				return nil
+			}
+			ghosttyProxy.ServeHTTP(w, r)
+		})
+	} else {
+		// Production mode: serve ghostty dist from embedded assets
+		mux.HandleFunc("/ghostty/", func(w http.ResponseWriter, r *http.Request) {
+			// /ghostty/dist/ghostty-web.js -> ghostty/dist/ghostty-web.js in embed FS
+			path := strings.TrimPrefix(r.URL.Path, "/")
+			data, err := web.StaticAssets.ReadFile(path)
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			ct := mime.TypeByExtension(filepath.Ext(path))
+			if ct == "" {
+				ct = "application/octet-stream"
+			}
+			if strings.HasSuffix(path, ".wasm") {
+				ct = "application/wasm"
+			}
+			w.Header().Set("Content-Type", ct)
+			w.Write(data)
+		})
+	}
 
 	mux.Handle("/", webHandler)
 }
