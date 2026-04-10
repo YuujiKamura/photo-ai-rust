@@ -11,8 +11,6 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -167,16 +165,21 @@ func runServer(port string, dev bool) error {
 
 	log.Printf("Repo root: %s", repoDir)
 
-	ghosttyCmd, ghosttyCleanup := startGhosttyWeb(webDir)
-	defer ghosttyCleanup()
-	_ = ghosttyCmd
-
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
 		log.Printf("Shutting down...")
-		ghosttyCleanup()
+		// Clean up all PTY sessions and session files
+		ptySessions.Range(func(key, value interface{}) bool {
+			if sess, ok := value.(*ptySession); ok {
+				log.Printf("Closing PTY session %s", sess.id)
+				sess.cpty.Close()
+			}
+			ptySessions.Delete(key)
+			return true
+		})
+		deleteSessionFile()
 		os.Exit(0)
 	}()
 
@@ -197,6 +200,8 @@ func runServer(port string, dev bool) error {
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws/terminal", websocket.Handler(handleTerminal))
+	mux.Handle("/ws", websocket.Handler(handlePtyWebSocket))
+	mux.Handle("/cp", websocket.Handler(handleCPWebSocket))
 	mux.HandleFunc("/api/master", func(w http.ResponseWriter, r *http.Request) {
 		data, err := loadMasterCSVs(repoDir)
 		if err != nil {
@@ -231,6 +236,8 @@ func runServer(port string, dev bool) error {
 		return fmt.Errorf("could not find an available port")
 	}
 
+	ServerPort = actualPort
+
 	url := fmt.Sprintf("http://localhost:%s", actualPort)
 	log.Printf("Starting server on %s", url)
 
@@ -247,6 +254,10 @@ func setupHandlers(mux *http.ServeMux, repoDir, webDir string, webHandler http.H
 	mux.HandleFunc("/api/master/update", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "POST only", 405)
+			return
+		}
+		if webDir == "" {
+			http.Error(w, "master update is read-only in production mode", 400)
 			return
 		}
 		var req struct {
@@ -270,6 +281,10 @@ func setupHandlers(mux *http.ServeMux, repoDir, webDir string, webHandler http.H
 	mux.HandleFunc("/api/master/rename", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "POST only", 405)
+			return
+		}
+		if webDir == "" {
+			http.Error(w, "master rename is read-only in production mode", 400)
 			return
 		}
 		var req struct {
@@ -563,34 +578,34 @@ if ($d.ShowDialog() -eq 'OK') {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "response": resp})
 	})
 
-	ghosttyPort := getGhosttyPort()
 	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"ghosttyPort": ghosttyPort})
+		// PTY is served on the same port; return ServerPort for backward compat
+		json.NewEncoder(w).Encode(map[string]string{"ghosttyPort": ServerPort})
 	})
 	mux.HandleFunc("/api/runtime-status", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(getRuntimeStatus(repoDir))
 	})
 
-	if webDir != "" {
-		// Dev mode: proxy to local ghostty-web demo server
-		ghosttyOrigin, _ := url.Parse("http://localhost:" + ghosttyPort)
-		ghosttyProxy := httputil.NewSingleHostReverseProxy(ghosttyOrigin)
-		mux.HandleFunc("/ghostty/", func(w http.ResponseWriter, r *http.Request) {
-			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/ghostty")
-			r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, "/ghostty")
-			r.Host = ghosttyOrigin.Host
-			ghosttyProxy.ModifyResponse = func(resp *http.Response) error {
-				resp.Header.Del("Cross-Origin-Embedder-Policy")
-				resp.Header.Del("Cross-Origin-Opener-Policy")
-				return nil
-			}
-			ghosttyProxy.ServeHTTP(w, r)
+	// ghostty-web WASM requires SharedArrayBuffer, which needs COEP/COOP headers
+	coepCoop := func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+			w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+			h.ServeHTTP(w, r)
 		})
+	}
+
+	if webDir != "" {
+		// Dev mode: serve ghostty dist from disk
+		ghosttyDist := filepath.Join(webDir, "ghostty-web", "demo", "dist")
+		mux.Handle("/ghostty/", coepCoop(http.StripPrefix("/ghostty/", http.FileServer(http.Dir(ghosttyDist)))))
 	} else {
 		// Production mode: serve ghostty dist from embedded assets
 		mux.HandleFunc("/ghostty/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+			w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 			// /ghostty/dist/ghostty-web.js -> ghostty/dist/ghostty-web.js in embed FS
 			path := strings.TrimPrefix(r.URL.Path, "/")
 			data, err := web.StaticAssets.ReadFile(path)
@@ -705,56 +720,6 @@ func parseMasterCSV(r io.Reader) []MasterRow {
 	return rows
 }
 
-func getGhosttyPort() string {
-	if p := os.Getenv("GHOSTTY_PORT"); p != "" {
-		return p
-	}
-	return "8888"
-}
-
-func startGhosttyWeb(webDir string) (*exec.Cmd, func()) {
-	ghosttyPort := getGhosttyPort()
-	demoDir := filepath.Join(webDir, "ghostty-web", "demo")
-	if _, err := os.Stat(filepath.Join(demoDir, "bin", "demo.js")); err != nil {
-		log.Printf("ghostty-web submodule not found at %s, skipping", demoDir)
-		return nil, func() {}
-	}
-	nodeModules := filepath.Join(demoDir, "node_modules")
-	if _, err := os.Stat(nodeModules); err != nil {
-		log.Printf("Installing ghostty-web demo dependencies...")
-		install := exec.Command("npm", "install")
-		install.Dir = demoDir
-		install.Stdout = os.Stdout
-		install.Stderr = os.Stderr
-		if err := install.Run(); err != nil {
-			log.Printf("npm install failed: %v", err)
-			return nil, func() {}
-		}
-	}
-	nodeCmd := "node"
-	bundledNode := filepath.Join(webDir, "node.exe")
-	if _, err := os.Stat(bundledNode); err == nil {
-		nodeCmd = bundledNode
-	}
-	cmd := exec.Command(nodeCmd, "bin/demo.js")
-	cmd.Dir = demoDir
-	cmd.Env = append(os.Environ(), "PORT="+ghosttyPort)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		log.Printf("Failed to start ghostty-web: %v", err)
-		return nil, func() {}
-	}
-	log.Printf("ghostty-web demo server started on port %s (PID %d)", ghosttyPort, cmd.Process.Pid)
-	cleanup := func() {
-		if cmd.Process != nil {
-			log.Printf("Stopping ghostty-web (PID %d)...", cmd.Process.Pid)
-			cmd.Process.Kill()
-			cmd.Wait()
-		}
-	}
-	return cmd, cleanup
-}
 
 func handleTerminal(ws *websocket.Conn) {
 	defer ws.Close()
@@ -870,8 +835,14 @@ func renameMasterFile(repoDir, oldName, newName string) error {
 		return err
 	}
 	reader := csv.NewReader(f)
-	records, _ := reader.ReadAll()
+	records, err := reader.ReadAll()
 	f.Close()
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", oldPath, err)
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("empty CSV: %s", oldPath)
+	}
 	workTypeIdx := -1
 	for i, h := range records[0] {
 		if strings.TrimPrefix(h, "\ufeff") == "工種" {
@@ -886,12 +857,18 @@ func renameMasterFile(repoDir, oldName, newName string) error {
 			}
 		}
 	}
-	tmpFile, _ := os.Create(newPath + ".tmp")
+	tmpFile, err := os.Create(newPath + ".tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
 	writer := csv.NewWriter(tmpFile)
 	writer.WriteAll(records)
 	writer.Flush()
 	tmpFile.Close()
-	os.Rename(newPath+".tmp", newPath)
+	if err := os.Rename(newPath+".tmp", newPath); err != nil {
+		os.Remove(newPath + ".tmp")
+		return fmt.Errorf("failed to rename: %w", err)
+	}
 	os.Remove(oldPath)
 	return nil
 }
@@ -1125,7 +1102,11 @@ func prepareMasterFile(repoDir string, masterFiles []string) (cleanup func(), ma
 			name = filepath.Join("master", "by_work_type", name+".csv")
 		}
 		p := resolvePath(repoDir, name)
-		f, _ := os.Open(p)
+		f, err := os.Open(p)
+		if err != nil {
+			log.Printf("Warning: skipping master file %s: %v", p, err)
+			continue
+		}
 		scanner := bufio.NewScanner(f)
 		lineNum := 0
 		for scanner.Scan() {
@@ -1148,7 +1129,7 @@ func prepareMasterFile(repoDir string, masterFiles []string) (cleanup func(), ma
 }
 
 func getCPURL() string {
-	return "ws://localhost:" + getGhosttyPort() + "/cp"
+	return "ws://localhost:" + ServerPort + "/cp"
 }
 
 func sendCPCommand(cpURL, command string) (string, error) {
