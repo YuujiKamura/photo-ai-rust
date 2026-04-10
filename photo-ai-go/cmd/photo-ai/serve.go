@@ -27,6 +27,7 @@ import (
 	"golang.org/x/net/websocket"
 
 	"github.com/YuujiKamura/deckpilot/daemon"
+	"github.com/YuujiKamura/photo-ai-go/pkg/engine"
 	embeddedmaster "github.com/YuujiKamura/photo-ai-go/internal/master"
 	"github.com/YuujiKamura/photo-ai-go/internal/web"
 )
@@ -924,12 +925,16 @@ func resolveEngineBinaries(repoDir, cliPath string) map[string]string {
 		"PHOTO_PDF_ENGINE_EXE":      "photo-pdf-engine.exe",
 		"PHOTO_EXCEL_ENGINE_EXE":    "photo-excel-engine.exe",
 	}
-	// TODO: Update this to prioritize extracted engines
-	searchDirs := []string{
+	searchDirs := []string{}
+	// Try embedded engines first (extracted to temp dir)
+	if extractedDir, err := engine.EnsureEngines(); err == nil {
+		searchDirs = append(searchDirs, extractedDir)
+	}
+	searchDirs = append(searchDirs,
 		filepath.Dir(cliPath),
 		filepath.Join(repoDir, "target", "release"),
 		filepath.Join(repoDir, "photo-ai-go"),
-	}
+	)
 	resolved := make(map[string]string, len(engineNames))
 	for envVar, exeName := range engineNames {
 		for _, dir := range searchDirs {
