@@ -40,10 +40,18 @@ jobs:
           cp web/*.html web/*.json photo-ai-go/internal/web/ 2>/dev/null || true
           mkdir -p photo-ai-go/internal/master/by_work_type
           cp master/by_work_type/*.csv photo-ai-go/internal/master/by_work_type/ 2>/dev/null || true
+          # Download ghostty-web dist from npm
+          mkdir -p photo-ai-go/internal/web/ghostty/dist
+          cd /tmp && npm pack ghostty-web@0.4.0 --silent && tar -xzf ghostty-web-0.4.0.tgz
+          cp /tmp/package/dist/* $GITHUB_WORKSPACE/photo-ai-go/internal/web/ghostty/dist/
+          cp /tmp/package/ghostty-vt.wasm $GITHUB_WORKSPACE/photo-ai-go/internal/web/ghostty/dist/
+          cd $GITHUB_WORKSPACE
           echo "Web assets:"
           ls photo-ai-go/internal/web/
           echo "Master CSVs:"
           ls photo-ai-go/internal/master/by_work_type/
+          echo "Ghostty dist:"
+          ls photo-ai-go/internal/web/ghostty/dist/
 
       - name: Build Go CLI (single binary with embedded engines)
         shell: bash

@@ -13,3 +13,6 @@ internal/web/pages/
 
 # Master CSVs copied from ../master/ (keep master.go, ignore copied files)
 internal/master/by_work_type/
+
+# ghostty-web dist (downloaded from npm at build time)
+internal/web/ghostty/
