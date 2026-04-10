@@ -171,7 +171,7 @@ func runServer(port string, dev bool) error {
 		<-sigCh
 		log.Printf("Shutting down...")
 		// Clean up all PTY sessions and session files
-		ptySessions.Range(func(key, value interface{}) bool {
+		ptySessions.Range(func(key, value any) bool {
 			if sess, ok := value.(*ptySession); ok {
 				log.Printf("Closing PTY session %s", sess.id)
 				sess.cpty.Close()
@@ -367,7 +367,7 @@ func setupHandlers(mux *http.ServeMux, repoDir, webDir string, webHandler http.H
 			http.Error(w, fmt.Sprintf("failed to read %s: %v", resolved, err), 404)
 			return
 		}
-		var data []map[string]interface{}
+		var data []map[string]any
 		if err := json.Unmarshal(raw, &data); err != nil {
 			http.Error(w, fmt.Sprintf("failed to parse JSON: %v", err), 400)
 			return
@@ -392,7 +392,7 @@ func setupHandlers(mux *http.ServeMux, repoDir, webDir string, webHandler http.H
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "updated": updated})
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok", "updated": updated})
 	})
 
 	mux.HandleFunc("/api/analyze", func(w http.ResponseWriter, r *http.Request) {
@@ -992,7 +992,7 @@ func handleExport(w http.ResponseWriter, r *http.Request, repoDir, format string
 			job.LastError = runErr.Error()
 		}
 	})
-	json.NewEncoder(w).Encode(map[string]interface{}{"exitCode": exitCode, "stdout": stdout, "stderr": stderr})
+	json.NewEncoder(w).Encode(map[string]any{"exitCode": exitCode, "stdout": stdout, "stderr": stderr})
 }
 
 func handleAnalyze(w http.ResponseWriter, r *http.Request, repoDir string) {
@@ -1030,7 +1030,7 @@ func handleAnalyze(w http.ResponseWriter, r *http.Request, repoDir string) {
 			job.LastError = runErr.Error()
 		}
 	})
-	json.NewEncoder(w).Encode(map[string]interface{}{"exitCode": exitCode, "stdout": stdout, "stderr": stderr})
+	json.NewEncoder(w).Encode(map[string]any{"exitCode": exitCode, "stdout": stdout, "stderr": stderr})
 }
 
 func defaultExportPath(resultPath, format string) string {
@@ -1142,11 +1142,4 @@ func sendCPCommand(cpURL, command string) (string, error) {
 	var response string
 	websocket.Message.Receive(ws, &response)
 	return response, nil
-}
-
-func errorString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }

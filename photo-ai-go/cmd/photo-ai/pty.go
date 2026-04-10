@@ -107,7 +107,7 @@ func nextSessionID() string {
 func getOrCreateSession(cols, rows int) (*ptySession, error) {
 	// Return first existing session if any
 	var first *ptySession
-	ptySessions.Range(func(key, value interface{}) bool {
+	ptySessions.Range(func(key, value any) bool {
 		first = value.(*ptySession)
 		return false
 	})
@@ -172,7 +172,7 @@ func createSession(cols, rows int) (*ptySession, error) {
 		}
 	}()
 
-	writeSessionFile(id)
+	writeSessionFile()
 	log.Printf("PTY session created: %s (shell=%s, cols=%d, rows=%d)", id, shell, cols, rows)
 	return sess, nil
 }
@@ -185,7 +185,7 @@ func findSession(sessionID string) *ptySession {
 	}
 	// Return first session
 	var first *ptySession
-	ptySessions.Range(func(key, value interface{}) bool {
+	ptySessions.Range(func(key, value any) bool {
 		first = value.(*ptySession)
 		return false
 	})
@@ -194,7 +194,7 @@ func findSession(sessionID string) *ptySession {
 
 func sessionCount() int {
 	count := 0
-	ptySessions.Range(func(key, value interface{}) bool {
+	ptySessions.Range(func(key, value any) bool {
 		count++
 		return true
 	})
@@ -203,7 +203,7 @@ func sessionCount() int {
 
 func allSessions() []*ptySession {
 	var result []*ptySession
-	ptySessions.Range(func(key, value interface{}) bool {
+	ptySessions.Range(func(key, value any) bool {
 		result = append(result, value.(*ptySession))
 		return true
 	})
@@ -234,7 +234,7 @@ func sessionFilePath() string {
 		fmt.Sprintf("ghostty-web-%d.session", pid))
 }
 
-func writeSessionFile(sessionID string) {
+func writeSessionFile() {
 	path := sessionFilePath()
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -324,12 +324,13 @@ func handlePtyWebSocket(ws *websocket.Conn) {
 		}
 
 		// Otherwise treat as raw input
-		if _, err := io.WriteString(sess.cpty, string(data)); err != nil {
+		if _, err := sess.cpty.Write(data); err != nil {
 			break
 		}
 	}
 
 	<-done
+	removeSession(sess.id)
 	log.Printf("PTY WebSocket disconnected: session=%s", sess.id)
 }
 
@@ -434,9 +435,9 @@ func handleCPWebSocket(ws *websocket.Conn) {
 				reply = "ERR|ghostty-web|NO_TABS"
 			} else {
 				var sb strings.Builder
-				sb.WriteString(fmt.Sprintf("LIST_TABS|%d|0\n", count))
+				fmt.Fprintf(&sb, "LIST_TABS|%d|0\n", count)
 				for i, s := range sessions {
-					sb.WriteString(fmt.Sprintf("TAB|%d|%s|%s|%s\n", i, s.shell, s.id, s.createdAt.Format(time.RFC3339)))
+					fmt.Fprintf(&sb, "TAB|%d|%s|%s|%s\n", i, s.shell, s.id, s.createdAt.Format(time.RFC3339))
 				}
 				reply = sb.String()
 			}
@@ -460,7 +461,7 @@ func handleCPWebSocket(ws *websocket.Conn) {
 			if sess == nil {
 				reply = "ERR|ghostty-web|NO_TABS"
 			} else {
-				io.WriteString(sess.cpty, string(decoded))
+				sess.cpty.Write(decoded)
 				cmdID := nextCmdID()
 				reply = fmt.Sprintf("QUEUED|ghostty-web|INPUT|%s", cmdID)
 			}
