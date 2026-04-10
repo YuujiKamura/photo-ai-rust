@@ -92,7 +92,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p photo-ai-go/internal/web
-          cp -r web/* photo-ai-go/internal/web/ 2>/dev/null || true
+          cp web/*.html web/*.json photo-ai-go/internal/web/ 2>/dev/null || true
 
       - name: Build Go CLI
         shell: bash

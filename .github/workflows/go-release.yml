@@ -36,7 +36,9 @@ jobs:
       - name: Copy web assets for embedding
         shell: bash
         run: |
-          cp -r web/* photo-ai-go/internal/web/ 2>/dev/null || true
+          mkdir -p photo-ai-go/internal/web
+          # Copy only static assets, exclude Go source files that would create a conflicting module
+          cp web/*.html web/*.json photo-ai-go/internal/web/ 2>/dev/null || true
           echo "Web assets:"
           ls photo-ai-go/internal/web/
 
