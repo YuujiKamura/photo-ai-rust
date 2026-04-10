@@ -88,6 +88,12 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: photo-ai-go/go.sum
 
+      - name: Copy web assets for Go embed
+        shell: bash
+        run: |
+          mkdir -p photo-ai-go/internal/web
+          cp -r web/* photo-ai-go/internal/web/ 2>/dev/null || true
+
       - name: Build Go CLI
         shell: bash
         run: |

@@ -33,6 +33,13 @@ jobs:
           echo "Downloaded engines:"
           ls -la photo-ai-go/internal/engines/
 
+      - name: Copy web assets for embedding
+        shell: bash
+        run: |
+          cp -r web/* photo-ai-go/internal/web/ 2>/dev/null || true
+          echo "Web assets:"
+          ls photo-ai-go/internal/web/
+
       - name: Build Go CLI (single binary with embedded engines)
         shell: bash
         run: |

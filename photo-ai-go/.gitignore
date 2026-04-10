@@ -4,5 +4,9 @@ photo-ai.exe
 # Embedded engine binaries (copied during make all, not committed)
 internal/engines/*.exe
 
-# Web assets copied from ../web/
-internal/web/
+# Web assets copied from ../web/ (keep assets.go, ignore copied files)
+internal/web/*.html
+internal/web/*.json
+internal/web/deckpilot/
+internal/web/ghostty-web/
+internal/web/pages/
