@@ -33,6 +33,10 @@ PDF rendering, and Excel rendering to Rust engine executables.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		engine.GitCommit = gitCommit
 	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// No subcommand given (e.g. double-click) → launch Web UI
+		return serveCmd.RunE(serveCmd, args)
+	},
 }
 
 func init() {
