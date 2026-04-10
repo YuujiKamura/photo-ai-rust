@@ -24,11 +24,12 @@ jobs:
       - name: Download pre-built Rust engines
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p photo-ai-go/internal/engines
           URL="https://github.com/YuujiKamura/photo-ai-rust/releases/download/engines-latest"
           for bin in photo-tag-engine photo-analysis-engine photo-pdf-engine photo-excel-engine; do
             echo "Fetching $bin..."
-            curl -L -o "photo-ai-go/internal/engines/$bin.exe" "$URL/$bin.exe"
+            curl --fail -L -o "photo-ai-go/internal/engines/$bin.exe" "$URL/$bin.exe"
           done
           echo "Downloaded engines:"
           ls -la photo-ai-go/internal/engines/

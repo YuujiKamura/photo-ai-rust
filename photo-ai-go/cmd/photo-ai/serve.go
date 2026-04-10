@@ -117,6 +117,11 @@ func init() {
 func runServer(port string, dev bool) error {
 	// Start deckpilot daemon in background
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("deckpilot daemon panic: %v", r)
+			}
+		}()
 		log.Printf("Starting deckpilot daemon...")
 		d := daemon.New()
 		if err := d.Run(); err != nil {
@@ -177,7 +182,10 @@ func runServer(port string, dev bool) error {
 
 	cors := func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+			origin := r.Header.Get("Origin")
+			if isAllowedOrigin(origin) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			if r.Method == "OPTIONS" {
@@ -750,6 +758,11 @@ func startGhosttyWeb(webDir string) (*exec.Cmd, func()) {
 
 func handleTerminal(ws *websocket.Conn) {
 	defer ws.Close()
+	origin := ws.Request().Header.Get("Origin")
+	if !isAllowedOrigin(origin) {
+		log.Printf("WebSocket connection rejected: invalid origin %q", origin)
+		return
+	}
 	log.Printf("WebSocket client connected: %s", ws.Request().RemoteAddr)
 	for {
 		var command string
@@ -1052,7 +1065,37 @@ func defaultExportPath(resultPath, format string) string {
 }
 
 func isPathAllowed(repoDir, targetPath string) bool {
-	return true // TODO: Implement proper security check
+	absRepo, err := filepath.Abs(repoDir)
+	if err != nil {
+		return false
+	}
+	absTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return false
+	}
+	// Allow paths under the repository directory
+	rel, err := filepath.Rel(absRepo, absTarget)
+	if err != nil {
+		return false
+	}
+	if !strings.HasPrefix(rel, "..") {
+		return true
+	}
+	// Allow paths under os.TempDir() (engine extraction uses temp dirs)
+	tmpDir := os.TempDir()
+	relTmp, err := filepath.Rel(tmpDir, absTarget)
+	if err != nil {
+		return false
+	}
+	return !strings.HasPrefix(relTmp, "..")
+}
+
+func isAllowedOrigin(origin string) bool {
+	if origin == "" {
+		return true // same-origin requests have no Origin header
+	}
+	return strings.HasPrefix(origin, "http://localhost:") ||
+		strings.HasPrefix(origin, "http://127.0.0.1:")
 }
 
 func resolvePath(repoDir, p string) string {

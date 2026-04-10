@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -25,8 +26,22 @@ import (
 
 var GitCommit = "unknown"
 
+var (
+	ensureOnce sync.Once
+	ensureDir  string
+	ensureErr  error
+)
+
 // EnsureEngines extracts embedded engine binaries to a temporary directory.
+// It is safe to call concurrently; extraction happens exactly once.
 func EnsureEngines() (string, error) {
+	ensureOnce.Do(func() {
+		ensureDir, ensureErr = doEnsureEngines()
+	})
+	return ensureDir, ensureErr
+}
+
+func doEnsureEngines() (string, error) {
 	tempDir := filepath.Join(os.TempDir(), "photo-ai", "bin", GitCommit)
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
