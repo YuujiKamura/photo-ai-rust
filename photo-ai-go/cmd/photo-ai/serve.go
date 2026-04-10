@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -200,9 +201,36 @@ func runServer(port string, dev bool) error {
 
 	setupHandlers(mux, repoDir, webDir, webHandler)
 
-	addr := ":" + port
-	log.Printf("Starting server on http://localhost%s", addr)
-	return http.ListenAndServe(addr, cors(mux))
+	// Try the requested port, then fall back to alternatives
+	handler := cors(mux)
+	ports := []string{port, "9999", "0"}
+	var listener net.Listener
+	var actualPort string
+	for _, p := range ports {
+		addr := ":" + p
+		l, err := net.Listen("tcp", addr)
+		if err != nil {
+			log.Printf("Port %s is in use, trying next...", p)
+			continue
+		}
+		listener = l
+		actualPort = fmt.Sprintf("%d", listener.Addr().(*net.TCPAddr).Port)
+		break
+	}
+	if listener == nil {
+		return fmt.Errorf("could not find an available port")
+	}
+
+	url := fmt.Sprintf("http://localhost:%s", actualPort)
+	log.Printf("Starting server on %s", url)
+
+	// Open browser automatically
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		exec.Command("cmd", "/c", "start", url).Start()
+	}()
+
+	return http.Serve(listener, handler)
 }
 
 func setupHandlers(mux *http.ServeMux, repoDir, webDir string, webHandler http.Handler) {
