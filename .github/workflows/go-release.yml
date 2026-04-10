@@ -6,13 +6,11 @@ on:
       - "v*"
   workflow_dispatch:
 
-jobs:
-  build-rust-engines:
-    uses: ./.github/workflows/engines.yml
-    secrets: inherit
+permissions:
+  contents: write
 
+jobs:
   build-go-cli:
-    needs: build-rust-engines
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,18 +21,16 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: photo-ai-go/go.sum
 
-      - name: Download Rust Engines
-        uses: actions/download-artifact@v4
-        with:
-          path: engines
-
-      - name: Embed engines into Go binary
+      - name: Download pre-built Rust engines
         shell: bash
         run: |
           mkdir -p photo-ai-go/internal/engines
-          # engines/<bin>-windows-x86_64/<bin>.exe -> internal/engines/<bin>.exe
-          find engines -name "*.exe" -exec cp {} photo-ai-go/internal/engines/ \;
-          echo "Embedded engines:"
+          URL="https://github.com/YuujiKamura/photo-ai-rust/releases/download/engines-latest"
+          for bin in photo-tag-engine photo-analysis-engine photo-pdf-engine photo-excel-engine; do
+            echo "Fetching $bin..."
+            curl -L -o "photo-ai-go/internal/engines/$bin.exe" "$URL/$bin.exe"
+          done
+          echo "Downloaded engines:"
           ls -la photo-ai-go/internal/engines/
 
       - name: Build Go CLI (single binary with embedded engines)
@@ -44,12 +40,11 @@ jobs:
           GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)
           go build -ldflags "-X main.gitCommit=$GIT_COMMIT" -o ../photo-ai.exe ./cmd/photo-ai
 
-      - name: Verify embedded engines
+      - name: Verify binary size
         shell: bash
         run: |
           echo "Binary size:"
           ls -lh photo-ai.exe
-          echo "Expected: >50MB (engines embedded)"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
