@@ -23,38 +23,43 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: photo-ai-go/go.sum
 
-      - name: Build Go CLI
-        shell: bash
-        run: |
-          cd photo-ai-go
-          go build -o ../photo-ai.exe ./cmd/photo-ai
-
       - name: Download Rust Engines
         uses: actions/download-artifact@v4
         with:
           path: engines
 
-      - name: Prepare Release Package
+      - name: Embed engines into Go binary
         shell: bash
         run: |
-          mkdir release
-          cp photo-ai.exe release/
-          # engines/<bin>-windows-x86_64/<bin>.exe -> release/<bin>.exe
-          find engines -name "*.exe" -exec cp {} release/ \;
-          ls -R release/
+          mkdir -p photo-ai-go/internal/engines
+          # engines/<bin>-windows-x86_64/<bin>.exe -> internal/engines/<bin>.exe
+          find engines -name "*.exe" -exec cp {} photo-ai-go/internal/engines/ \;
+          echo "Embedded engines:"
+          ls -la photo-ai-go/internal/engines/
+
+      - name: Build Go CLI (single binary with embedded engines)
+        shell: bash
+        run: |
+          cd photo-ai-go
+          GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+          go build -ldflags "-X main.gitCommit=$GIT_COMMIT" -o ../photo-ai.exe ./cmd/photo-ai
+
+      - name: Verify embedded engines
+        shell: bash
+        run: |
+          echo "Binary size:"
+          ls -lh photo-ai.exe
+          echo "Expected: >50MB (engines embedded)"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release/photo-ai.exe
-            release/photo-pdf-engine.exe
-            release/photo-tag-engine.exe
-            release/photo-excel-engine.exe
-            release/photo-analysis-engine.exe
+          files: photo-ai.exe
           name: Release ${{ github.ref_name }}
           body: |
-            Photo AI Go Frontend + Rust Engines
+            photo-ai ${{ github.ref_name }} — single binary with all engines embedded.
+
+            Download `photo-ai.exe` and run. No additional files needed.
           draft: false
           prerelease: false
         env:
