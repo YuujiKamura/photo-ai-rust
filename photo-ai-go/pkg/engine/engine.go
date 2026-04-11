@@ -141,35 +141,41 @@ func runCommand(cmd *exec.Cmd) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
-// resolveEnginePath returns the path to the specified engine EXE.
-func resolveEnginePath(envVar, defaultName string) (string, error) {
+// resolvedEngine holds the resolved engine path along with how it was found.
+type resolvedEngine struct {
+	Path   string // absolute or basename path to the engine EXE
+	Source string // resolution source: "env", "embedded", "sibling", "target-release", "path-fallback"
+}
+
+// resolveEnginePath returns the path to the specified engine EXE and how it was resolved.
+func resolveEnginePath(envVar, defaultName string) (resolvedEngine, error) {
 	if v := os.Getenv(envVar); v != "" {
-		return v, nil
+		return resolvedEngine{Path: v, Source: "env"}, nil
 	}
 
 	// 1. Try extracted temp directory
 	if extractedDir, err := EnsureEngines(); err == nil {
 		p := filepath.Join(extractedDir, defaultName)
 		if _, err := os.Stat(p); err == nil {
-			return p, nil
+			return resolvedEngine{Path: p, Source: "embedded"}, nil
 		}
 	}
 
 	exe, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("cannot resolve executable path: %w", err)
+		return resolvedEngine{}, fmt.Errorf("cannot resolve executable path: %w", err)
 	}
 	// 2. Try same directory as executable
 	p := filepath.Join(filepath.Dir(exe), defaultName)
 	if _, err := os.Stat(p); err == nil {
-		return p, nil
+		return resolvedEngine{Path: p, Source: "sibling"}, nil
 	}
 	// 3. Try parent directory's target/release (for dev)
 	p = filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(exe))), "target", "release", defaultName)
 	if _, err := os.Stat(p); err == nil {
-		return p, nil
+		return resolvedEngine{Path: p, Source: "target-release"}, nil
 	}
-	return defaultName, nil // Fallback to PATH
+	return resolvedEngine{Path: defaultName, Source: "path-fallback"}, nil // Fallback to PATH
 }
 
 // parseEngineResponse parses the last JSON line of output as an EngineResponse.
@@ -216,12 +222,12 @@ func parseEngineResponse(output []byte, target any) error {
 func GeneratePDF(config PDFConfig) (PDFResult, error) {
 	var result PDFResult
 
-	enginePath, err := resolveEnginePath("PHOTO_PDF_ENGINE_EXE", "photo-pdf-engine.exe")
+	resolved, err := resolveEnginePath("PHOTO_PDF_ENGINE_EXE", "photo-pdf-engine.exe")
 	if err != nil {
 		return result, err
 	}
 
-	cmd := exec.Command(enginePath,
+	cmd := exec.Command(resolved.Path,
 		"--input", config.InputJSON,
 		"--output", config.OutputPath,
 		"--photos-per-page", strconv.Itoa(config.PhotosPerPage),
@@ -261,7 +267,7 @@ func GeneratePDF(config PDFConfig) (PDFResult, error) {
 func GenerateExcel(config ExcelConfig) (ExcelResult, error) {
 	var result ExcelResult
 
-	enginePath, err := resolveEnginePath("PHOTO_EXCEL_ENGINE_EXE", "photo-excel-engine.exe")
+	resolved, err := resolveEnginePath("PHOTO_EXCEL_ENGINE_EXE", "photo-excel-engine.exe")
 	if err != nil {
 		return result, err
 	}
@@ -269,7 +275,7 @@ func GenerateExcel(config ExcelConfig) (ExcelResult, error) {
 	// TODO: PhotosPerPage support in ExcelConfig? types.go has no PhotosPerPage in ExcelConfig
 	photosPerPage := 3
 
-	cmd := exec.Command(enginePath,
+	cmd := exec.Command(resolved.Path,
 		"--input", config.InputJSON,
 		"--output", config.OutputPath,
 		"--photos-per-page", strconv.Itoa(photosPerPage),
@@ -307,7 +313,7 @@ func GenerateExcel(config ExcelConfig) (ExcelResult, error) {
 func ProcessImage(config ImageConfig) (ImageResult, error) {
 	var result ImageResult
 
-	enginePath, err := resolveEnginePath("PHOTO_TAG_ENGINE_EXE", "photo-tag-engine.exe")
+	resolved, err := resolveEnginePath("PHOTO_TAG_ENGINE_EXE", "photo-tag-engine.exe")
 	if err != nil {
 		return result, err
 	}
@@ -319,7 +325,7 @@ func ProcessImage(config ImageConfig) (ImageResult, error) {
 		usageMode = "resident"
 	}
 
-	cmd := exec.Command(enginePath,
+	cmd := exec.Command(resolved.Path,
 		"--folder", config.Folder,
 		"--batch-size", strconv.Itoa(config.BatchSize),
 		"--usage-mode", usageMode,
@@ -357,7 +363,7 @@ func ProcessImage(config ImageConfig) (ImageResult, error) {
 
 // MatchMaster calls the photo-analysis-engine.exe to match analysis results with a master CSV.
 func MatchMaster(inputJSON, masterPath, folderPath, lineTypes, folderRules string) ([]AnalysisResult, error) {
-	enginePath, err := resolveEnginePath("PHOTO_ANALYSIS_ENGINE_EXE", "photo-analysis-engine.exe")
+	resolved, err := resolveEnginePath("PHOTO_ANALYSIS_ENGINE_EXE", "photo-analysis-engine.exe")
 	if err != nil {
 		return nil, err
 	}
@@ -374,16 +380,18 @@ func MatchMaster(inputJSON, masterPath, folderPath, lineTypes, folderRules strin
 		args = append(args, "--folder-rules", folderRules)
 	}
 
-	cmd := exec.Command(enginePath, args...)
+	cmd := exec.Command(resolved.Path, args...)
 
 	output, err := runCommandWithJobObject(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("match-master failed: %w\noutput: %s", err, string(output))
+		return nil, fmt.Errorf("match-master failed (engine=%s, source=%s): %w\noutput: %s",
+			resolved.Path, resolved.Source, err, string(output))
 	}
 
 	var results []AnalysisResult
 	if err := parseEngineResponse(output, &results); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("match-master parse failed (engine=%s, source=%s): %w",
+			resolved.Path, resolved.Source, err)
 	}
 
 	return results, nil
@@ -391,7 +399,7 @@ func MatchMaster(inputJSON, masterPath, folderPath, lineTypes, folderRules strin
 
 // Normalize calls the photo-analysis-engine.exe to normalize analysis results.
 func Normalize(inputJSON, folderPath, station, folderRules string) ([]AnalysisResult, error) {
-	enginePath, err := resolveEnginePath("PHOTO_ANALYSIS_ENGINE_EXE", "photo-analysis-engine.exe")
+	resolved, err := resolveEnginePath("PHOTO_ANALYSIS_ENGINE_EXE", "photo-analysis-engine.exe")
 	if err != nil {
 		return nil, err
 	}
@@ -407,16 +415,18 @@ func Normalize(inputJSON, folderPath, station, folderRules string) ([]AnalysisRe
 		args = append(args, "--folder-rules", folderRules)
 	}
 
-	cmd := exec.Command(enginePath, args...)
+	cmd := exec.Command(resolved.Path, args...)
 
 	output, err := runCommandWithJobObject(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("normalize failed: %w\noutput: %s", err, string(output))
+		return nil, fmt.Errorf("normalize failed (engine=%s, source=%s): %w\noutput: %s",
+			resolved.Path, resolved.Source, err, string(output))
 	}
 
 	var results []AnalysisResult
 	if err := parseEngineResponse(output, &results); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("normalize parse failed (engine=%s, source=%s): %w",
+			resolved.Path, resolved.Source, err)
 	}
 
 	return results, nil
