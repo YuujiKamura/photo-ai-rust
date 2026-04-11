@@ -88,6 +88,12 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: photo-ai-go/go.sum
 
+      - name: Copy engine binaries for Go embed
+        shell: bash
+        run: |
+          mkdir -p photo-ai-go/internal/engines
+          cp target/release/photo-*-engine.exe photo-ai-go/internal/engines/
+
       - name: Copy web assets and master CSVs for Go embed
         shell: bash
         run: |
@@ -95,6 +101,13 @@ jobs:
           cp web/*.html web/*.json photo-ai-go/internal/web/ 2>/dev/null || true
           mkdir -p photo-ai-go/internal/master/by_work_type
           cp master/by_work_type/*.csv photo-ai-go/internal/master/by_work_type/ 2>/dev/null || true
+          # ghostty-web dist (placeholder if not available)
+          mkdir -p photo-ai-go/internal/web/ghostty/dist
+          if [ -d web/ghostty-web/dist ]; then
+            cp -r web/ghostty-web/dist/* photo-ai-go/internal/web/ghostty/dist/
+          else
+            touch photo-ai-go/internal/web/ghostty/dist/.keep
+          fi
 
       - name: Build Go CLI
         shell: bash
