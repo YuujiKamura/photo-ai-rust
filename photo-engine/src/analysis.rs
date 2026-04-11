@@ -388,11 +388,21 @@ fn batch_images(images: &[PathBuf], batch_size: usize) -> Vec<&[PathBuf]> {
 }
 
 fn extract_json_array(s: &str) -> Option<serde_json::Value> {
-    let start = s.find('[')?;
-    let end = s.rfind(']')? + 1;
-    let candidate = &s[start..end];
-    let val: serde_json::Value = serde_json::from_str(candidate).ok()?;
-    if val.is_array() { Some(val) } else { None }
+    // Try each '[' position from the end, since the actual response
+    // is typically after the prompt echo / TUI output.
+    let bytes = s.as_bytes();
+    let last_bracket = s.rfind(']')?;
+    for i in (0..=last_bracket).rev() {
+        if bytes[i] == b'[' {
+            let candidate = &s[i..=last_bracket];
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(candidate) {
+                if val.is_array() {
+                    return Some(val);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn parse_group_items(raw: &str) -> Result<Vec<GroupItem>> {

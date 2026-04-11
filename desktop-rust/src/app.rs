@@ -652,7 +652,7 @@ fn scan_images(folder: &Path) -> Result<Vec<(PathBuf, String)>> {
     Ok(images)
 }
 
-/// Run analyze using cli_ai_analyzer library
+/// Run analyze using resident_ai library
 fn run_analyze_with_library(
     folder: &Path,
     output: &Path,
@@ -694,7 +694,7 @@ fn run_analyze_with_library(
             image_list, prompt
         );
 
-        // Call cli_ai_analyzer
+        // Call resident_ai
         let options = AnalyzeOptions::default().with_backend(backend);
         let response = analyze(&full_prompt, &file_paths, options)?;
 

@@ -56,14 +56,13 @@ func doEnsureEngines() (string, error) {
 
 	for _, name := range engineNames {
 		targetPath := filepath.Join(tempDir, name)
-		if _, err := os.Stat(targetPath); err == nil {
-			// Already exists, skip extraction
-			continue
-		}
-
 		data, err := engines.EmbeddedEngines.ReadFile(name)
 		if err != nil {
 			// If not in embedded FS, skip (might be in dev mode)
+			continue
+		}
+
+		if matchesEmbeddedFile(targetPath, data) {
 			continue
 		}
 
@@ -73,6 +72,17 @@ func doEnsureEngines() (string, error) {
 	}
 
 	return tempDir, nil
+}
+
+func matchesEmbeddedFile(targetPath string, expected []byte) bool {
+	current, err := os.ReadFile(targetPath)
+	if err != nil {
+		return false
+	}
+	if len(current) != len(expected) {
+		return false
+	}
+	return bytes.Equal(current, expected)
 }
 
 // runCommandWithJobObject executes a command within a Job Object to ensure

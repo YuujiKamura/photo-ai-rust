@@ -2694,6 +2694,7 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest",
+ "resident-ai",
  "rust_xlsxwriter 0.79.4",
  "serde",
  "serde_json",
@@ -3332,6 +3333,14 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "webpki-roots",
+]
+
+[[package]]
+name = "resident-ai"
+version = "0.2.0"
+dependencies = [
+ "base64",
+ "serde_json",
 ]
 
 [[package]]

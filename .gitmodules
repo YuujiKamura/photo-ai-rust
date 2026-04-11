@@ -1,9 +1,6 @@
 [submodule "deps/pdf-analysis-embed"]
 	path = deps/pdf-analysis-embed
 	url = https://github.com/YuujiKamura/pdf-analysis-embed.git
-[submodule "deps/cli-ai-analyzer"]
-	path = deps/cli-ai-analyzer
-	url = https://github.com/YuujiKamura/cli-ai-analyzer.git
 [submodule "deps/photo-tagger"]
 	path = deps/photo-tagger
 	url = https://github.com/YuujiKamura/photo-tagger.git

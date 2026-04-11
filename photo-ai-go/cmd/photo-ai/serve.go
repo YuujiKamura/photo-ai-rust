@@ -72,6 +72,10 @@ type RuntimeStatus struct {
 	PDFEngineAvailable    bool   `json:"pdfEngineAvailable"`
 	ExcelEnginePath       string `json:"excelEnginePath,omitempty"`
 	ExcelEnginePresent    bool   `json:"excelEngineAvailable"`
+	AgentAPIURL           string `json:"agentApiUrl,omitempty"`
+	AgentAPIAvailable     bool   `json:"agentApiAvailable"`
+	AgentAPIState         string `json:"agentApiState,omitempty"`
+	AgentAPIProvider      string `json:"agentApiProvider,omitempty"`
 	AgentTerminalMode     string `json:"agentTerminalMode"`
 	AgentOptional         bool   `json:"agentOptional"`
 }
@@ -81,6 +85,14 @@ var (
 	findMainCLIFunc       = findMainCLI
 	runCLIFunc            = runCLI
 	prepareMasterFileFunc = prepareMasterFile
+	agentAPIStatusCache   struct {
+		mu        sync.Mutex
+		checkedAt time.Time
+		url       string
+		available bool
+		state     string
+		provider  string
+	}
 )
 
 func (s *AppState) snapshot() JobState {
@@ -905,7 +917,61 @@ func getRuntimeStatus(repoDir string) RuntimeStatus {
 			status.ExcelEnginePresent = true
 		}
 	}
+	status.AgentAPIURL, status.AgentAPIAvailable, status.AgentAPIState, status.AgentAPIProvider = detectAgentAPIStatus()
 	return status
+}
+
+func detectAgentAPIStatus() (string, bool, string, string) {
+	agentAPIStatusCache.mu.Lock()
+	if time.Since(agentAPIStatusCache.checkedAt) < 2*time.Second {
+		url := agentAPIStatusCache.url
+		available := agentAPIStatusCache.available
+		state := agentAPIStatusCache.state
+		provider := agentAPIStatusCache.provider
+		agentAPIStatusCache.mu.Unlock()
+		return url, available, state, provider
+	}
+	agentAPIStatusCache.mu.Unlock()
+
+	baseURL := strings.TrimSpace(os.Getenv("PHOTO_AI_AGENTAPI_URL"))
+	if baseURL == "" {
+		baseURL = "http://127.0.0.1:3284"
+	}
+
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	resp, err := client.Get(strings.TrimRight(baseURL, "/") + "/status")
+	if err != nil {
+		cacheAgentAPIStatus(baseURL, false, "", "")
+		return baseURL, false, "", ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		cacheAgentAPIStatus(baseURL, false, resp.Status, "")
+		return baseURL, false, resp.Status, ""
+	}
+
+	var payload struct {
+		Status    string `json:"status"`
+		AgentType string `json:"agent_type"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		cacheAgentAPIStatus(baseURL, false, "invalid_json", "")
+		return baseURL, false, "invalid_json", ""
+	}
+
+	cacheAgentAPIStatus(baseURL, true, payload.Status, payload.AgentType)
+	return baseURL, true, payload.Status, payload.AgentType
+}
+
+func cacheAgentAPIStatus(baseURL string, available bool, state, provider string) {
+	agentAPIStatusCache.mu.Lock()
+	defer agentAPIStatusCache.mu.Unlock()
+	agentAPIStatusCache.checkedAt = time.Now()
+	agentAPIStatusCache.url = baseURL
+	agentAPIStatusCache.available = available
+	agentAPIStatusCache.state = state
+	agentAPIStatusCache.provider = provider
 }
 
 func resolveEngineBinaries(repoDir, cliPath string) map[string]string {
