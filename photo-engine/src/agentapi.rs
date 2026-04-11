@@ -126,4 +126,32 @@ mod tests {
         let text = result.unwrap();
         assert!(text.contains("answer"), "expected JSON with 'answer', got: {}", text);
     }
+
+    #[test]
+    #[ignore] // requires gemini CLI + test image
+    fn relation_image_analyze_returns_content() {
+        let image = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_fixtures")
+            .join("sample.png");
+        assert!(image.exists(), "test image missing: {:?}", image);
+
+        let carrier = CarrierConfig::default();
+        let result = analyze(
+            "この画像に何が写っているか、日本語で1行で説明しろ",
+            &[image],
+            carrier,
+        );
+        assert!(result.is_ok(), "image analyze failed: {:?}", result.err());
+        let text = result.unwrap();
+        assert!(!text.is_empty(), "response should not be empty");
+        // 舗装関連の書類なので、それっぽい単語が含まれるはず
+        let has_keyword = text.contains("舗装")
+            || text.contains("アスファルト")
+            || text.contains("混合物")
+            || text.contains("品質")
+            || text.contains("配合")
+            || text.contains("書類")
+            || text.contains("表");
+        assert!(has_keyword, "expected construction-related content, got: {}", text);
+    }
 }
