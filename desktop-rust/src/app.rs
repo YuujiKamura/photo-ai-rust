@@ -11,7 +11,7 @@ use crate::io::{default_sorted_path, load_result_items, save_sorted_items};
 use crate::model::{AppState, ResultItem};
 use photo_ai_common::layout::{FieldKey, LAYOUT_FIELDS};
 use photo_ai_common::prompts::build_step1_prompt;
-use cli_ai_analyzer::{analyze, AnalyzeOptions, Backend};
+use resident_ai::{analyze, AnalyzeOptions, Backend};
 
 const DETAIL_FIELDS: &[(&str, &str)] = &[
     ("file_name", "File Name"),
