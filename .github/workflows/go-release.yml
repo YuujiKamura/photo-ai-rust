@@ -15,23 +15,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
           cache-dependency-path: photo-ai-go/go.sum
 
-      - name: Download pre-built Rust engines
+      - name: Build Rust engines from current commit
         shell: bash
         run: |
           set -euo pipefail
+          cargo build --release -p photo-ai-rust --bin photo-tag-engine
+          cargo build --release -p photo-engine --bin photo-analysis-engine
+          cargo build --release -p photo-ai-rust --bin photo-pdf-engine --features pdf-gen
+          cargo build --release -p photo-ai-rust --bin photo-excel-engine --features excel
           mkdir -p photo-ai-go/internal/engines
-          URL="https://github.com/YuujiKamura/photo-ai-rust/releases/download/engines-latest"
           for bin in photo-tag-engine photo-analysis-engine photo-pdf-engine photo-excel-engine; do
-            echo "Fetching $bin..."
-            curl --fail -L -o "photo-ai-go/internal/engines/$bin.exe" "$URL/$bin.exe"
+            cp "target/release/$bin.exe" "photo-ai-go/internal/engines/$bin.exe"
           done
-          echo "Downloaded engines:"
+          echo "Built engines:"
           ls -la photo-ai-go/internal/engines/
 
       - name: Copy web assets and master CSVs for embedding

@@ -160,6 +160,7 @@ func TestResolveEngineBinariesUsesEnvOverride(t *testing.T) {
 
 func TestGetRuntimeStatusWithoutCLI(t *testing.T) {
 	resetTestState(t)
+	t.Setenv("PHOTO_AI_MASTER_DIR", filepath.Join(t.TempDir(), "user-master"))
 	status := getRuntimeStatus(t.TempDir())
 	if status.MainCLIAvailable {
 		t.Fatal("cli should be unavailable")
@@ -170,11 +171,15 @@ func TestGetRuntimeStatusWithoutCLI(t *testing.T) {
 	if status.AgentTerminalMode != "required_for_analysis" {
 		t.Fatalf("unexpected agent mode: %q", status.AgentTerminalMode)
 	}
+	if status.MasterSource != "user" {
+		t.Fatalf("expected user master source, got %#v", status)
+	}
 }
 
 func TestGetRuntimeStatusWithCLIAndEngines(t *testing.T) {
 	resetTestState(t)
 	repo := t.TempDir()
+	t.Setenv("PHOTO_AI_MASTER_DIR", filepath.Join(t.TempDir(), "user-master"))
 	cliPath := filepath.Join(repo, "photo-ai-go", "photo-ai.exe")
 	mustWriteFile(t, cliPath, "cli")
 	mustWriteFile(t, filepath.Join(filepath.Dir(cliPath), "photo-tag-engine.exe"), "tag")
@@ -185,6 +190,9 @@ func TestGetRuntimeStatusWithCLIAndEngines(t *testing.T) {
 	status := getRuntimeStatus(repo)
 	if !status.MainCLIAvailable || !status.TagEngineAvailable || !status.AnalysisEnginePresent || !status.PDFEngineAvailable || !status.ExcelEnginePresent {
 		t.Fatalf("expected all runtime components, got %#v", status)
+	}
+	if status.MasterVersion == "" || status.MasterSchemaVersion == 0 {
+		t.Fatalf("expected master metadata, got %#v", status)
 	}
 }
 
@@ -199,8 +207,11 @@ func TestPrepareMasterFileNoFiles(t *testing.T) {
 func TestPrepareMasterFileSingleBareName(t *testing.T) {
 	resetTestState(t)
 	repo := t.TempDir()
-	master := filepath.Join(repo, "master", "by_work_type", "舗装工.csv")
+	userRoot := filepath.Join(t.TempDir(), "user-master")
+	t.Setenv("PHOTO_AI_MASTER_DIR", userRoot)
+	master := filepath.Join(userRoot, "by_work_type", "舗装工.csv")
 	mustWriteFile(t, master, "h1,h2\n1,2\n")
+	mustWriteFile(t, filepath.Join(userRoot, "manifest.json"), "{\"schema_version\":1,\"master_version\":\"test\",\"files\":[\"by_work_type/舗装工.csv\"]}\n")
 
 	cleanup, path, err := prepareMasterFile(repo, []string{"舗装工"})
 	if err != nil {
@@ -217,10 +228,13 @@ func TestPrepareMasterFileSingleBareName(t *testing.T) {
 func TestPrepareMasterFileMergeMultiple(t *testing.T) {
 	resetTestState(t)
 	repo := t.TempDir()
-	first := filepath.Join(repo, "master", "by_work_type", "舗装工.csv")
-	second := filepath.Join(repo, "master", "by_work_type", "共通.csv")
+	userRoot := filepath.Join(t.TempDir(), "user-master")
+	t.Setenv("PHOTO_AI_MASTER_DIR", userRoot)
+	first := filepath.Join(userRoot, "by_work_type", "舗装工.csv")
+	second := filepath.Join(userRoot, "by_work_type", "共通.csv")
 	mustWriteFile(t, first, "h1,h2\n1,2\n")
 	mustWriteFile(t, second, "h1,h2\n3,4\n")
+	mustWriteFile(t, filepath.Join(userRoot, "manifest.json"), "{\"schema_version\":1,\"master_version\":\"test\",\"files\":[\"by_work_type/舗装工.csv\",\"by_work_type/共通.csv\"]}\n")
 
 	cleanup, path, err := prepareMasterFile(repo, []string{"舗装工", "共通"})
 	if err != nil {
@@ -242,6 +256,7 @@ func TestPrepareMasterFileMergeMultiple(t *testing.T) {
 
 func TestPrepareMasterFileMissing(t *testing.T) {
 	resetTestState(t)
+	t.Setenv("PHOTO_AI_MASTER_DIR", filepath.Join(t.TempDir(), "user-master"))
 	_, _, err := prepareMasterFile(t.TempDir(), []string{"missing"})
 	if err == nil {
 		t.Fatal("expected missing master error")
@@ -250,11 +265,11 @@ func TestPrepareMasterFileMissing(t *testing.T) {
 
 func TestRenameMasterFileRenamesCSVAndUpdatesWorkTypeColumn(t *testing.T) {
 	resetTestState(t)
-	repo := t.TempDir()
-	oldPath := filepath.Join(repo, "master", "by_work_type", "仮設工.csv")
+	root := t.TempDir()
+	oldPath := filepath.Join(root, "by_work_type", "仮設工.csv")
 	mustWriteFile(t, oldPath, "費目,写真区分,工種,種別,細別,備考,検索パターン\n共通,施工状況写真,仮設工,仮設,準備,着工前,着工前\n")
 
-	if err := renameMasterFile(repo, "仮設工", "共通仮設"); err != nil {
+	if err := renameMasterFile(root, "仮設工", "共通仮設"); err != nil {
 		t.Fatalf("renameMasterFile: %v", err)
 	}
 

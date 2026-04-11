@@ -25,9 +25,9 @@ import (
 	"golang.org/x/net/websocket"
 
 	"github.com/YuujiKamura/deckpilot/daemon"
-	"github.com/YuujiKamura/photo-ai-go/pkg/engine"
-	embeddedmaster "github.com/YuujiKamura/photo-ai-go/internal/master"
+	masterruntime "github.com/YuujiKamura/photo-ai-go/internal/master"
 	"github.com/YuujiKamura/photo-ai-go/internal/web"
+	"github.com/YuujiKamura/photo-ai-go/pkg/engine"
 )
 
 type MasterRow struct {
@@ -78,6 +78,11 @@ type RuntimeStatus struct {
 	AgentAPIProvider      string `json:"agentApiProvider,omitempty"`
 	AgentTerminalMode     string `json:"agentTerminalMode"`
 	AgentOptional         bool   `json:"agentOptional"`
+	MasterRoot            string `json:"masterRoot,omitempty"`
+	MasterSource          string `json:"masterSource,omitempty"`
+	MasterWritable        bool   `json:"masterWritable"`
+	MasterVersion         string `json:"masterVersion,omitempty"`
+	MasterSchemaVersion   int    `json:"masterSchemaVersion,omitempty"`
 }
 
 var serverState AppState
@@ -268,8 +273,13 @@ func setupHandlers(mux *http.ServeMux, repoDir, webDir string, webHandler http.H
 			http.Error(w, "POST only", 405)
 			return
 		}
-		if webDir == "" {
-			http.Error(w, "master update is read-only in production mode", 400)
+		src, err := masterruntime.ResolveMasterSource(repoDir)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if !src.Writable {
+			http.Error(w, "master source is read-only", 400)
 			return
 		}
 		var req struct {
@@ -281,7 +291,7 @@ func setupHandlers(mux *http.ServeMux, repoDir, webDir string, webHandler http.H
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		csvPath := filepath.Join(repoDir, "master", "by_work_type", req.WorkTypeName+".csv")
+		csvPath := filepath.Join(src.RootDir, "by_work_type", req.WorkTypeName+".csv")
 		if err := updateCSVRow(csvPath, req.RowIndex, req.Row); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -295,8 +305,13 @@ func setupHandlers(mux *http.ServeMux, repoDir, webDir string, webHandler http.H
 			http.Error(w, "POST only", 405)
 			return
 		}
-		if webDir == "" {
-			http.Error(w, "master rename is read-only in production mode", 400)
+		src, err := masterruntime.ResolveMasterSource(repoDir)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if !src.Writable {
+			http.Error(w, "master source is read-only", 400)
 			return
 		}
 		var req struct {
@@ -307,7 +322,7 @@ func setupHandlers(mux *http.ServeMux, repoDir, webDir string, webHandler http.H
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		if err := renameMasterFile(repoDir, req.OldName, req.NewName); err != nil {
+		if err := renameMasterFile(src.RootDir, req.OldName, req.NewName); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -643,12 +658,14 @@ if ($d.ShowDialog() -eq 'OK') {
 // --- Helper Functions Ported from server.go ---
 
 func loadMasterCSVs(repoDir string) (map[string][]MasterRow, error) {
-	masterDir := filepath.Join(repoDir, "master", "by_work_type")
-
-	// Try filesystem first, fall back to embedded master
+	src, err := masterruntime.ResolveMasterSource(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	masterDir := filepath.Join(src.RootDir, "by_work_type")
 	entries, fsErr := os.ReadDir(masterDir)
 	if fsErr != nil {
-		return loadMasterCSVsFromEmbed()
+		return nil, fsErr
 	}
 
 	result := make(map[string][]MasterRow)
@@ -665,14 +682,11 @@ func loadMasterCSVs(repoDir string) (map[string][]MasterRow, error) {
 		f.Close()
 		result[name] = rows
 	}
-	if len(result) == 0 {
-		return loadMasterCSVsFromEmbed()
-	}
 	return result, nil
 }
 
 func loadMasterCSVsFromEmbed() (map[string][]MasterRow, error) {
-	entries, err := embeddedmaster.EmbeddedMaster.ReadDir("by_work_type")
+	entries, err := masterruntime.EmbeddedMaster.ReadDir("by_work_type")
 	if err != nil {
 		return nil, fmt.Errorf("no master files on disk or embedded: %w", err)
 	}
@@ -683,7 +697,7 @@ func loadMasterCSVsFromEmbed() (map[string][]MasterRow, error) {
 			continue
 		}
 		name := strings.TrimSuffix(e.Name(), ".csv")
-		f, err := embeddedmaster.EmbeddedMaster.Open("by_work_type/" + e.Name())
+		f, err := masterruntime.EmbeddedMaster.Open("by_work_type/" + e.Name())
 		if err != nil {
 			continue
 		}
@@ -731,7 +745,6 @@ func parseMasterCSV(r io.Reader) []MasterRow {
 	}
 	return rows
 }
-
 
 func handleTerminal(ws *websocket.Conn) {
 	defer ws.Close()
@@ -835,8 +848,8 @@ func updateCSVRow(csvPath string, rowIndex int, row MasterRow) error {
 	return w.Error()
 }
 
-func renameMasterFile(repoDir, oldName, newName string) error {
-	masterDir := filepath.Join(repoDir, "master", "by_work_type")
+func renameMasterFile(masterRoot, oldName, newName string) error {
+	masterDir := filepath.Join(masterRoot, "by_work_type")
 	oldPath := filepath.Join(masterDir, oldName+".csv")
 	newPath := filepath.Join(masterDir, newName+".csv")
 	if _, err := os.Stat(oldPath); err != nil {
@@ -916,6 +929,13 @@ func getRuntimeStatus(repoDir string) RuntimeStatus {
 			status.ExcelEnginePath = p
 			status.ExcelEnginePresent = true
 		}
+	}
+	if src, err := masterruntime.ResolveMasterSource(repoDir); err == nil {
+		status.MasterRoot = src.RootDir
+		status.MasterSource = src.Source
+		status.MasterWritable = src.Writable
+		status.MasterVersion = src.MasterVersion
+		status.MasterSchemaVersion = src.SchemaVersion
 	}
 	status.AgentAPIURL, status.AgentAPIAvailable, status.AgentAPIState, status.AgentAPIProvider = detectAgentAPIStatus()
 	return status
@@ -1152,12 +1172,18 @@ func prepareMasterFile(repoDir string, masterFiles []string) (cleanup func(), ma
 	if len(masterFiles) == 0 {
 		return nil, "", nil
 	}
+	src, err := masterruntime.ResolveMasterSource(repoDir)
+	if err != nil {
+		return nil, "", err
+	}
 	if len(masterFiles) == 1 {
 		name := masterFiles[0]
 		if !strings.HasSuffix(name, ".csv") {
-			name = filepath.Join("master", "by_work_type", name+".csv")
+			name = filepath.Join(src.RootDir, "by_work_type", name+".csv")
+		} else if !filepath.IsAbs(name) {
+			name = filepath.Join(src.RootDir, "by_work_type", name)
 		}
-		return nil, resolvePath(repoDir, name), nil
+		return nil, name, nil
 	}
 	tmpFile, _ := os.CreateTemp("", "merged-master-*.csv")
 	tmpPath := tmpFile.Name()
@@ -1165,12 +1191,13 @@ func prepareMasterFile(repoDir string, masterFiles []string) (cleanup func(), ma
 	headerWritten := false
 	for _, name := range masterFiles {
 		if !strings.HasSuffix(name, ".csv") {
-			name = filepath.Join("master", "by_work_type", name+".csv")
+			name = filepath.Join(src.RootDir, "by_work_type", name+".csv")
+		} else if !filepath.IsAbs(name) {
+			name = filepath.Join(src.RootDir, "by_work_type", name)
 		}
-		p := resolvePath(repoDir, name)
-		f, err := os.Open(p)
+		f, err := os.Open(name)
 		if err != nil {
-			log.Printf("Warning: skipping master file %s: %v", p, err)
+			log.Printf("Warning: skipping master file %s: %v", name, err)
 			continue
 		}
 		scanner := bufio.NewScanner(f)

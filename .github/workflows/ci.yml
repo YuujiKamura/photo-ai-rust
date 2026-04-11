@@ -66,17 +66,13 @@ jobs:
           path: target/release/photo-ai-rust.exe
           key: binary-${{ runner.os }}-${{ hashFiles('src/**', 'common/**', 'Cargo.lock') }}
 
-      - name: Download Pre-built Engines
+      - name: Build Rust engines from current commit
         shell: bash
         run: |
-          mkdir -p target/release
-          # All engines are built/tested via engines.yml; CI just downloads them
-          URL="https://github.com/YuujiKamura/photo-ai-rust/releases/download/engines-latest"
-          for bin in photo-pdf-engine photo-tag-engine photo-excel-engine photo-analysis-engine; do
-            echo "Fetching $bin..."
-            curl -L -O "$URL/$bin.exe"
-            mv "$bin.exe" target/release/
-          done
+          cargo build --release -p photo-ai-rust --bin photo-tag-engine
+          cargo build --release -p photo-engine --bin photo-analysis-engine
+          cargo build --release -p photo-ai-rust --bin photo-pdf-engine --features pdf-gen
+          cargo build --release -p photo-ai-rust --bin photo-excel-engine --features excel
 
       - name: Build and test main binary
         if: steps.binary-cache.outputs.cache-hit != 'true'

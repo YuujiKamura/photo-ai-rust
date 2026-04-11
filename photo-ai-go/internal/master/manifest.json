@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "master_version": "2026-04-11",
+  "files": [
+    "by_work_type/仮設工.csv",
+    "by_work_type/共通.csv",
+    "by_work_type/区画線工.csv",
+    "by_work_type/構造物撤去工.csv",
+    "by_work_type/道路土工.csv",
+    "by_work_type/道路付属施設工.csv",
+    "by_work_type/排水構造物工.csv",
+    "by_work_type/舗装工.csv",
+    "by_work_type/舗装補修工.csv"
+  ]
+}
