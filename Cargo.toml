@@ -25,10 +25,6 @@ name = "photo-pdf-engine"
 path = "src/bin/pdf_engine.rs"
 
 [[bin]]
-name = "photo-tag-engine"
-path = "src/bin/tag_engine.rs"
-
-[[bin]]
 name = "photo-excel-engine"
 path = "src/bin/excel_engine.rs"
 

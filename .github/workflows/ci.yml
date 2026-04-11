@@ -69,7 +69,7 @@ jobs:
       - name: Build Rust engines from current commit
         shell: bash
         run: |
-          cargo build --release -p photo-ai-rust --bin photo-tag-engine
+          # photo-tag-engine is now pure Go (pkg/tagger) — no Rust build needed
           cargo build --release -p photo-engine --bin photo-analysis-engine
           cargo build --release -p photo-ai-rust --bin photo-pdf-engine --features pdf-gen
           cargo build --release -p photo-ai-rust --bin photo-excel-engine --features excel

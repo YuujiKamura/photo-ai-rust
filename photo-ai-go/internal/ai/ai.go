@@ -1,5 +1,6 @@
 // Package ai provides the Gemini API client for photo analysis.
-// TODO: Port from the photo-tagger crate and src/analyzer/*.rs
+// Photo tagging is now handled by pkg/tagger (pure Go).
+// TODO: Port remaining analysis logic from src/analyzer/*.rs
 package ai
 
 
@@ -30,8 +31,7 @@ type ImageAnalysisResponse struct {
 }
 
 // Client is the Gemini API client.
-// TODO: implement using the Gemini REST or gRPC API;
-//       see photo-tagger crate for prompt formatting details.
+// TODO: implement using the Gemini REST or gRPC API.
 type Client struct {
 	cfg Config
 }

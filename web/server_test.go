@@ -148,12 +148,12 @@ func TestResolveEngineBinariesUsesEnvOverride(t *testing.T) {
 	repo := t.TempDir()
 	cliPath := filepath.Join(repo, "photo-ai-go", "photo-ai.exe")
 	mustWriteFile(t, cliPath, "cli")
-	override := filepath.Join(t.TempDir(), "photo-tag-engine.exe")
-	mustWriteFile(t, override, "tag")
-	t.Setenv("PHOTO_TAG_ENGINE_EXE", override)
+	override := filepath.Join(t.TempDir(), "photo-analysis-engine.exe")
+	mustWriteFile(t, override, "analysis")
+	t.Setenv("PHOTO_ANALYSIS_ENGINE_EXE", override)
 
 	got := resolveEngineBinaries(repo, cliPath)
-	if got["PHOTO_TAG_ENGINE_EXE"] != override {
+	if got["PHOTO_ANALYSIS_ENGINE_EXE"] != override {
 		t.Fatalf("expected env override, got %#v", got)
 	}
 }
@@ -182,13 +182,12 @@ func TestGetRuntimeStatusWithCLIAndEngines(t *testing.T) {
 	t.Setenv("PHOTO_AI_MASTER_DIR", filepath.Join(t.TempDir(), "user-master"))
 	cliPath := filepath.Join(repo, "photo-ai-go", "photo-ai.exe")
 	mustWriteFile(t, cliPath, "cli")
-	mustWriteFile(t, filepath.Join(filepath.Dir(cliPath), "photo-tag-engine.exe"), "tag")
 	mustWriteFile(t, filepath.Join(filepath.Dir(cliPath), "photo-analysis-engine.exe"), "analysis")
 	mustWriteFile(t, filepath.Join(filepath.Dir(cliPath), "photo-pdf-engine.exe"), "pdf")
 	mustWriteFile(t, filepath.Join(filepath.Dir(cliPath), "photo-excel-engine.exe"), "excel")
 
 	status := getRuntimeStatus(repo)
-	if !status.MainCLIAvailable || !status.TagEngineAvailable || !status.AnalysisEnginePresent || !status.PDFEngineAvailable || !status.ExcelEnginePresent {
+	if !status.MainCLIAvailable || !status.AnalysisEnginePresent || !status.PDFEngineAvailable || !status.ExcelEnginePresent {
 		t.Fatalf("expected all runtime components, got %#v", status)
 	}
 	if status.MasterVersion == "" || status.MasterSchemaVersion == 0 {

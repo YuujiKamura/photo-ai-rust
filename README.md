@@ -9,7 +9,7 @@
 
 ```text
 photo-ai-go/cmd/photo-ai        # メインCLI（Go）
-src/bin/tag_engine.rs           # タグ付け engine（Rust）
+photo-ai-go/pkg/tagger/          # タグ付け（Go native）
 photo-engine/src/bin/photo-analysis-engine.rs
 src/bin/pdf_engine.rs
 src/bin/excel_engine.rs
@@ -19,7 +19,7 @@ src/bin/excel_engine.rs
 
 ```text
 photo-ai.exe
-  -> photo-tag-engine.exe
+  -> pkg/tagger (Go native)
   -> photo-analysis-engine.exe
   -> photo-pdf-engine.exe / photo-excel-engine.exe
 ```
@@ -36,7 +36,6 @@ make all
 これで次の成果物を作る。
 
 - `photo-ai.exe`
-- `target/release/photo-tag-engine.exe`
 - `target/release/photo-analysis-engine.exe`
 - `target/release/photo-pdf-engine.exe`
 - `target/release/photo-excel-engine.exe`

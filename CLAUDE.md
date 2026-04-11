@@ -36,7 +36,7 @@ photo-ai-rust/          # リポジトリルート
 ### 解析フロー
 ```
 photo-ai.exe
-  → photo-tag-engine.exe
+  → pkg/tagger (Go native)
   → photo-analysis-engine.exe
   → photo-pdf-engine.exe / photo-excel-engine.exe
 ```

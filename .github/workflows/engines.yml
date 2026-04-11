@@ -33,8 +33,6 @@ jobs:
             bin: photo-pdf-engine
             features: "pdf-gen"
           - package: photo-ai-rust
-            bin: photo-tag-engine
-          - package: photo-ai-rust
             bin: photo-excel-engine
             features: "excel"
           - package: photo-engine
@@ -106,7 +104,6 @@ jobs:
           tag_name: engines-latest
           files: |
             photo-pdf-engine-windows-x86_64/photo-pdf-engine.exe
-            photo-tag-engine-windows-x86_64/photo-tag-engine.exe
             photo-excel-engine-windows-x86_64/photo-excel-engine.exe
             photo-analysis-engine-windows-x86_64/photo-analysis-engine.exe
           name: Pre-built Engines
