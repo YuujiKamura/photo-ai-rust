@@ -14,13 +14,12 @@ clean:
 	rm -f $(BINARY_NAME)
 
 # Build Rust engines first, then the Go main binary
+# Note: photo-tag-engine is now a pure-Go implementation (pkg/tagger), no Rust build needed.
 all:
-	cd .. && cargo build --release -p photo-ai-rust --bin photo-tag-engine
 	cd .. && cargo build --release -p photo-engine --bin photo-analysis-engine
 	cd .. && cargo build --release -p photo-ai-rust --bin photo-pdf-engine --features pdf-gen
 	cd .. && cargo build --release -p photo-ai-rust --bin photo-excel-engine --features excel
 	@echo "Copying engines from cargo target directory..."
-	cp -f ../target/release/photo-tag-engine.exe ./internal/engines/ 2>/dev/null || echo "WARN: photo-tag-engine.exe not found in target/release"
 	cp -f ../target/release/photo-analysis-engine.exe ./internal/engines/ 2>/dev/null || echo "WARN: photo-analysis-engine.exe not found in target/release"
 	cp -f ../target/release/photo-pdf-engine.exe ./internal/engines/ 2>/dev/null || echo "WARN: photo-pdf-engine.exe not found in target/release"
 	cp -f ../target/release/photo-excel-engine.exe ./internal/engines/ 2>/dev/null || echo "WARN: photo-excel-engine.exe not found in target/release"

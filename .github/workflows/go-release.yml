@@ -17,7 +17,7 @@ jobs:
 
       - name: Checkout required submodules
         shell: bash
-        run: git submodule update --init --depth=1 deps/pdf-analysis-embed deps/photo-tagger deps/folder-watcher
+        run: git submodule update --init --depth=1 deps/pdf-analysis-embed deps/folder-watcher
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -39,12 +39,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --release -p photo-ai-rust --bin photo-tag-engine
+          # photo-tag-engine is now pure Go (pkg/tagger) — no Rust build needed
+          # photo-ai-rust: pdf + excel engines share deps
+          cargo build --release -p photo-ai-rust --features pdf-gen,excel
+          # photo-engine: separate crate
           cargo build --release -p photo-engine --bin photo-analysis-engine
-          cargo build --release -p photo-ai-rust --bin photo-pdf-engine --features pdf-gen
-          cargo build --release -p photo-ai-rust --bin photo-excel-engine --features excel
           mkdir -p photo-ai-go/internal/engines
-          for bin in photo-tag-engine photo-analysis-engine photo-pdf-engine photo-excel-engine; do
+          for bin in photo-analysis-engine photo-pdf-engine photo-excel-engine; do
             cp "target/release/$bin.exe" "photo-ai-go/internal/engines/$bin.exe"
           done
           echo "Built engines:"

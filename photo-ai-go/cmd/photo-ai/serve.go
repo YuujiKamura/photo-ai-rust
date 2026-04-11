@@ -996,7 +996,7 @@ func cacheAgentAPIStatus(baseURL string, available bool, state, provider string)
 
 func resolveEngineBinaries(repoDir, cliPath string) map[string]string {
 	engineNames := map[string]string{
-		"PHOTO_TAG_ENGINE_EXE":      "photo-tag-engine.exe",
+		// photo-tag-engine is now a pure Go implementation (pkg/tagger)
 		"PHOTO_ANALYSIS_ENGINE_EXE": "photo-analysis-engine.exe",
 		"PHOTO_PDF_ENGINE_EXE":      "photo-pdf-engine.exe",
 		"PHOTO_EXCEL_ENGINE_EXE":    "photo-excel-engine.exe",

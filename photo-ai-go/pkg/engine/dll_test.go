@@ -1,9 +1,12 @@
 package engine
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/YuujiKamura/photo-ai-go/pkg/tagger"
 )
 
 func TestGeneratePDF(t *testing.T) {
@@ -98,22 +101,25 @@ func TestGenerateExcel(t *testing.T) {
 }
 
 func TestProcessImage(t *testing.T) {
-	exePath := `F:\rust-targets\release\photo-tag-engine.exe`
-	if _, err := os.Stat(exePath); err != nil {
-		t.Skipf("Engine EXE not found at %s, skipping test", exePath)
-	}
-	os.Setenv("PHOTO_TAG_ENGINE_EXE", exePath)
-
 	tempDir := t.TempDir()
-	// Use real image if available, else fallback to dummy (which might fail)
-	realImg := `C:\Users\yuuji\manual_test\image.png`
-	targetImg := filepath.Join(tempDir, "image.png")
-	if _, err := os.Stat(realImg); err == nil {
-		// Copy real image
-		data, _ := os.ReadFile(realImg)
-		os.WriteFile(targetImg, data, 0644)
-	} else {
-		os.WriteFile(targetImg, []byte("dummy"), 0644)
+	called := false
+	original := runGrouping
+	t.Cleanup(func() { runGrouping = original })
+	runGrouping = func(_ context.Context, cfg tagger.Config) (tagger.Result, error) {
+		called = true
+		if cfg.Folder != tempDir {
+			t.Fatalf("expected folder %q, got %q", tempDir, cfg.Folder)
+		}
+		if cfg.BatchSize != 10 {
+			t.Fatalf("expected batch size 10, got %d", cfg.BatchSize)
+		}
+		if cfg.PayPerUse {
+			t.Fatalf("expected pay-per-use false by default")
+		}
+		return tagger.Result{
+			PhotoCount: 1,
+			OutputJSON: filepath.Join(cfg.Folder, "photo-groups.json"),
+		}, nil
 	}
 
 	config := ImageConfig{
@@ -121,10 +127,12 @@ func TestProcessImage(t *testing.T) {
 		BatchSize: 10,
 	}
 
-	// Increase timeout for AI processing
 	result, err := ProcessImage(config)
 	if err != nil {
 		t.Fatalf("ProcessImage failed: %v", err)
+	}
+	if !called {
+		t.Fatal("expected resident grouping backend to be called")
 	}
 
 	if result.PhotoCount < 1 {
@@ -133,30 +141,39 @@ func TestProcessImage(t *testing.T) {
 }
 
 func TestProcessImageResident(t *testing.T) {
-	exePath := `F:\rust-targets\release\photo-tag-engine.exe`
-	if _, err := os.Stat(exePath); err != nil {
-		t.Skipf("Engine EXE not found at %s, skipping test", exePath)
-	}
-	os.Setenv("PHOTO_TAG_ENGINE_EXE", exePath)
-
-	// Use a known alive/dead session ID from deckpilot list for testing
-	os.Setenv("DECKPILOT_SESSION", "ghostty-web-33192")
-
 	tempDir := t.TempDir()
-	realImg := `C:\Users\yuuji\manual_test\image.png`
-	targetImg := filepath.Join(tempDir, "image.png")
-	data, _ := os.ReadFile(realImg)
-	os.WriteFile(targetImg, data, 0644)
+	called := false
+	original := runGrouping
+	t.Cleanup(func() { runGrouping = original })
+	runGrouping = func(_ context.Context, cfg tagger.Config) (tagger.Result, error) {
+		called = true
+		if cfg.Folder != tempDir {
+			t.Fatalf("expected folder %q, got %q", tempDir, cfg.Folder)
+		}
+		if cfg.BatchSize != 10 {
+			t.Fatalf("expected batch size 10, got %d", cfg.BatchSize)
+		}
+		if !cfg.PayPerUse {
+			// resident is the primary transport now; non-pay-per-use should remain false here.
+		}
+		return tagger.Result{
+			PhotoCount: 2,
+			OutputJSON: filepath.Join(cfg.Folder, "photo-groups.json"),
+		}, nil
+	}
 
 	config := ImageConfig{
 		Folder:    tempDir,
 		BatchSize: 10,
-		Resident:  true, // Use deckpilot mode
+		Resident:  true,
 	}
 
 	result, err := ProcessImage(config)
 	if err != nil {
 		t.Fatalf("ProcessImage Resident failed: %v", err)
+	}
+	if !called {
+		t.Fatal("expected resident grouping backend to be called")
 	}
 
 	t.Logf("Resident test success: %d photos processed", result.PhotoCount)

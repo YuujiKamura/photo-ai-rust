@@ -9,6 +9,7 @@ package engine
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"unsafe"
 
 	"github.com/YuujiKamura/photo-ai-go/internal/engines"
+	"github.com/YuujiKamura/photo-ai-go/pkg/tagger"
 	"golang.org/x/sys/windows"
 )
 
@@ -30,6 +32,7 @@ var (
 	ensureOnce sync.Once
 	ensureDir  string
 	ensureErr  error
+	runGrouping = tagger.RunGrouping
 )
 
 // EnsureEngines extracts embedded engine binaries to a temporary directory.
@@ -48,7 +51,6 @@ func doEnsureEngines() (string, error) {
 	}
 
 	engineNames := []string{
-		"photo-tag-engine.exe",
 		"photo-analysis-engine.exe",
 		"photo-pdf-engine.exe",
 		"photo-excel-engine.exe",
@@ -309,55 +311,27 @@ func GenerateExcel(config ExcelConfig) (ExcelResult, error) {
 	return result, nil
 }
 
-// ProcessImage calls the photo-tag-engine.exe to analyze images.
+// ProcessImage classifies and groups construction photos using Gemini AI.
+// This is a pure-Go implementation that replaces the former photo-tag-engine.exe subprocess.
 func ProcessImage(config ImageConfig) (ImageResult, error) {
 	var result ImageResult
 
-	resolved, err := resolveEnginePath("PHOTO_TAG_ENGINE_EXE", "photo-tag-engine.exe")
+	cfg := tagger.Config{
+		Folder:    config.Folder,
+		BatchSize: config.BatchSize,
+		PayPerUse: config.PayPerUse,
+	}
+	if cfg.BatchSize <= 0 {
+		cfg.BatchSize = 10
+	}
+
+	res, err := runGrouping(context.Background(), cfg)
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("tagger.RunGrouping: %w", err)
 	}
 
-	usageMode := "time_based_quota"
-	if config.PayPerUse {
-		usageMode = "pay_per_use"
-	} else if config.Resident {
-		usageMode = "resident"
-	}
-
-	cmd := exec.Command(resolved.Path,
-		"--folder", config.Folder,
-		"--batch-size", strconv.Itoa(config.BatchSize),
-		"--usage-mode", usageMode,
-	)
-
-	output, err := runCommandWithJobObject(cmd)
-	if err != nil {
-		var data struct {
-			Folder  string `json:"folder"`
-			Count   int    `json:"count"`
-			Records any    `json:"records"`
-		}
-		if parseErr := parseEngineResponse(output, &data); parseErr == nil {
-			result.PhotoCount = data.Count
-			result.OutputJSON = filepath.Join(config.Folder, "photo-groups.json")
-			return result, nil
-		}
-		return result, fmt.Errorf("execution failed: %w\noutput: %s", err, string(output))
-	}
-
-	var data struct {
-		Folder  string `json:"folder"`
-		Count   int    `json:"count"`
-		Records any    `json:"records"`
-	}
-	if err := parseEngineResponse(output, &data); err != nil {
-		return result, err
-	}
-
-	result.PhotoCount = data.Count
-	result.OutputJSON = filepath.Join(config.Folder, "photo-groups.json")
-
+	result.PhotoCount = res.PhotoCount
+	result.OutputJSON = res.OutputJSON
 	return result, nil
 }
 
