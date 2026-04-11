@@ -1034,11 +1034,12 @@ function renderRuntimeStatus() {
     return;
   }
 
-  const engineReady = runtimeStatus.tagEngineAvailable && runtimeStatus.analysisEngineAvailable;
+  // photo-tagger is now pure Go — only analysis engine binary is needed
+  const engineReady = runtimeStatus.analysisEngineAvailable;
   const exportReady = runtimeStatus.pdfEngineAvailable && runtimeStatus.excelEngineAvailable;
   const rows = [
     { label: '解析CLI', value: runtimeStatus.mainCliAvailable ? 'ready' : 'missing', tone: runtimeStatus.mainCliAvailable ? 'ok' : 'warn', detail: runtimeStatus.mainCliPath || 'photo-ai.exe が必要' },
-    { label: '解析engine', value: engineReady ? 'ready' : 'missing', tone: engineReady ? 'ok' : 'warn', detail: runtimeStatus.tagEnginePath || runtimeStatus.analysisEnginePath || 'tag/analysis engine が必要' },
+    { label: '解析engine', value: engineReady ? 'ready' : 'missing', tone: engineReady ? 'ok' : 'warn', detail: runtimeStatus.analysisEnginePath || 'analysis engine が必要' },
     { label: '出力engine', value: exportReady ? 'ready' : 'partial', tone: exportReady ? 'ok' : 'warn', detail: runtimeStatus.pdfEnginePath || runtimeStatus.excelEnginePath || 'pdf/excel engine が必要' },
     { label: 'AgentAPI/CLI', value: terminalReady ? 'connected' : 'required', tone: terminalReady ? 'ok' : 'warn', detail: terminalReady ? 'agent session connected' : '写真解析にはエージェント実行環境が必要' },
   ];

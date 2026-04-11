@@ -64,8 +64,6 @@ type RuntimeStatus struct {
 	WebReady              bool   `json:"webReady"`
 	MainCLIPath           string `json:"mainCliPath,omitempty"`
 	MainCLIAvailable      bool   `json:"mainCliAvailable"`
-	TagEnginePath         string `json:"tagEnginePath,omitempty"`
-	TagEngineAvailable    bool   `json:"tagEngineAvailable"`
 	AnalysisEnginePath    string `json:"analysisEnginePath,omitempty"`
 	AnalysisEnginePresent bool   `json:"analysisEngineAvailable"`
 	PDFEnginePath         string `json:"pdfEnginePath,omitempty"`
@@ -913,10 +911,7 @@ func getRuntimeStatus(repoDir string) RuntimeStatus {
 		status.MainCLIPath = cliPath
 		status.MainCLIAvailable = true
 		engineBinaries := resolveEngineBinaries(repoDir, cliPath)
-		if p := engineBinaries["PHOTO_TAG_ENGINE_EXE"]; p != "" {
-			status.TagEnginePath = p
-			status.TagEngineAvailable = true
-		}
+		// photo-tag-engine is now pure Go (pkg/tagger) — no binary resolution needed
 		if p := engineBinaries["PHOTO_ANALYSIS_ENGINE_EXE"]; p != "" {
 			status.AnalysisEnginePath = p
 			status.AnalysisEnginePresent = true
