@@ -3338,6 +3338,7 @@ dependencies = [
 [[package]]
 name = "resident-ai"
 version = "0.2.0"
+source = "git+https://github.com/YuujiKamura/resident-ai.git?branch=master#2f49b59f7102c087d2533fa971402db0fd097587"
 dependencies = [
  "base64",
  "serde_json",

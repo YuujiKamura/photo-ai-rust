@@ -7,7 +7,7 @@ edition = "2024"
 
 [dependencies]
 # AI解析ライブラリ
-resident-ai = { path = "../../resident-agent" }
+resident-ai = { git = "https://github.com/YuujiKamura/resident-ai.git", branch = "master" }
 
 eframe = "0.31"
 egui = "0.31"
