@@ -398,7 +398,7 @@
     <div class="wrap">
         <section class="hero">
             <div>
-                <div class="eyebrow">Open Source Tool</div>
+                <div class="eyebrow">Open Source Tool — Embedded Engines</div>
                 <h1>工事写真をAIで<br>分類できるのか？</h1>
                 <p class="lead">
                     photo-ai は、工事写真のグループ化だけで終わらせず、工種マスタ照合と PDF / Excel 台帳出力まで
@@ -411,8 +411,8 @@
                     <a class="btn" href="https://github.com/YuujiKamura/photo-ai-rust/blob/master/docs/QUICKSTART.md">Quickstart</a>
                 </div>
                 <div class="meta">
-                    <span>Go メイン CLI + Rust engine</span>
-                    <span>AgentAPI / resident CLI</span>
+                    <span>Go メイン CLI + Rust engine (embedded)</span>
+                    <span>ACP / resident-ai</span>
                     <span>施工写真向けマスタ照合</span>
                 </div>
             </div>
@@ -462,17 +462,18 @@
                                 <div class="value">舗装工 / 路面切削工</div>
                             </div>
                         </div>
-                        <div class="terminal">photo-ai analyze ./0213切削 --work-type 舗装工 --photo-type 施工状況写真
+                        <div class="terminal">photo-ai analyze ./0213切削 -m master/by_work_type/舗装工.csv
 
-[1/4] photo-tag-engine.exe
-[2/4] photo-analysis-engine.exe
-[3/4] master matching
-[4/4] export ready
+[1/4] photo-tag-engine.exe    (source=embedded)
+[2/4] photo-analysis-engine.exe (source=embedded)
+[3/4] match-master
+[4/4] normalize
 
 result.json
   analysisBilling: subscription
   analysisProvider: auto
-  analysisCommit: &lt;git sha&gt;</div>
+  analysisCommit: &lt;git sha&gt;
+  engineSource: embedded</div>
                     </div>
                 </div>
             </div>
@@ -492,8 +493,8 @@ result.json
                     <p>ユーザー向けの主系CLI。配布、CI、リリースはこの入口を基準に揃えています。</p>
                 </div>
                 <div class="feature">
-                    <h3>Rust engines</h3>
-                    <p>タグ付け、解析、PDF、Excel を個別バイナリに分離し、結果互換を保ったまま使います。</p>
+                    <h3>Rust engines (embedded)</h3>
+                    <p>タグ付け、解析、PDF、Excel を個別バイナリに分離。Go バイナリに同梱し、エンジンパス解決の可観測性も確保しています。</p>
                 </div>
                 <div class="feature">
                     <h3>ローカル Web UI</h3>
@@ -543,7 +544,7 @@ result.json
         </section>
 
         <footer>
-            <div>photo-ai | Go frontend + Rust engines</div>
+            <div>photo-ai | Go frontend + Rust embedded engines + resident-ai (ACP)</div>
             <div>GitHub Pages source: <code>web/pages</code></div>
         </footer>
     </div>
