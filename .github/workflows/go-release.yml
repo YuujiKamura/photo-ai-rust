@@ -22,6 +22,13 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: "go-release"
+          shared-key: "engines"
+          cache-targets: "true"
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
