@@ -14,8 +14,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
+
+      - name: Checkout required submodules
+        shell: bash
+        run: git submodule update --init --depth=1 deps/pdf-analysis-embed deps/photo-tagger deps/folder-watcher
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
