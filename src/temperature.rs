@@ -105,7 +105,9 @@ fn fill_missing_dump_numbers(results: &mut [AnalysisResult]) {
     // ±1隣接ウィンドウで台目を推定（全写真共通）
     // group内検索は台目が撮影イベント単位ではなくダンプ1台分（=station）単位なので不要
     for i in 0..results.len() {
-        if results[i].station.contains("台目") || !is_temperature_photo(&results[i].remarks) {
+        if photo_ai_common::domain::Station::parse(&results[i].station).has_dump_number()
+            || !is_temperature_photo(&results[i].remarks)
+        {
             continue;
         }
         let Some(base_day) = extract_month_day_from_text(&results[i].station) else {
@@ -172,7 +174,9 @@ fn repair_orphan_temperature_entries(results: &mut [AnalysisResult]) {
     // 2ステップ後退ウィンドウで孤立温度エントリを修復（全写真共通）
     // 台目はダンプ1台分（=station）単位なのでgroupではなく隣接で検索
     for i in 2..results.len() {
-        if results[i].station.contains("台目") || !is_temperature_photo(&results[i].remarks) {
+        if photo_ai_common::domain::Station::parse(&results[i].station).has_dump_number()
+            || !is_temperature_photo(&results[i].remarks)
+        {
             continue;
         }
         let prev_station = results[i - 1].station.clone();

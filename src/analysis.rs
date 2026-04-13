@@ -959,7 +959,7 @@ pub fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
         let cat = result.photo_category_enum();
         if cat.map(photo_ai_common::domain::policy::category_uses_date_station).unwrap_or(false) {
             // 安全管理・品質管理: 既に日付形式のstationがあれば上書きしない（tagger由来の作業日を優先）
-            let already_has_date = result.station.contains('月') && result.station.contains('日');
+            let already_has_date = photo_ai_common::domain::Station::parse(&result.station).is_date();
             if !already_has_date {
                 result.station = if station_is_date {
                     station.to_string()

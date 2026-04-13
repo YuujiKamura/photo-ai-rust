@@ -605,7 +605,7 @@ pub fn append_dump_number_to_station(results: &mut [AnalysisResult]) {
             .next();
         if let Some(num) = dump_num {
             for &i in indices {
-                if results[i].station.contains("台目") {
+                if photo_ai_common::domain::Station::parse(&results[i].station).has_dump_number() {
                     continue;
                 }
                 let base = results[i].station.split('\n').next().unwrap_or(&results[i].station).to_string();
