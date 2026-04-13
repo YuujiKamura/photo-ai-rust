@@ -158,13 +158,17 @@ impl TemperatureType {
     }
 
     /// 温度の妥当範囲（℃）
+    ///
+    /// 既知の4種別は `TemperatureKind::valid_range` に委譲し、単一の真実源とする。
+    /// Unknown はフォールバックとして全体をカバーする範囲を返す。
     pub fn valid_range(&self) -> (f64, f64) {
+        use photo_ai_common::domain::TemperatureKind as K;
         match self {
-            TemperatureType::Arrival => (140.0, 185.0),
-            TemperatureType::Spreading => (130.0, 175.0),
-            TemperatureType::InitialCompaction => (120.0, 165.0),
-            TemperatureType::Opening => (30.0, 70.0),
-            TemperatureType::Unknown => (30.0, 185.0), // 全範囲
+            TemperatureType::Arrival => K::Arrival.valid_range(),
+            TemperatureType::Spreading => K::Spreading.valid_range(),
+            TemperatureType::InitialCompaction => K::InitialCompaction.valid_range(),
+            TemperatureType::Opening => K::Opening.valid_range(),
+            TemperatureType::Unknown => (30.0, 185.0), // 判定不能時のフォールバック
         }
     }
 

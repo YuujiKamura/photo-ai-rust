@@ -14,6 +14,8 @@
 pub mod constants;
 pub mod photo_category;
 pub mod policy;
+pub mod temperature;
 
 pub use constants::*;
 pub use photo_category::PhotoCategory;
+pub use temperature::TemperatureKind;

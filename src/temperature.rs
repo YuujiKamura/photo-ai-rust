@@ -2,6 +2,9 @@
 //!
 //! `analysis.rs` のパイプラインから呼ばれ、温度管理フォルダ内の写真に対して
 //! 温度種別の分類・測点補完・台目伝搬などの専用処理を行う。
+//!
+//! `TemperatureKind` の enum 定義自体は `photo_ai_common::domain::temperature`
+//! に移動済み。このモジュールは温度管理パイプラインの CLI 固有ロジックを担当する。
 
 use crate::analyzer::AnalysisResult;
 use crate::domain::*;
@@ -11,63 +14,7 @@ use crate::normalizer::measurements::{
 use crate::master_matcher::date_to_month_day;
 use crate::normalizer;
 
-/// 温度管理の測定種別
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TemperatureKind {
-    Arrival,           // 到着温度
-    Spreading,         // 敷均し温度
-    InitialCompaction, // 初期締固め前温度
-    Opening,           // 開放温度
-    OutsideAir,        // 舗装日外気温
-}
-
-impl TemperatureKind {
-    /// 日本語ラベル（「測定」suffix付き）
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Arrival => "到着温度測定",
-            Self::Spreading => "敷均し温度測定",
-            Self::InitialCompaction => "初期締固め前温度測定",
-            Self::Opening => "開放温度測定",
-            Self::OutsideAir => "舗装日外気温測定",
-        }
-    }
-
-    /// テキストから温度種別を判定（focusTarget / detectedText 両対応）
-    pub fn from_text(text: &str) -> Option<Self> {
-        if text.is_empty() {
-            return None;
-        }
-        if text.contains("到着温度") {
-            Some(Self::Arrival)
-        } else if text.contains("敷均し温度") || text.contains("敷きならし") {
-            Some(Self::Spreading)
-        } else if text.contains("初期転圧前") || text.contains("初期締固め前") {
-            Some(Self::InitialCompaction)
-        } else if text.contains("開放温度") || text.contains("解放温度") {
-            Some(Self::Opening)
-        } else if text.contains("舗装日外気温") || text.contains("外気温") {
-            Some(Self::OutsideAir)
-        } else {
-            None
-        }
-    }
-
-    /// 有効な温度種別ラベル一覧（「測定」suffix付き・なし両方）
-    pub fn all_labels() -> &'static [&'static str] {
-        &[
-            "舗装日外気温測定",
-            "到着温度測定",
-            "敷均し温度測定",
-            "初期締固め前温度測定",
-            "開放温度測定",
-            "到着温度",
-            "敷均し温度",
-            "初期締固め前温度",
-            "開放温度",
-        ]
-    }
-}
+pub use photo_ai_common::domain::temperature::TemperatureKind;
 
 pub fn apply_temperature_folder_postprocess(result: &mut AnalysisResult, folder_name: &str) {
     if !folder_name.contains("温度管理") {
