@@ -156,6 +156,13 @@ impl AnalysisResult {
         crate::domain::policy::is_machinery_related(&self.remarks)
     }
 
+    /// 写真区分を enum として取得する（未知ラベル・空文字列は `None`）
+    ///
+    /// 文字列比較の代わりに `match` で網羅性チェック可能にする。
+    pub fn photo_category_enum(&self) -> Option<crate::domain::PhotoCategory> {
+        crate::domain::PhotoCategory::from_label(&self.photo_category)
+    }
+
     /// フィールドキーに対応するラベルを返す
     ///
     /// 優先順位:

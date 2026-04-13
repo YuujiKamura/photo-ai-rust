@@ -12,6 +12,8 @@
 //! 新しい業務ルールを追加するときは、まずこのモジュールを拡張すること。
 
 pub mod constants;
+pub mod photo_category;
 pub mod policy;
 
 pub use constants::*;
+pub use photo_category::PhotoCategory;

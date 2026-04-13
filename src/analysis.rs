@@ -956,28 +956,27 @@ pub fn apply_station(results: &mut [analyzer::AnalysisResult], station: &str) {
     let station_is_date = station.contains('月') && station.contains('日');
 
     for result in results {
-        match result.photo_category.as_str() {
-            PHOTO_CAT_SAFETY | PHOTO_CAT_QUALITY => {
-                // 既に日付形式のstationがあれば上書きしない（tagger由来の作業日を優先）
-                let already_has_date = result.station.contains('月') && result.station.contains('日');
-                if !already_has_date {
-                    result.station = if station_is_date {
-                        station.to_string()
-                    } else {
-                        date_to_month_day(&result.date)
-                    };
-                }
+        let cat = result.photo_category_enum();
+        if cat.map(photo_ai_common::domain::policy::category_uses_date_station).unwrap_or(false) {
+            // 安全管理・品質管理: 既に日付形式のstationがあれば上書きしない（tagger由来の作業日を優先）
+            let already_has_date = result.station.contains('月') && result.station.contains('日');
+            if !already_has_date {
+                result.station = if station_is_date {
+                    station.to_string()
+                } else {
+                    date_to_month_day(&result.date)
+                };
             }
-            _ if result.work_type == WORK_LANE_MARKING => {
-                // 区画線工は線種ごとに撮影するため測点を一律適用しない
-                // 以前のnormalize -Sで誤設定された値もクリア
-                if result.station == station {
-                    result.station.clear();
-                }
+            continue;
+        }
+        if result.work_type == WORK_LANE_MARKING {
+            // 区画線工は線種ごとに撮影するため測点を一律適用しない
+            // 以前のnormalize -Sで誤設定された値もクリア
+            if result.station == station {
+                result.station.clear();
             }
-            _ => {
-                result.station = station.to_string();
-            }
+        } else {
+            result.station = station.to_string();
         }
     }
 }

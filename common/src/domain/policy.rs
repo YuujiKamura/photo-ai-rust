@@ -12,6 +12,7 @@
 //! - [`extract_tonnage_from_text`]: detected_text から積載量を抽出
 
 use super::constants::*;
+use super::photo_category::PhotoCategory;
 
 /// 機械関連の写真か判定する
 ///
@@ -67,6 +68,14 @@ pub fn normalize_work_type_from_ocr(work_type: &str) -> String {
         return format!("{}工", prefix);
     }
     work_type.to_string()
+}
+
+/// 測点に日付（◯月◯日）を補完するべき写真区分か判定する
+///
+/// 安全管理写真と品質管理写真は、No.測点ではなく撮影日を station に入れる運用。
+/// `apply_station` や安全管理写真の station 自動補完で使用する。
+pub fn category_uses_date_station(category: PhotoCategory) -> bool {
+    matches!(category, PhotoCategory::Safety | PhotoCategory::Quality)
 }
 
 /// detected_text から積載量を抽出する
@@ -229,5 +238,22 @@ mod tests {
     #[test]
     fn temperature_keyword_list_is_not_empty() {
         assert!(!TEMPERATURE_STRONG_KEYWORDS.is_empty());
+    }
+
+    // === category_uses_date_station ===
+
+    #[test]
+    fn category_uses_date_station_true_for_safety_and_quality() {
+        assert!(category_uses_date_station(PhotoCategory::Safety));
+        assert!(category_uses_date_station(PhotoCategory::Quality));
+    }
+
+    #[test]
+    fn category_uses_date_station_false_for_construction_and_others() {
+        assert!(!category_uses_date_station(PhotoCategory::Construction));
+        assert!(!category_uses_date_station(PhotoCategory::Dekigata));
+        assert!(!category_uses_date_station(PhotoCategory::Material));
+        assert!(!category_uses_date_station(PhotoCategory::BeforeAfter));
+        assert!(!category_uses_date_station(PhotoCategory::Other));
     }
 }
