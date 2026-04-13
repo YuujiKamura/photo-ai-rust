@@ -1,7 +1,8 @@
 # Use lld-link (LLVM linker) on Windows for faster linking.
 # lld-link is pre-installed on GitHub Actions windows-latest runners.
+# Local setup: Add "C:\Program Files\LLVM\bin" to PATH
 [target.x86_64-pc-windows-msvc]
-linker = "C:\\Program Files\\LLVM\\bin\\lld-link.exe"
+linker = "lld-link"
 
 [alias]
 # --- 速度優先 (軽量ビルド) ---
