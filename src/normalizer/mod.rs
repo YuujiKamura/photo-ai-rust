@@ -257,14 +257,8 @@ fn fix_misclassified_temperature(results: &[AnalysisResult]) -> Vec<Normalizatio
             continue;
         }
 
-        // detected_textに温度キーワード（到着/敷均し/初期/開放/外気温）が含まれていれば確定済み
-        let dt = &r.detected_text;
-        let has_strong_keyword = dt.contains("到着温度") || dt.contains("敷均し温度")
-            || dt.contains("初期転圧前温度") || dt.contains("初期締固め前温度")
-            || dt.contains("開放温度") || dt.contains("解放温度")
-            || dt.contains("舗装日外気温") || dt.contains("外気温");
-
-        if has_strong_keyword {
+        // detected_textに温度キーワードの強マッチがあれば確定済み（domain::policy）
+        if photo_ai_common::domain::policy::has_temperature_strong_keyword(&r.detected_text) {
             continue;
         }
 

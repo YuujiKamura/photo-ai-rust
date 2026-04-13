@@ -21,15 +21,10 @@ const SEARCH_PATTERN_PRIORITY_SCORE: usize = 1000;
 
 /// OCRから抽出した工種名をマスタの工種名に正規化する
 ///
-/// 黒板OCRが「舗装補修工事」を読み取ると「舗装補修工」になるが、
-/// マスタには「舗装工」しかないためフィルタが外れてしまう。
-/// OCR由来の揺れをマスタに合わせる。
+/// 実体は `photo_ai_common::domain::policy::normalize_work_type_from_ocr`。
+/// この薄いラッパーは既存の呼び出し箇所との互換のため残している。
 fn normalize_work_type(work_type: &str) -> String {
-    // 「〜補修工」→「〜工」に正規化（舗装補修工→舗装工 等）
-    if let Some(prefix) = work_type.strip_suffix("補修工") {
-        return format!("{}工", prefix);
-    }
-    work_type.to_string()
+    photo_ai_common::domain::policy::normalize_work_type_from_ocr(work_type)
 }
 
 /// フォルダ名からマスタの種別（variety）を推定する

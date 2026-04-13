@@ -149,9 +149,11 @@ fn is_zero(v: &u32) -> bool {
 
 impl AnalysisResult {
     /// 機械関連の写真かどうかを判定
-    /// 備考が「使用機械」または「重機始業前点検」の場合にtrue
+    ///
+    /// 実体は `crate::domain::policy::is_machinery_related`。
+    /// AnalysisResult の public API 互換のために、このメソッド経由の参照も残す。
     pub fn is_machinery_related(&self) -> bool {
-        self.remarks == "使用機械" || self.remarks == "重機始業前点検"
+        crate::domain::policy::is_machinery_related(&self.remarks)
     }
 
     /// フィールドキーに対応するラベルを返す

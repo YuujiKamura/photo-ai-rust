@@ -6,6 +6,7 @@
 //! - Step1（画像認識）: RawImageData
 //! - 最終出力: AnalysisResult
 
+pub mod domain;
 pub mod types;
 pub mod layout;
 pub mod alias;

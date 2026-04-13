@@ -19,29 +19,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 
-fn should_auto_date_station(remarks: &str) -> bool {
-    matches!(
-        remarks,
-        "安全朝礼実施状況" | "KY活動状況" | "新規入場者教育状況" | "安全訓練実施状況"
-    )
-}
-
-fn extract_tonnage_from_text(text: &str) -> Option<String> {
-    for key in ["計量積載量", "積載量", "数量"] {
-        if let Some(pos) = text.find(key) {
-            let tail = &text[pos + key.len()..];
-            let tail = tail.trim_start_matches(&[':', '：', ' ', '　'][..]);
-            let num: String = tail
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
-            if !num.is_empty() {
-                return Some(format!("積載量：{}ｔ", num));
-            }
-        }
-    }
-    None
-}
+use crate::domain::policy::{extract_tonnage_from_text, should_auto_date_station};
 
 /// detected_textから「出来形管理用紙 No.X」の測点を抽出
 fn extract_dekigata_station(text: &str) -> Option<String> {
