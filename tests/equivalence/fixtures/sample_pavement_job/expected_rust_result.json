@@ -1,0 +1,80 @@
+{
+  "_note": "Placeholder — run 'make all && photo-ai analyze --engine=rust <fixture_folder>' to regenerate.",
+  "_generated_from": "photo-analysis-engine.exe match-master + normalize",
+  "_fixture": "sample_pavement_job",
+  "_status": "PLACEHOLDER — Rust engine DLL required. See Stream J README.",
+  "results": [
+    {
+      "fileName": "テスト001.JPG",
+      "workType": "舗装工",
+      "variety": "舗装打換え工",
+      "subphase": "舗装版切断",
+      "remarks": "As舗装版切断状況",
+      "photoCategory": "施工状況写真",
+      "station": "No.1+10",
+      "hasBoard": true,
+      "detectedText": "工種：舗装工\n種別：舗装打換え工\n測点：No.1+10\nAs舗装版切断状況",
+      "_note": "Rust: workType/variety/subphase/remarks populated by match-master. station from OCR."
+    },
+    {
+      "fileName": "テスト002.JPG",
+      "workType": "舗装工",
+      "variety": "舗装打換え工",
+      "subphase": "表層工",
+      "remarks": "敷均し状況",
+      "photoCategory": "施工状況写真",
+      "station": "",
+      "hasBoard": false,
+      "detectedText": "",
+      "_note": "Rust: folder-context matching gives workType even without board text. Go: may leave workType empty for no-board no-text entries — known gap."
+    },
+    {
+      "fileName": "テスト003.JPG",
+      "workType": "舗装工",
+      "variety": "舗装打換え工",
+      "subphase": "表層工",
+      "remarks": "到着温度測定",
+      "photoCategory": "品質管理写真",
+      "station": "",
+      "hasBoard": true,
+      "detectedText": "到着温度 160℃\nNo.1台目",
+      "_note": "Rust: remarks='到着温度測定' via temperature keyword. Go: matches 'to着温度' via search pattern — should align."
+    },
+    {
+      "fileName": "テスト004.JPG",
+      "workType": "構造物撤去工",
+      "variety": "構造物取壊し工",
+      "subphase": "コンクリート構造物取壊し",
+      "remarks": "取壊し状況",
+      "photoCategory": "施工状況写真",
+      "station": "No.3+50",
+      "hasBoard": true,
+      "detectedText": "工種：構造物撤去工\n撤去状況\n測点：No.3+50",
+      "_note": "Rust: 撤去 search pattern hit. OCR station extracted."
+    },
+    {
+      "fileName": "テスト005.JPG",
+      "workType": "構造物撤去工",
+      "variety": "構造物取壊し工",
+      "subphase": "コンクリート構造物取壊し",
+      "remarks": "取壊し状況",
+      "photoCategory": "施工状況写真",
+      "station": "",
+      "hasBoard": false,
+      "detectedText": "",
+      "_note": "Rust: scene description 'バックホウ' may contribute. Go: no detected_text → workType from folder context only — known gap."
+    },
+    {
+      "fileName": "テスト006.JPG",
+      "workType": "区画線工",
+      "variety": "区画線工",
+      "subphase": "溶融式区画線",
+      "remarks": "施工状況",
+      "photoCategory": "施工状況写真",
+      "station": "No.5+00",
+      "hasBoard": true,
+      "detectedText": "区画線工\n溶融式区画線\n施工状況\n測点：No.5+00",
+      "_note": "Rust: 区画線 keyword match. Station from OCR."
+    }
+  ]
+}
