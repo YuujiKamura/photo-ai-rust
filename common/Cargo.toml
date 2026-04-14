@@ -13,6 +13,9 @@ thiserror = "2"
 rust_xlsxwriter = { version = "0.92", optional = true }
 pdf-analysis-embed = { path = "../deps/pdf-analysis-embed" }
 
+[dev-dependencies]
+tempfile = "3"
+
 [features]
 default = []
 excel = ["rust_xlsxwriter"]

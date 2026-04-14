@@ -7,6 +7,7 @@
 //! - 最終出力: AnalysisResult
 
 pub mod domain;
+pub mod port;
 pub mod types;
 pub mod layout;
 pub mod alias;
