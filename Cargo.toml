@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "photo-ai-rust"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 description = "工事写真AI解析・写真台帳生成ツール"
 license = "MIT"

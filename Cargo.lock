@@ -2636,7 +2636,7 @@ dependencies = [
 
 [[package]]
 name = "photo-ai-common"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "async-trait",
  "csv",
@@ -2651,7 +2651,7 @@ dependencies = [
 
 [[package]]
 name = "photo-ai-rust"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "ab_glyph",
  "anyhow",
