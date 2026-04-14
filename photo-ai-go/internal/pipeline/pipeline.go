@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/YuujiKamura/photo-ai-go/internal/ai"
+	"github.com/YuujiKamura/photo-ai-go/internal/analyzer"
 	"github.com/YuujiKamura/photo-ai-go/internal/matching"
 	"github.com/YuujiKamura/photo-ai-go/internal/normalizer"
 	"github.com/YuujiKamura/photo-ai-go/internal/ocr"
@@ -67,6 +68,9 @@ type Config struct {
 	// PairAfterFolder, when non-empty, enables pair-completion scanning after
 	// the main analysis pass. Must point to the directory containing A* image files.
 	PairAfterFolder string
+	// ProcessImageFn, when non-nil, is called instead of engine.ProcessImage.
+	// Inject a stub here in tests to exercise Run() without a real AI backend.
+	ProcessImageFn func(engine.ImageConfig) (engine.ImageResult, error)
 }
 
 // Result is the per-photo output of the analysis pipeline.
@@ -88,6 +92,9 @@ type Result struct {
 	FocusTarget   string
 	Reasoning     string
 	Group         uint32
+	// WorkTypeCandidates holds work types detected by the analyzer stage.
+	// Populated before master matching so matchers can optionally scope their search.
+	WorkTypeCandidates []string
 }
 
 // isExcludedFolder reports whether the path contains an excluded folder name.
@@ -226,9 +233,13 @@ func Run(ctx context.Context, cfg Config) ([]Result, error) {
 	// 2. EXIF extraction (parallel via DLL)
 	images = ExtractEXIFDates(ctx, images)
 
-	// 3. AI grouping via DLL ProcessImage
+	// 3. AI grouping via DLL ProcessImage (or injected stub for tests).
 	fmt.Println("[2] photo-tagger実行中...")
-	imgResult, err := engine.ProcessImage(engine.ImageConfig{
+	processImage := engine.ProcessImage
+	if cfg.ProcessImageFn != nil {
+		processImage = cfg.ProcessImageFn
+	}
+	imgResult, err := processImage(engine.ImageConfig{
 		Folder:     cfg.Folder,
 		BatchSize:  cfg.BatchSize,
 		WorkType:   cfg.WorkType,
@@ -245,11 +256,39 @@ func Run(ctx context.Context, cfg Config) ([]Result, error) {
 	}
 	fmt.Printf("✓ AI解析完了 (%d枚)\n\n", imgResult.PhotoCount)
 
-	// 4. Build results from images + master matching.
+	// 4a. Decode per-photo AI data from photo-groups.json.
+	// OutputJSON is a file path produced by tagger.RunGrouping.
+	var photoData map[string]ai.RawImageData
+	if imgResult.OutputJSON != "" {
+		var decodeErr error
+		photoData, decodeErr = ai.DecodeGroupsFile(imgResult.OutputJSON)
+		if decodeErr != nil {
+			// Non-fatal: log and continue with empty map (matching still works
+			// with empty DetectedText, just with lower precision).
+			fmt.Printf("[pipeline] warn: AI decode skipped: %v\n", decodeErr)
+			photoData = make(map[string]ai.RawImageData)
+		}
+	} else {
+		photoData = make(map[string]ai.RawImageData)
+	}
+
+	// 4b. Analyzer stage: derive per-batch work-type candidates from all decoded
+	// RawImageData.  Runs BEFORE master matching so results can optionally use
+	// the candidates to restrict search scope.
+	allRaw := make([]ai.RawImageData, 0, len(photoData))
+	for _, rd := range photoData {
+		allRaw = append(allRaw, rd)
+	}
+	batchWorkTypes := analyzer.DetectWorkTypes(allRaw)
+	if len(batchWorkTypes) > 0 {
+		fmt.Printf("[analyzer] detected work types: %v\n", batchWorkTypes)
+	}
+
+	// 4c. Build results from images + master matching.
 	// Use HierarchyMaster (full OCR-aware two-phase scorer) when available,
 	// falling back to the legacy bigram Matcher.
 	folderName := filepath.Base(cfg.Folder)
-	results := buildResults(images, cfg.Matcher, cfg.HierarchyMaster, folderName)
+	results := buildResults(images, photoData, batchWorkTypes, cfg.Matcher, cfg.HierarchyMaster, folderName)
 
 	// 5. Station bulk-apply (mirrors normalize_results_with_station in analysis.rs)
 	if cfg.Station != "" {
@@ -264,9 +303,19 @@ func Run(ctx context.Context, cfg Config) ([]Result, error) {
 	// Replaces the previous partial reimplementation: now delegates to
 	// rules.ApplyFolderRules which handles all 15 rule steps.
 	if len(cfg.FolderRules) > 0 {
+		// Snapshot WorkTypeCandidates before round-trip through rules package
+		// (rules.AnalysisResult does not carry WorkTypeCandidates).
+		candidatesSnapshot := make(map[string][]string, len(results))
+		for _, r := range results {
+			candidatesSnapshot[r.FileName] = r.WorkTypeCandidates
+		}
 		rulesResults := resultsToRulesSlice(results)
 		rulesResults = rules.ApplyFolderRules(rulesResults, folderName, cfg.FolderRules)
 		results = rulesSliceToResults(rulesResults)
+		// Restore WorkTypeCandidates lost during rules conversion.
+		for i := range results {
+			results[i].WorkTypeCandidates = candidatesSnapshot[results[i].FileName]
+		}
 	}
 
 	fmt.Printf("✓ マスタ照合完了（%d枚）\n\n", len(results))
@@ -287,10 +336,20 @@ func Run(ctx context.Context, cfg Config) ([]Result, error) {
 // buildResults converts scanned images + AI match into a Result slice,
 // sorted by date then filename. Mirrors convert_groups_to_results.
 //
+// photoData maps filename → RawImageData decoded from photo-groups.json.
+// batchWorkTypes holds work types detected by the analyzer for the whole batch.
+//
 // Master matching priority:
 //  1. hm (HierarchyMaster) — full OCR-aware two-phase scorer from master_matcher.go
 //  2. m  (Matcher)         — legacy bigram-only scorer from matching.go
-func buildResults(images []ImageInfo, m *matching.Matcher, hm *matching.HierarchyMaster, folderName string) []Result {
+func buildResults(
+	images []ImageInfo,
+	photoData map[string]ai.RawImageData,
+	batchWorkTypes []string,
+	m *matching.Matcher,
+	hm *matching.HierarchyMaster,
+	folderName string,
+) []Result {
 	results := make([]Result, 0, len(images))
 
 	for _, img := range images {
@@ -298,6 +357,18 @@ func buildResults(images []ImageInfo, m *matching.Matcher, hm *matching.Hierarch
 			FileName: img.FileName,
 			FilePath: img.Path,
 			Date:     img.Date,
+			// WorkTypeCandidates is shared for the batch (all photos in the same
+			// tagger run share the same folder-level candidate set).
+			WorkTypeCandidates: batchWorkTypes,
+		}
+
+		// Populate per-photo AI fields from decoded photo-groups.json.
+		if rd, ok := photoData[img.FileName]; ok {
+			r.HasBoard = rd.HasBoard
+			r.DetectedText = rd.DetectedText
+			r.Description = rd.SceneDescription
+			// Measurements and PhotoCategory are not populated by the tagger;
+			// they come from a Step1/Step2 AI pass when available.
 		}
 
 		// OCR station extraction from detected text.
