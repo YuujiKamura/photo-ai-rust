@@ -3,10 +3,11 @@ pub mod adapters;
 pub mod cache;
 
 pub use cache::{CacheFile, filter_cached_images};
-pub use gemini_cli::analyze_batch_single_step;
+pub use gemini_cli::{analyze_batch_raw, analyze_batch_single_step};
 
 // 共通型は photo_ai_common からre-export
 pub use photo_ai_common::{AnalysisResult, RawImageData, Step2Result, detect_work_types};
+use photo_ai_common::domain::{Photo, Raw};
 
 use crate::error::Result;
 use crate::scanner::ImageInfo;
@@ -36,11 +37,15 @@ fn log_batch_verbose(pb: &ProgressBar, batch_idx: usize, batch_len: usize, extra
     });
 }
 
-pub async fn analyze_images(
+/// 基本解析を実行し、`Photo<Raw>` 配列を返す（TypeState 版）
+///
+/// バッチごとに `analyze_batch_raw` を呼び、結果を連結する。
+/// 型安全なパイプラインを組み立てたい呼出元はこちらを使う。
+pub async fn analyze_images_typed(
     images: &[ImageInfo],
     batch_size: usize,
     verbose: bool,
-) -> Result<Vec<AnalysisResult>> {
+) -> Result<Vec<Photo<Raw>>> {
     let mut results = Vec::new();
     let total_batches = images.len().div_ceil(batch_size);
     let pb = create_batch_progress_bar(total_batches);
@@ -52,7 +57,7 @@ pub async fn analyze_images(
             log_batch_verbose(&pb, batch_idx, batch.len(), None);
         }
 
-        let batch_results = gemini_cli::analyze_batch(batch, verbose).await?;
+        let batch_results = gemini_cli::analyze_batch_raw(batch, verbose).await?;
         results.extend(batch_results);
 
         pb.inc(1);
@@ -61,6 +66,19 @@ pub async fn analyze_images(
     pb.finish_with_message("完了");
 
     Ok(results)
+}
+
+/// 基本解析を実行（互換 API）
+///
+/// 内部で `analyze_images_typed` を呼び、`Vec<AnalysisResult>` にアンラップする。
+/// 既存呼出元（`analyze_images_with_cache` 等）の互換を維持する。
+pub async fn analyze_images(
+    images: &[ImageInfo],
+    batch_size: usize,
+    verbose: bool,
+) -> Result<Vec<AnalysisResult>> {
+    let photos = analyze_images_typed(images, batch_size, verbose).await?;
+    Ok(photos.into_iter().map(Photo::into_analysis_result).collect())
 }
 
 /// キャッシュを使用して画像を解析

@@ -80,17 +80,9 @@ pub async fn analyze_batch_raw(
     Ok(photos)
 }
 
-/// 基本解析を実行（マスタなし、互換 API）
-///
-/// 内部で `analyze_batch_raw` に委譲し、`Vec<AnalysisResult>` にアンラップする。
-/// 既存呼出元（`analyze_images` 等）の互換を維持する。
-pub async fn analyze_batch(
-    images: &[ImageInfo],
-    verbose: bool,
-) -> Result<Vec<AnalysisResult>> {
-    let photos = analyze_batch_raw(images, verbose).await?;
-    Ok(photos.into_iter().map(Photo::into_analysis_result).collect())
-}
+// `analyze_batch` は Step 7b で削除。
+// 呼出元（analyzer::analyze_images）は analyze_batch_raw に直接委譲するように変更済。
+// 外部 API `analyze_images` の契約（`Vec<AnalysisResult>`）は維持されている。
 
 /// 1ステップ解析を実行（工種指定版）
 ///
