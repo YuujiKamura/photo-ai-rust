@@ -13,7 +13,6 @@ use tempfile::tempdir;
 fn create_test_result(index: usize) -> AnalysisResult {
     AnalysisResult {
         file_name: format!("test_{}.jpg", index),
-        file_path: String::new(),
         date: "2026-01-18".to_string(),
         work_type: "舗装工事".to_string(),
         variety: "表層工".to_string(),
@@ -21,16 +20,9 @@ fn create_test_result(index: usize) -> AnalysisResult {
         station: format!("No.{}+0.0", index * 10),
         remarks: "備考テスト".to_string(),
         description: format!("テスト説明{}", index),
-        has_board: false,
         photo_category: "施工状況".to_string(),
         measurements: "50mm".to_string(),
-        detected_text: String::new(),
-        reasoning: String::new(),
-        remarks_candidates: Vec::new(),
-        focus_target: String::new(),
-        skip: false,
-        group: 0,
-        label_overrides: std::collections::HashMap::new(),
+        ..Default::default()
     }
 }
 
@@ -185,24 +177,15 @@ fn test_excel_data_consistency() {
     let results = vec![
         AnalysisResult {
             file_name: "IMG_001.jpg".to_string(),
-            file_path: String::new(),
             date: "2026-01-15".to_string(),
             work_type: "舗装工事".to_string(),
             variety: "表層工".to_string(),
             subphase: "アスファルト舗設".to_string(),
             station: "No.5+10.0".to_string(),
             remarks: "1層目".to_string(),
-            description: String::new(),
-            has_board: false,
             photo_category: "施工状況".to_string(),
             measurements: "t=50mm".to_string(),
-            detected_text: String::new(),
-            reasoning: String::new(),
-            remarks_candidates: Vec::new(),
-            focus_target: String::new(),
-            skip: false,
-            group: 0,
-            label_overrides: std::collections::HashMap::new(),
+            ..Default::default()
         },
     ];
 
@@ -254,24 +237,15 @@ fn test_excel_japanese_text() {
     let results = vec![
         AnalysisResult {
             file_name: "写真001.jpg".to_string(),
-            file_path: String::new(),
             date: "令和8年1月18日".to_string(),
             work_type: "道路舗装工事".to_string(),
             variety: "アスファルト表層工".to_string(),
             subphase: "敷均し・締固め".to_string(),
             station: "測点No.10+5.5".to_string(),
             remarks: "天候：晴れ　気温：15℃".to_string(),
-            description: String::new(),
-            has_board: false,
             photo_category: "施工状況写真".to_string(),
             measurements: "厚さ50mm".to_string(),
-            detected_text: String::new(),
-            reasoning: String::new(),
-            remarks_candidates: Vec::new(),
-            focus_target: String::new(),
-            skip: false,
-            group: 0,
-            label_overrides: std::collections::HashMap::new(),
+            ..Default::default()
         },
     ];
 

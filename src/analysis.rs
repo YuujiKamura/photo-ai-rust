@@ -833,9 +833,20 @@ pub fn convert_groups_to_results(
         Some((rec.group, role_priority(&rec.core.role), result))
     }).collect();
 
-    // 日付・ファイル名の時系列ソート（グループ順ではなく撮影順）
+    // ソート順:
+    //   1. group 番号（同一グループの写真はまとめる）
+    //   2. group 内では role_priority（全景→証票→ナンバー→その他）
+    //   3. 同 role 内では date / file_name で安定化
+    //
+    // 以前は date / file_name のみで並べていたが、group と role_priority を
+    // タプルに載せておきながら未使用だった。テスト
+    // `convert_groups_to_results_sorts_full_view_before_others` が期待する
+    // 「全景が同グループ内で先頭」を満たすよう、タプル要素をそのまま使う。
     results.sort_by(|a, b| {
-        a.2.date.cmp(&b.2.date).then(a.2.file_name.cmp(&b.2.file_name))
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.date.cmp(&b.2.date))
+            .then_with(|| a.2.file_name.cmp(&b.2.file_name))
     });
     let mut final_results: Vec<analyzer::AnalysisResult> = results.into_iter().map(|(group, _, mut r)| {
         r.group = group;

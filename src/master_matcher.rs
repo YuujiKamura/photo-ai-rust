@@ -422,11 +422,15 @@ pub(crate) fn folder_has_master_entry(master: &HierarchyMaster, folder_name: &st
 
 /// "2026-02-09 21:23:53" → "2月9日"
 pub(crate) fn date_to_month_day(date_str: &str) -> String {
-    let parts: Vec<&str> = date_str.split(&['-', ' '][..]).collect();
+    // EXIF DateTimeOriginal は "YYYY:MM:DD HH:MM:SS"、ISO 系は "YYYY-MM-DD HH:MM:SS"、
+    // Go 側から "YYYY/MM/DD" で来るケースもあるため、YMD の区切り候補を広めに受ける。
+    // 時刻部分との区切りは空白のみ。
+    let (ymd, _) = date_str.split_once(' ').unwrap_or((date_str, ""));
+    let parts: Vec<&str> = ymd.split(&['-', ':', '/'][..]).collect();
     if parts.len() >= 3 {
         let month: u32 = parts[1].parse().unwrap_or(0);
         let day: u32 = parts[2].parse().unwrap_or(0);
-        if month > 0 && day > 0 {
+        if (1..=12).contains(&month) && (1..=31).contains(&day) {
             return format!("{}月{}日", month, day);
         }
     }
