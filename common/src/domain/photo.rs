@@ -376,6 +376,31 @@ impl From<Photo<Exportable>> for AnalysisResult {
     }
 }
 
+// ============================================================================
+// AnalysisResult → Photo<Matched>: バッチ分類結果の型付き昇格
+// ============================================================================
+
+impl TryFrom<AnalysisResult> for Photo<Matched> {
+    /// 未知の `photo_category` が来た場合、元の `AnalysisResult` を保持して返す
+    type Error = AnalysisResult;
+
+    /// `analyze_batch_single_step` の結果を `Photo<Matched>` へ型付きで昇格する
+    ///
+    /// `photo_category` が `PhotoCategory::from_label` でマッチしなければ、元の
+    /// `AnalysisResult` を `Err` で返す（ゴミを `Matched` に混ぜない）。
+    /// マッチすれば variety/subphase/remarks が埋まっている前提で `Matched` phase に
+    /// ラップする（`sanitize_classification` を通過した結果のみを想定する）。
+    fn try_from(ar: AnalysisResult) -> Result<Self, Self::Error> {
+        if PhotoCategory::from_label(&ar.photo_category).is_none() {
+            return Err(ar);
+        }
+        Ok(Photo {
+            inner: ar,
+            _phase: PhantomData,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -591,5 +616,89 @@ mod tests {
         assert_eq!(e.variety(), "");
         assert_eq!(e.remarks(), "");
         assert_eq!(e.station_str(), "");
+    }
+
+    // === TryFrom<AnalysisResult> for Photo<Matched> ===
+
+    fn sample_matched_analysis_result() -> AnalysisResult {
+        AnalysisResult {
+            file_name: "IMG_123.JPG".to_string(),
+            file_path: "/tmp/IMG_123.JPG".to_string(),
+            date: "2026-02-11".to_string(),
+            photo_category: "施工状況写真".to_string(),
+            work_type: "舗装工".to_string(),
+            variety: "舗装打換え工".to_string(),
+            subphase: "表層工".to_string(),
+            remarks: "舗設状況".to_string(),
+            description: "アスファルト舗設".to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn try_from_analysis_result_accepts_known_category() {
+        let ar = sample_matched_analysis_result();
+        let photo = match Photo::<Matched>::try_from(ar) {
+            Ok(p) => p,
+            Err(_) => panic!("known category should succeed"),
+        };
+        assert_eq!(photo.photo_category(), PhotoCategory::Construction);
+        assert_eq!(photo.file_name(), "IMG_123.JPG");
+    }
+
+    #[test]
+    fn try_from_analysis_result_rejects_unknown_category() {
+        let ar = AnalysisResult {
+            file_name: "x.jpg".to_string(),
+            photo_category: "不明区分".to_string(),
+            variety: "保持される".to_string(),
+            ..Default::default()
+        };
+        // Err は元の AnalysisResult を保持していること
+        match Photo::<Matched>::try_from(ar) {
+            Ok(_) => panic!("unknown category should fail"),
+            Err(original) => {
+                assert_eq!(original.file_name, "x.jpg");
+                assert_eq!(original.photo_category, "不明区分");
+                assert_eq!(original.variety, "保持される");
+            }
+        }
+    }
+
+    #[test]
+    fn try_from_analysis_result_rejects_empty_category() {
+        let ar = AnalysisResult {
+            file_name: "empty.jpg".to_string(),
+            photo_category: String::new(),
+            ..Default::default()
+        };
+        match Photo::<Matched>::try_from(ar) {
+            Ok(_) => panic!("empty category should fail"),
+            Err(original) => {
+                assert_eq!(original.file_name, "empty.jpg");
+                assert_eq!(original.photo_category, "");
+            }
+        }
+    }
+
+    #[test]
+    fn try_from_analysis_result_preserves_matched_fields() {
+        let ar = sample_matched_analysis_result();
+        let photo = match Photo::<Matched>::try_from(ar) {
+            Ok(p) => p,
+            Err(_) => panic!("known category should succeed"),
+        };
+        // 共通アクセサ
+        assert_eq!(photo.file_name(), "IMG_123.JPG");
+        assert_eq!(photo.file_path(), "/tmp/IMG_123.JPG");
+        assert_eq!(photo.date(), "2026-02-11");
+        // Classified-level
+        assert_eq!(photo.photo_category(), PhotoCategory::Construction);
+        assert_eq!(photo.work_type(), "舗装工");
+        assert_eq!(photo.description(), "アスファルト舗設");
+        // Matched-level
+        assert_eq!(photo.variety(), "舗装打換え工");
+        assert_eq!(photo.subphase(), "表層工");
+        assert_eq!(photo.remarks(), "舗設状況");
     }
 }

@@ -16,7 +16,32 @@ use photo_ai_common::{
     AnalysisResult, RawImageData, HierarchyMaster,
     build_step1_prompt, build_prompt_for_category,
 };
-use photo_ai_common::domain::{Photo, Raw};
+use photo_ai_common::domain::{Matched, Photo, Raw};
+
+/// `analyze_batch_single_step_typed` の返り値
+///
+/// `photo_category` が既知ラベルで埋まっているレコードは `Photo<Matched>` に昇格され、
+/// 未知ラベル・空ラベルの場合は `AnalysisResult` のまま `unmatched` に残る。
+/// 型で「分類済」と「未分類」を分離することでゴミ混入を防ぐ。
+pub struct ClassifiedBatch {
+    pub matched: Vec<Photo<Matched>>,
+    pub unmatched: Vec<AnalysisResult>,
+}
+
+/// `TryFrom<AnalysisResult> for Photo<Matched>` を用いて結果を分類する純粋ヘルパー
+///
+/// 相対順序は各グループ（matched / unmatched）内で保持される。
+pub(crate) fn partition_classified(results: Vec<AnalysisResult>) -> ClassifiedBatch {
+    let mut matched = Vec::new();
+    let mut unmatched = Vec::new();
+    for ar in results {
+        match Photo::<Matched>::try_from(ar) {
+            Ok(photo) => matched.push(photo),
+            Err(original) => unmatched.push(original),
+        }
+    }
+    ClassifiedBatch { matched, unmatched }
+}
 
 /// Step1: 画像認識を実行
 pub async fn analyze_batch_step1(
@@ -145,6 +170,25 @@ pub async fn analyze_batch_single_step(
     sanitize_classification(&mut results, master);
 
     Ok(results)
+}
+
+/// `analyze_batch_single_step` の型付き版
+///
+/// 既存の `analyze_batch_single_step` に委譲し、結果を `ClassifiedBatch` に畳み込む。
+/// シグネチャは `Result<Vec<AnalysisResult>, _>` → `Result<ClassifiedBatch, _>` 以外
+/// 完全一致。呼出元は `matched` を型安全に扱い、`unmatched` は既存の AnalysisResult
+/// パスにフォールバックできる。
+pub async fn analyze_batch_single_step_typed(
+    images: &[ImageInfo],
+    master: &HierarchyMaster,
+    work_type: Option<&str>,
+    variety: Option<&str>,
+    photo_type: Option<&str>,
+    verbose: bool,
+) -> Result<ClassifiedBatch> {
+    let results =
+        analyze_batch_single_step(images, master, work_type, variety, photo_type, verbose).await?;
+    Ok(partition_classified(results))
 }
 
 fn write_master_csv(master: &HierarchyMaster, path: &Path) -> Result<()> {
@@ -386,4 +430,77 @@ mod tests {
         assert!(prompt.contains("JSON配列のみ出力"));
     }
 
+    // === partition_classified ===
+
+    fn known_ar(name: &str) -> AnalysisResult {
+        AnalysisResult {
+            file_name: name.to_string(),
+            photo_category: "施工状況写真".to_string(),
+            work_type: "舗装工".to_string(),
+            variety: "舗装打換え工".to_string(),
+            subphase: "表層工".to_string(),
+            remarks: "舗設状況".to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn unknown_ar(name: &str) -> AnalysisResult {
+        AnalysisResult {
+            file_name: name.to_string(),
+            photo_category: "不明区分".to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn empty_category_ar(name: &str) -> AnalysisResult {
+        AnalysisResult {
+            file_name: name.to_string(),
+            photo_category: String::new(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn partition_classified_separates_known_from_unknown() {
+        let input = vec![
+            known_ar("ok1.jpg"),
+            unknown_ar("bad1.jpg"),
+            empty_category_ar("empty.jpg"),
+            known_ar("ok2.jpg"),
+        ];
+        let batch = partition_classified(input);
+        assert_eq!(batch.matched.len(), 2);
+        assert_eq!(batch.unmatched.len(), 2);
+        assert_eq!(batch.matched[0].file_name(), "ok1.jpg");
+        assert_eq!(batch.matched[1].file_name(), "ok2.jpg");
+        assert_eq!(batch.unmatched[0].file_name, "bad1.jpg");
+        assert_eq!(batch.unmatched[1].file_name, "empty.jpg");
+    }
+
+    #[test]
+    fn partition_classified_preserves_order_within_groups() {
+        let input = vec![
+            known_ar("a.jpg"),
+            known_ar("b.jpg"),
+            unknown_ar("x.jpg"),
+            known_ar("c.jpg"),
+            unknown_ar("y.jpg"),
+            unknown_ar("z.jpg"),
+        ];
+        let batch = partition_classified(input);
+        // matched の相対順序は a → b → c
+        let matched_names: Vec<&str> = batch.matched.iter().map(|p| p.file_name()).collect();
+        assert_eq!(matched_names, vec!["a.jpg", "b.jpg", "c.jpg"]);
+        // unmatched の相対順序は x → y → z
+        let unmatched_names: Vec<&str> =
+            batch.unmatched.iter().map(|ar| ar.file_name.as_str()).collect();
+        assert_eq!(unmatched_names, vec!["x.jpg", "y.jpg", "z.jpg"]);
+    }
+
+    #[test]
+    fn partition_classified_empty_input_returns_empty_batch() {
+        let batch = partition_classified(Vec::new());
+        assert!(batch.matched.is_empty());
+        assert!(batch.unmatched.is_empty());
+    }
 }
