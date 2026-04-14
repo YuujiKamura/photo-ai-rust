@@ -120,6 +120,15 @@ pub struct Photo<P: PhotoPhase> {
 // --- すべての phase で利用可能なアクセサ ---
 
 impl<P: PhotoPhase> Photo<P> {
+    /// 現在 phase の内部 `AnalysisResult` を取り出す
+    ///
+    /// TypeState の線形遷移を飛ばすエスケープハッチ。既存 API（Vec<AnalysisResult>
+    /// を返す関数）との連結用。理想的には `Photo<Exportable>::into_inner` の正規
+    /// ルートで出口に到達すること。
+    pub fn into_analysis_result(self) -> AnalysisResult {
+        self.inner
+    }
+
     pub fn file_name(&self) -> &str {
         &self.inner.file_name
     }
@@ -553,6 +562,21 @@ mod tests {
             );
             assert_eq!(p.photo_category(), *cat);
         }
+    }
+
+    // === Escape hatch ===
+
+    #[test]
+    fn into_analysis_result_works_at_any_phase() {
+        // Raw phase でも escape hatch が効くこと
+        let ar = sample_raw().into_analysis_result();
+        assert_eq!(ar.file_name, "IMG_001.JPG");
+        assert_eq!(ar.photo_category, ""); // Raw では未設定
+
+        // Classified phase でも効くこと
+        let ar = sample_classified().into_analysis_result();
+        assert_eq!(ar.photo_category, "施工状況写真");
+        assert_eq!(ar.variety, ""); // Classified では未設定
     }
 
     // === Classified fast path ===

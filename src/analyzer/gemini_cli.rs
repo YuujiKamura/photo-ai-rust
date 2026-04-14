@@ -16,6 +16,7 @@ use photo_ai_common::{
     AnalysisResult, RawImageData, HierarchyMaster,
     build_step1_prompt, build_prompt_for_category,
 };
+use photo_ai_common::domain::{Photo, Raw};
 
 /// Step1: 画像認識を実行
 pub async fn analyze_batch_step1(
@@ -45,22 +46,25 @@ pub async fn analyze_batch_step1(
     engine::run_step1(folder)
 }
 
-/// 基本解析を実行（マスタなし）
-pub async fn analyze_batch(
+/// 基本解析を実行（マスタなし、TypeState 版）
+///
+/// Step1 の出力を `Photo<Raw>` としてそのまま返す。呼出元が型安全な
+/// パイプラインを組み立てたい場合はこちらを使う。
+pub async fn analyze_batch_raw(
     images: &[ImageInfo],
     verbose: bool,
-) -> Result<Vec<AnalysisResult>> {
+) -> Result<Vec<Photo<Raw>>> {
     // Step1のみ実行（マスタなし）
     let raw_data = analyze_batch_step1(images, verbose).await?;
 
-    // マスタなしの場合はStep1結果をそのまま変換
+    // ImageInfo から file_path / date を補完して Photo<Raw> に組み立てる
     let info_map: std::collections::HashMap<&str, &ImageInfo> = images
         .iter()
         .map(|img| (img.file_name.as_str(), img))
         .collect();
 
-    let results = raw_data
-        .iter()
+    let photos = raw_data
+        .into_iter()
         .map(|raw| {
             let img_info = info_map.get(raw.file_name.as_str());
             let file_path = img_info
@@ -69,22 +73,23 @@ pub async fn analyze_batch(
             let date = img_info
                 .and_then(|i| i.date.clone())
                 .unwrap_or_default();
-
-            AnalysisResult {
-                file_name: raw.file_name.clone(),
-                file_path,
-                date,
-                has_board: raw.has_board,
-                detected_text: raw.detected_text.clone(),
-                measurements: raw.measurements.clone(),
-                description: raw.scene_description.clone(),
-                photo_category: raw.photo_category.clone(),
-                ..Default::default()
-            }
+            Photo::<Raw>::from_raw_data(raw, file_path, date)
         })
         .collect();
 
-    Ok(results)
+    Ok(photos)
+}
+
+/// 基本解析を実行（マスタなし、互換 API）
+///
+/// 内部で `analyze_batch_raw` に委譲し、`Vec<AnalysisResult>` にアンラップする。
+/// 既存呼出元（`analyze_images` 等）の互換を維持する。
+pub async fn analyze_batch(
+    images: &[ImageInfo],
+    verbose: bool,
+) -> Result<Vec<AnalysisResult>> {
+    let photos = analyze_batch_raw(images, verbose).await?;
+    Ok(photos.into_iter().map(Photo::into_analysis_result).collect())
 }
 
 /// 1ステップ解析を実行（工種指定版）
