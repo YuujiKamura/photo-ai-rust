@@ -196,6 +196,7 @@ mod tests {
             has_board: true,
             detected_text: "黒板テキスト".to_string(),
             reasoning: "分類理由".to_string(),
+            ..Default::default()
         };
 
         let entry = JsPhotoEntry::from(&result);

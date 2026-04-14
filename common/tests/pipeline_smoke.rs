@@ -23,7 +23,7 @@ fn row(work_type: &str, variety: &str, subphase: &str, remarks: &str) -> Hierarc
         variety: variety.to_string(),
         subphase: subphase.to_string(),
         remarks: remarks.to_string(),
-        search_patterns: String::new(),
+        ..Default::default()
     }
 }
 
@@ -40,6 +40,7 @@ async fn full_pipeline_produces_rendered_output_via_mocks() {
             measurements: String::new(),
             scene_description: "フィニッシャーで舗設中".to_string(),
             photo_category: String::new(),
+            ..Default::default()
         },
     );
 
@@ -143,6 +144,7 @@ async fn pipeline_without_master_hit_takes_fast_path() {
         measurements: String::new(),
         scene_description: "重機の写真".to_string(),
         photo_category: String::new(),
+        ..Default::default()
     });
 
     let images = [ImageRef::new("IMG_002.JPG", "/tmp/IMG_002.JPG")];

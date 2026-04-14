@@ -462,6 +462,7 @@ mod tests {
             measurements: "160.4℃".to_string(),
             scene_description: "アスファルト舗装工事".to_string(),
             photo_category: "到着温度".to_string(),
+            ..Default::default()
         };
 
         let json = serde_json::to_string(&raw).expect("シリアライズ失敗");

@@ -21,7 +21,7 @@ pub enum HierarchyError {
 }
 
 /// CSVの1行を表す構造体
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HierarchyRow {
     /// 費目（直接工事費、現場管理費など）
     pub photo_division: String,

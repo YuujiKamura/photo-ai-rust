@@ -177,6 +177,7 @@ pub fn merge_results(
                 analysis_scope_work_type: String::new(),
                 analysis_scope_photo_type: String::new(),
                 analysis_scope_variety: String::new(),
+                ..Default::default()
             }
         })
         .collect()
@@ -314,6 +315,7 @@ mod tests {
             measurements: "160.4℃".to_string(),
             scene_description: "舗装工事".to_string(),
             photo_category: "到着温度".to_string(),
+            ..Default::default()
         }];
 
         let master = HierarchyMaster::default();
@@ -333,6 +335,7 @@ mod tests {
             measurements: "".to_string(),
             scene_description: "舗装工事".to_string(),
             photo_category: "".to_string(),
+            ..Default::default()
         }];
 
         let master = HierarchyMaster::default();
@@ -351,6 +354,7 @@ mod tests {
             measurements: "".to_string(),
             scene_description: "".to_string(),
             photo_category: "".to_string(),
+            ..Default::default()
         }];
 
         let master = HierarchyMaster::default();
@@ -424,6 +428,7 @@ mod tests {
                 measurements: "160.4℃".to_string(),
                 scene_description: "舗装作業".to_string(),
                 photo_category: "到着温度".to_string(),
+                ..Default::default()
             },
             RawImageData {
                 file_name: "test2.jpg".to_string(),

@@ -230,7 +230,7 @@ mod tests {
             variety: variety.to_string(),
             subphase: "表層工".to_string(),
             remarks: remarks.to_string(),
-            search_patterns: String::new(),
+            ..Default::default()
         }
     }
 
