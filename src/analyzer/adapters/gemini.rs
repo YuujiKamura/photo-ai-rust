@@ -58,6 +58,24 @@ impl VisionOracle for GeminiCliOracle {
             ))
         })?;
 
+        // engine::run_step1 はフォルダ単位の処理なので、バッチ内の画像は
+        // 同一親フォルダでなければならない。混在していたら結果が不正になる。
+        for img in images.iter().skip(1) {
+            let parent = img.path.parent().ok_or_else(|| {
+                OracleError::Failed(format!(
+                    "cannot determine parent folder from {}",
+                    img.path.display()
+                ))
+            })?;
+            if parent != folder {
+                return Err(OracleError::Failed(format!(
+                    "batch contains images from multiple folders: {} vs {}",
+                    folder.display(),
+                    parent.display()
+                )));
+            }
+        }
+
         if self.verbose {
             eprintln!(
                 "[GeminiCliOracle] step1 folder={} images={}",
@@ -116,6 +134,25 @@ mod tests {
     #[test]
     fn oracle_is_dyn_safe() {
         let _: Arc<dyn VisionOracle> = Arc::new(GeminiCliOracle::new());
+    }
+
+    #[tokio::test]
+    async fn mixed_folder_batch_is_rejected() {
+        // バッチに異なるフォルダの画像が混在していたら Failed を返すこと
+        let oracle = GeminiCliOracle::new();
+        let imgs = [
+            ImageRef::new("a.jpg", "/folder_a/a.jpg"),
+            ImageRef::new("b.jpg", "/folder_b/b.jpg"),
+        ];
+        let err = oracle.analyze_batch(&imgs, "").await.unwrap_err();
+        match err {
+            OracleError::Failed(msg) => assert!(
+                msg.contains("multiple folders"),
+                "expected 'multiple folders' in msg, got: {}",
+                msg
+            ),
+            other => panic!("expected Failed, got {:?}", other),
+        }
     }
 
     /// 実 CLI を呼ぶ統合テスト。CI では走らせない。

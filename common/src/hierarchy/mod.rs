@@ -93,8 +93,11 @@ pub struct HierarchyMaster {
 }
 
 impl HierarchyMaster {
-    /// 行データとインデックスからSelfを構築
-    fn from_rows(rows: Vec<HierarchyRow>) -> Self {
+    /// 行データから Self を構築する（公開コンストラクタ）
+    ///
+    /// テスト用 in-memory リポジトリや外部由来の行データから直接組み立てるのに使う。
+    /// CSV を経由しないので CSV ラウンドトリップのオーバーヘッドがない。
+    pub fn from_rows(rows: Vec<HierarchyRow>) -> Self {
         let idx = build_indexes(&rows);
         Self {
             rows,

@@ -91,9 +91,14 @@ pub fn extract_tonnage_from_text(text: &str) -> Option<String> {
                 .chars()
                 .take_while(|c| c.is_ascii_digit() || *c == '.')
                 .collect();
-            if !num.is_empty() {
-                return Some(format!("積載量：{}ｔ", num));
+            if num.is_empty() {
+                continue;
             }
+            // "8.5.2" のような OCR 誤読（小数点の誤挿入）を弾くため f64 として検証
+            if num.parse::<f64>().is_err() {
+                continue;
+            }
+            return Some(format!("積載量：{}ｔ", num));
         }
     }
     None
@@ -233,6 +238,13 @@ mod tests {
         assert!(extract_tonnage_from_text("積載量：").is_none());
         assert!(extract_tonnage_from_text("処分状況").is_none());
         assert!(extract_tonnage_from_text("").is_none());
+    }
+
+    #[test]
+    fn extract_tonnage_rejects_ocr_misread_with_extra_dots() {
+        // "8.5.2" のような OCR 誤読は f64 parse で失敗 → 抽出しない
+        assert!(extract_tonnage_from_text("積載量：8.5.2").is_none());
+        assert!(extract_tonnage_from_text("数量 1..5").is_none());
     }
 
     #[test]

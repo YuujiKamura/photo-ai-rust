@@ -6,7 +6,7 @@
 use crate::hierarchy::{HierarchyMaster, HierarchyRow};
 use std::collections::HashMap;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// マスタロードのエラー
 #[derive(Debug, thiserror::Error)]
@@ -177,13 +177,9 @@ impl InMemoryMasterRepository {
     }
 
     fn build_master(&self, rows: Vec<HierarchyRow>) -> HierarchyMaster {
-        // CsvMasterRepository 経由と同じ形にするため from_csv_str を利用できないので
-        // HierarchyMaster 内部の from_rows を呼ぶ代わりに CSV シリアライズ→パースで組み立てる
-        // …のは冗長なので、HierarchyMaster に crate 内公開の from_rows API を期待する。
-        // 現状の HierarchyMaster::from_rows は private のため、
-        // ここでは from_csv_str で再構築する簡易実装を採用する。
-        let csv = rows_to_csv(&rows);
-        HierarchyMaster::from_csv_str(&csv).expect("internal CSV roundtrip should not fail")
+        // HierarchyMaster::from_rows を public 化したので直接組み立てられる
+        // （CSV ラウンドトリップのオーバーヘッドが不要になった）
+        HierarchyMaster::from_rows(rows)
     }
 }
 
@@ -219,34 +215,8 @@ impl MasterRepository for InMemoryMasterRepository {
     }
 }
 
-fn rows_to_csv(rows: &[HierarchyRow]) -> String {
-    let mut out = String::from("費目,写真区分,工種,種別,細別,備考,検索パターン\n");
-    for r in rows {
-        out.push_str(&format!(
-            "{},{},{},{},{},{},{}\n",
-            escape_csv(&r.photo_division),
-            escape_csv(&r.photo_type),
-            escape_csv(&r.work_type),
-            escape_csv(&r.variety),
-            escape_csv(&r.subphase),
-            escape_csv(&r.remarks),
-            escape_csv(&r.search_patterns),
-        ));
-    }
-    out
-}
-
-fn escape_csv(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
-    }
-}
-
-/// `std::path::Path` のエクスポート互換のため（意味はない）
-#[allow(dead_code)]
-fn _ensure_path_reexport(_p: &Path) {}
+// rows_to_csv / escape_csv / _ensure_path_reexport は
+// HierarchyMaster::from_rows の public 化に伴い不要になったため削除。
 
 #[cfg(test)]
 mod tests {
