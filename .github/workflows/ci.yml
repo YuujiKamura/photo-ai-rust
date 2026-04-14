@@ -313,6 +313,9 @@ jobs:
         shell: bash
         run: cd photo-ai-go && go test ./internal/...
 
-      - name: Test cmd/...
+      # cmd/photo-ai depends on deckpilot (Windows-only), so skip its tests on Linux.
+      # It will still be built/tested in the go-build job on Windows.
+      - name: Test cmd/... (Windows only)
+        if: runner.os == 'Windows'
         shell: bash
         run: cd photo-ai-go && go test ./cmd/...
