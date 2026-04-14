@@ -47,3 +47,13 @@ func ProcessImage(config ImageConfig) (ImageResult, error) {
 
 // ExtractEXIF is a stub on non-Windows platforms.
 func ExtractEXIF(_ EXIFConfig) (EXIFResult, error) { return EXIFResult{}, errNotImplemented }
+
+// MatchMaster is a stub on non-Windows platforms.
+func MatchMaster(_, _, _, _, _ string) ([]AnalysisResult, error) {
+	return nil, errNotImplemented
+}
+
+// Normalize is a stub on non-Windows platforms.
+func Normalize(_, _, _, _ string) ([]AnalysisResult, error) {
+	return nil, errNotImplemented
+}
