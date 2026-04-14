@@ -58,25 +58,17 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-registry-
 
-      # Cache the final binary; skip build+test entirely when source is unchanged
-      - name: Cache main binary
-        id: binary-cache
-        uses: actions/cache@v4
-        with:
-          path: target/release/photo-ai-rust.exe
-          key: binary-${{ runner.os }}-${{ hashFiles('src/**', 'common/**', 'Cargo.lock') }}
-
       - name: Build Rust engines from current commit
         shell: bash
         run: |
           # photo-tag-engine is now pure Go (pkg/tagger) — no Rust build needed
+          # photo-ai-rust CLI binary removed in #165 Stream A — Go is main CLI.
           cargo build --release -p photo-engine --bin photo-analysis-engine
           cargo build --release -p photo-ai-rust --bin photo-pdf-engine --features pdf-gen
           cargo build --release -p photo-ai-rust --bin photo-excel-engine --features excel
 
-      - name: Build and test main binary
-        if: steps.binary-cache.outputs.cache-hit != 'true'
-        run: cargo test --release --bin photo-ai-rust
+      - name: Run Rust library tests
+        run: cargo test --release -p photo-ai-common
 
       - name: Set up Go
         uses: actions/setup-go@v5
