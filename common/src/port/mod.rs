@@ -8,5 +8,7 @@
 //! - （将来）`vision`: AI 画像解析 Oracle
 
 pub mod master;
+pub mod report;
 
 pub use master::{MasterError, MasterRepository};
+pub use report::{ImageData, MockRenderer, OutputFormat, RenderError, ReportRenderer};
