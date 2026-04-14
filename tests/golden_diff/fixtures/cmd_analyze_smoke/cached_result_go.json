@@ -1,0 +1,42 @@
+[
+  {
+    "fileName": "sample_001.jpg",
+    "filePath": "fixtures/cmd_analyze_smoke/photos/sample_001.jpg",
+    "date": "",
+    "workType": "",
+    "variety": "",
+    "subphase": "",
+    "station": "",
+    "remarks": "",
+    "remarksCandidates": null,
+    "description": "",
+    "hasBoard": false,
+    "detectedText": "",
+    "measurements": "",
+    "photoCategory": "",
+    "reasoning": "",
+    "focusTarget": "",
+    "group": 0,
+    "analysisTransport": "go_pipeline"
+  },
+  {
+    "fileName": "sample_002.jpg",
+    "filePath": "fixtures/cmd_analyze_smoke/photos/sample_002.jpg",
+    "date": "",
+    "workType": "",
+    "variety": "",
+    "subphase": "",
+    "station": "",
+    "remarks": "",
+    "remarksCandidates": null,
+    "description": "",
+    "hasBoard": false,
+    "detectedText": "",
+    "measurements": "",
+    "photoCategory": "",
+    "reasoning": "",
+    "focusTarget": "",
+    "group": 0,
+    "analysisTransport": "go_pipeline"
+  }
+]
