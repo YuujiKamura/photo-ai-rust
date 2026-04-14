@@ -1,0 +1,42 @@
+[
+  {
+    "fileName": "sample_001.jpg",
+    "filePath": "fixtures/cmd_analyze_smoke/photos/sample_001.jpg",
+    "date": "2026-01-15",
+    "workType": "舗装工",
+    "variety": "アスファルト舗装",
+    "subphase": "施工前",
+    "station": "No.10",
+    "remarks": "",
+    "remarksCandidates": null,
+    "description": "路面施工前の状況写真",
+    "hasBoard": true,
+    "detectedText": "測点 No.10",
+    "measurements": "",
+    "photoCategory": "品質管理",
+    "reasoning": "黒板に測点No.10が記載されています",
+    "focusTarget": "路面",
+    "group": 1,
+    "analysisTransport": "binary_engine"
+  },
+  {
+    "fileName": "sample_002.jpg",
+    "filePath": "fixtures/cmd_analyze_smoke/photos/sample_002.jpg",
+    "date": "2026-01-15",
+    "workType": "舗装工",
+    "variety": "アスファルト舗装",
+    "subphase": "施工後",
+    "station": "No.10",
+    "remarks": "",
+    "remarksCandidates": null,
+    "description": "路面施工後の完成写真",
+    "hasBoard": true,
+    "detectedText": "測点 No.10",
+    "measurements": "t=5cm",
+    "photoCategory": "品質管理",
+    "reasoning": "完成形状を記録しています",
+    "focusTarget": "路面",
+    "group": 1,
+    "analysisTransport": "binary_engine"
+  }
+]

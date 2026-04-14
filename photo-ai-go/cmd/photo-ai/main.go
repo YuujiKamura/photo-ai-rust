@@ -14,6 +14,21 @@ import (
 	"github.com/YuujiKamura/photo-ai-go/pkg/engine"
 )
 
+// analyzeFlagSet groups the parsed flag values for the analyze command so they
+// can be passed cleanly to runRustEngine / runGoEngine without re-reading cobra.
+type analyzeFlagSet struct {
+	batchSize   int
+	workType    string
+	photoType   string
+	variety     string
+	station     string
+	useCache    bool
+	recursive   bool
+	includeAll  bool
+	folderRules string
+	payPerUse   bool
+}
+
 var gitCommit = "unknown"
 
 func main() {
@@ -62,6 +77,7 @@ func init() {
 	analyzeCmd.Flags().String("line-types", "", "Line-type list JSON file (区画線工)")
 	analyzeCmd.Flags().String("folder-rules", "", "Folder-rule override JSON file")
 	analyzeCmd.Flags().Bool("pay-per-use", false, "Use pay-per-use billing instead of subscription/resident mode")
+	analyzeCmd.Flags().String("engine", "rust", "Analysis engine to use: rust (Rust DLL path) or go (Go-native pipeline)")
 
 	// export pdf flags
 	exportPDFCmd.Flags().StringP("output", "o", "", "Output PDF file or directory")
@@ -89,8 +105,16 @@ var analyzeCmd = &cobra.Command{
 		folder := args[0]
 
 		outputFlag, _ := cmd.Flags().GetString("output")
-		batchSize, _ := cmd.Flags().GetInt("batch-size")
 		master, _ := cmd.Flags().GetString("master")
+		engineName, _ := cmd.Flags().GetString("engine")
+
+		// Validate --engine value.
+		if engineName != "rust" && engineName != "go" {
+			return fmt.Errorf("--engine must be 'rust' or 'go', got %q", engineName)
+		}
+
+		// Collect remaining flags into a typed struct shared by both engine paths.
+		batchSize, _ := cmd.Flags().GetInt("batch-size")
 		workType, _ := cmd.Flags().GetString("work-type")
 		photoType, _ := cmd.Flags().GetString("photo-type")
 		variety, _ := cmd.Flags().GetString("variety")
@@ -101,86 +125,28 @@ var analyzeCmd = &cobra.Command{
 		folderRules, _ := cmd.Flags().GetString("folder-rules")
 		payPerUse, _ := cmd.Flags().GetBool("pay-per-use")
 
+		flags := analyzeFlagSet{
+			batchSize:   batchSize,
+			workType:    workType,
+			photoType:   photoType,
+			variety:     variety,
+			station:     station,
+			useCache:    useCache,
+			recursive:   recursive,
+			includeAll:  includeAll,
+			folderRules: folderRules,
+			payPerUse:   payPerUse,
+		}
+
+		destJSON := resolveOutputJSON(folder, outputFlag)
+
 		fmt.Fprintln(os.Stderr, "写真解析を開始しています...")
 
-		cfg := engine.ImageConfig{
-			Folder:      folder,
-			BatchSize:   batchSize,
-			WorkType:    workType,
-			PhotoType:   photoType,
-			Variety:     variety,
-			Station:     station,
-			UseCache:    useCache,
-			Recursive:   recursive,
-			IncludeAll:  includeAll,
-			FolderRules: folderRules,
-			PayPerUse:   payPerUse,
+		if engineName == "go" {
+			return runGoEngine(folder, destJSON, flags)
 		}
-		if master != "" {
-			cfg.OutputJSON = master // master path passed via OutputJSON field for routing
-		}
-
-		// Resolve the output JSON path before calling the DLL so we can tell
-		// the DLL where to write and also confirm the path to the caller.
-		destJSON := resolveOutputJSON(folder, outputFlag)
-		cfg.OutputJSON = destJSON
-
-		result, err := engine.ProcessImage(cfg)
-		if err != nil {
-			return fmt.Errorf("analyze (tagging): %w", err)
-		}
-
-		fmt.Fprintf(os.Stderr, "タグ付け完了: %d枚\n", result.PhotoCount)
-
-		// --- Stage 2: Master Matching ---
-		if master != "" {
-			fmt.Fprintln(os.Stderr, "マスタ照合を開始しています...")
-			lineTypes, _ := cmd.Flags().GetString("line-types")
-			folderRules, _ := cmd.Flags().GetString("folder-rules")
-
-			matchedResults, err := engine.MatchMaster(result.OutputJSON, master, folder, lineTypes, folderRules)
-			if err != nil {
-				return fmt.Errorf("analyze (matching): %w", err)
-			}
-
-			// 保存（一時ファイル）
-			matchedJSON := filepath.Join(folder, "matched-results.json")
-			data, err := json.MarshalIndent(matchedResults, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to serialize matched results: %w", err)
-			}
-			if err := os.WriteFile(matchedJSON, data, 0o644); err != nil {
-				return fmt.Errorf("failed to save matched results: %w", err)
-			}
-
-			// --- Stage 3: Normalization ---
-			fmt.Fprintln(os.Stderr, "正規化を開始しています...")
-			finalResults, err := engine.Normalize(matchedJSON, folder, station, folderRules)
-			if err != nil {
-				return fmt.Errorf("analyze (normalization): %w", err)
-			}
-			stampAnalysisMetadata(finalResults, analyzeMetadata{
-				MasterPath: master,
-				WorkType:   workType,
-				PhotoType:  photoType,
-				Variety:    variety,
-				PayPerUse:  payPerUse,
-			})
-
-			// 最終結果を保存
-			finalData, err := json.MarshalIndent(finalResults, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to serialize final result: %w", err)
-			}
-			if err := os.WriteFile(destJSON, finalData, 0o644); err != nil {
-				return fmt.Errorf("failed to save final result: %w", err)
-			}
-			fmt.Fprintf(os.Stderr, "最終結果を保存: %s\n", destJSON)
-		} else {
-			fmt.Fprintf(os.Stderr, "マスタ指定がないため、タグ付け結果のみを保存します: %s\n", result.OutputJSON)
-		}
-
-		return nil
+		// Default: Rust engine path (identical to pre-refactor behaviour).
+		return runRustEngine(cmd, folder, destJSON, master, flags)
 	},
 }
 
