@@ -197,7 +197,7 @@ jobs:
       # photo-ai-rust CLI binary was removed in #165 Stream A; Go is the main CLI.
       # Run library tests unconditionally — they are fast and cover common/.
       - name: Run Rust library tests
-        run: cargo test --release -p photo-ai-common
+        run: cargo test --release -p photo-ai-common --all-features
 
       # Upload engines so go-build can consume them without needing Rust
       - name: Upload engine binaries artifact
@@ -276,24 +276,18 @@ jobs:
           retention-days: 1
 
 # ---------------------------------------------------------------------------
-# Job 4: Go unit/integration tests (ubuntu-latest)
+# Job 4: Go unit/integration tests (windows-latest)
 # Does NOT depend on rust-build — runs in parallel with the Rust job.
 # Per-package steps let Go's test result cache skip unchanged packages.
 # ---------------------------------------------------------------------------
   go-test:
     needs: fingerprint
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: false
-
-      - name: Install system dependencies (Linux)
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
 
       - name: Set up Go
         uses: actions/setup-go@v5
