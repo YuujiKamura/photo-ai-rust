@@ -1,5 +1,17 @@
 name: CI
 
+# ---------------------------------------------------------------------------
+# Expected runtimes (estimate):
+#   Cold path (Rust source changed): ~5-6 min Rust + ~2 min Go (parallel) ≈ 5-6 min total
+#   Warm path (engines unchanged):   ~30 s (fingerprint) + ~2 min (go-test, ubuntu)
+#                                    + engines fetched from cache (<30 s) ≈ 2-3 min total
+#
+# Job DAG:
+#   fingerprint ──► rust-build (windows, skip when engines cache/release hit)
+#                       └── upload artifact ──► go-build (windows, photo-ai.exe)
+#   fingerprint ──► go-test   (ubuntu, per-package, no engine deps)
+# ---------------------------------------------------------------------------
+
 permissions:
   contents: read
 
@@ -15,21 +27,75 @@ on:
       - "common/**"
       - "photo-engine/**"
       - "photo-ai-go/**"
+      - "deps/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
   pull_request:
     branches: [master, main]
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: "Force full Rust engine rebuild (bypass cache and engines-latest release)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 env:
   CARGO_TERM_COLOR: always
   SCCACHE_GHA_ENABLED: "true"
   RUSTC_WRAPPER: "sccache"
 
+# ---------------------------------------------------------------------------
+# Job 1: Compute the engine source fingerprint.
+# Outputs: engine-fp — sha256 over engine sources + Cargo.lock
+# Runs on ubuntu for speed (no Windows license cost).
+# ---------------------------------------------------------------------------
 jobs:
-  build:
+  fingerprint:
+    runs-on: ubuntu-latest
+    outputs:
+      engine-fp: ${{ steps.fp.outputs.hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Compute engine source fingerprint
+        id: fp
+        shell: bash
+        run: |
+          # Fingerprint covers everything that affects the 3 engine binaries:
+          # src/bin/*_engine.rs  common/**  photo-engine/**  deps/**  Cargo.lock
+          FP=$(find src/bin -name "*_engine.rs" \
+                    common photo-engine deps Cargo.lock \
+               -type f 2>/dev/null \
+               | LC_ALL=C sort \
+               | xargs sha256sum 2>/dev/null \
+               | sha256sum \
+               | cut -d' ' -f1)
+          echo "hash=${FP}" >> "$GITHUB_OUTPUT"
+          echo "Engine fingerprint: ${FP}"
+
+# ---------------------------------------------------------------------------
+# Job 2: Rust build (windows-latest — engines must target Windows x86_64)
+#
+# Cache resolution order (short-circuits on first hit):
+#   1. actions/cache keyed by engine fingerprint   (fastest — same run or prior)
+#   2. gh release download engines-latest           (canonical built artifacts)
+#   3. cargo build --release                        (full build fallback)
+#
+# Engines are uploaded as a workflow artifact so go-build can consume them.
+# ---------------------------------------------------------------------------
+  rust-build:
+    needs: fingerprint
     runs-on: windows-latest
+
+    env:
+      ENGINE_FP: ${{ needs.fingerprint.outputs.engine-fp }}
 
     steps:
       - uses: actions/checkout@v4
@@ -41,14 +107,61 @@ jobs:
         run: |
           git submodule update --init deps/pdf-analysis-embed
 
-      - name: Install Rust
+      # --- Cache tier 1: actions/cache (strict fingerprint key) ---
+      - name: Restore engines from actions cache
+        id: engines-cache
+        uses: actions/cache@v4
+        with:
+          path: target/release
+          key: engines-${{ runner.os }}-${{ env.ENGINE_FP }}
+
+      # --- Cache tier 2: engines-latest GitHub release ---
+      # Skipped if tier-1 hit or force_rebuild requested.
+      - name: Fetch engines from engines-latest release
+        id: engines-release
+        if: >-
+          steps.engines-cache.outputs.cache-hit != 'true' &&
+          github.event.inputs.force_rebuild != 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p target/release
+          set +e
+          gh release download engines-latest \
+            --pattern "*.exe" \
+            --dir target/release \
+            2>/dev/null
+          DL_EXIT=$?
+          set -e
+          if [ "$DL_EXIT" -eq 0 ] \
+             && [ -f target/release/photo-analysis-engine.exe ] \
+             && [ -f target/release/photo-pdf-engine.exe ] \
+             && [ -f target/release/photo-excel-engine.exe ]; then
+            echo "fetched=true"  >> "$GITHUB_OUTPUT"
+            echo "Engines fetched from engines-latest release — skipping cargo build"
+          else
+            echo "fetched=false" >> "$GITHUB_OUTPUT"
+            echo "Release fetch failed or incomplete — falling back to cargo build"
+          fi
+
+      # --- Toolchain: only install when a full build is needed ---
+      - name: Install Rust toolchain
+        if: >-
+          steps.engines-cache.outputs.cache-hit != 'true' &&
+          steps.engines-release.outputs.fetched != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Setup sccache
+        if: >-
+          steps.engines-cache.outputs.cache-hit != 'true' &&
+          steps.engines-release.outputs.fetched != 'true'
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      # Cache crate downloads separately from compilation (small, fast, safe to cancel)
       - name: Cache cargo registry
+        if: >-
+          steps.engines-cache.outputs.cache-hit != 'true' &&
+          steps.engines-release.outputs.fetched != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -58,15 +171,11 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-registry-
 
-      # Cache the final binary; skip build+test entirely when source is unchanged
-      - name: Cache main binary
-        id: binary-cache
-        uses: actions/cache@v4
-        with:
-          path: target/release/photo-ai-rust.exe
-          key: binary-${{ runner.os }}-${{ hashFiles('src/**', 'common/**', 'Cargo.lock') }}
-
-      - name: Build Rust engines from current commit
+      # --- Cache tier 3: full cargo build (fallback) ---
+      - name: Build Rust engines from source
+        if: >-
+          steps.engines-cache.outputs.cache-hit != 'true' &&
+          steps.engines-release.outputs.fetched != 'true'
         shell: bash
         run: |
           # photo-tag-engine is now pure Go (pkg/tagger) — no Rust build needed
@@ -74,15 +183,82 @@ jobs:
           cargo build --release -p photo-ai-rust --bin photo-pdf-engine --features pdf-gen
           cargo build --release -p photo-ai-rust --bin photo-excel-engine --features excel
 
+      # Persist freshly built engines so subsequent runs skip the build entirely
+      - name: Save engines to actions cache
+        if: >-
+          steps.engines-cache.outputs.cache-hit != 'true' &&
+          steps.engines-release.outputs.fetched != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: target/release
+          key: engines-${{ runner.os }}-${{ env.ENGINE_FP }}
+
+      # --- Rust CLI binary (photo-ai-rust) — keyed on CLI sources, not engines ---
+      # Always needs Rust + sccache regardless of engine cache tier hit.
+      - name: Install Rust toolchain (main binary)
+        uses: dtolnay/rust-toolchain@stable
+        continue-on-error: true   # no-op if already installed by engine build path
+
+      - name: Setup sccache (main binary)
+        uses: mozilla-actions/sccache-action@v0.0.9
+        continue-on-error: true
+
+      - name: Cache cargo registry (main binary)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - name: Cache main binary
+        id: binary-cache
+        uses: actions/cache@v4
+        with:
+          path: target/release/photo-ai-rust.exe
+          key: binary-${{ runner.os }}-${{ hashFiles('src/**', 'common/**', 'Cargo.lock') }}
+
       - name: Build and test main binary
         if: steps.binary-cache.outputs.cache-hit != 'true'
         run: cargo test --release --bin photo-ai-rust
+
+      # Upload engines so go-build can consume them without needing Rust
+      - name: Upload engine binaries artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: engines-windows-x86_64
+          path: |
+            target/release/photo-analysis-engine.exe
+            target/release/photo-pdf-engine.exe
+            target/release/photo-excel-engine.exe
+          retention-days: 1
+
+# ---------------------------------------------------------------------------
+# Job 3: Go build (windows-latest — photo-ai.exe embeds Windows .exe engines)
+# Consumes engine binaries from the workflow artifact produced by rust-build.
+# ---------------------------------------------------------------------------
+  go-build:
+    needs: rust-build
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
           cache-dependency-path: photo-ai-go/go.sum
+
+      - name: Download engine binaries artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: engines-windows-x86_64
+          path: target/release
 
       - name: Copy engine binaries for Go embed
         shell: bash
@@ -105,14 +281,55 @@ jobs:
             touch photo-ai-go/internal/web/ghostty/dist/.keep
           fi
 
-      - name: Build Go CLI
+      - name: Build Go CLI (photo-ai.exe)
         shell: bash
         run: |
           cd photo-ai-go
           go build -o ../photo-ai.exe ./cmd/photo-ai
 
-      - name: Test Go CLI
+      - name: Upload photo-ai.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: photo-ai-exe
+          path: photo-ai.exe
+          retention-days: 1
+
+# ---------------------------------------------------------------------------
+# Job 4: Go unit/integration tests (ubuntu-latest)
+# Does NOT depend on rust-build — runs in parallel with the Rust job.
+# Per-package steps let Go's test result cache skip unchanged packages.
+# ---------------------------------------------------------------------------
+  go-test:
+    needs: fingerprint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: photo-ai-go/go.sum
+
+      - name: Test pkg/tagger
         shell: bash
-        run: |
-          cd photo-ai-go
-          go test ./...
+        run: cd photo-ai-go && go test ./pkg/tagger/...
+
+      - name: Test pkg/engine
+        shell: bash
+        run: cd photo-ai-go && go test ./pkg/engine/...
+
+      - name: Test pkg/watcher
+        shell: bash
+        run: cd photo-ai-go && go test ./pkg/watcher/...
+
+      - name: Test internal/...
+        shell: bash
+        run: cd photo-ai-go && go test ./internal/...
+
+      - name: Test cmd/...
+        shell: bash
+        run: cd photo-ai-go && go test ./cmd/...
