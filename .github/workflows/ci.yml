@@ -67,18 +67,14 @@ jobs:
       - name: Compute engine source fingerprint
         id: fp
         shell: bash
+        env:
+          # hashFiles runs before the script; we just forward the value.
+          # Covers everything that affects the 3 engine binaries.
+          ENGINE_HASH: ${{ hashFiles('src/bin/*_engine.rs', 'common/**', 'photo-engine/**', 'deps/**', 'Cargo.lock') }}
         run: |
-          # Fingerprint covers everything that affects the 3 engine binaries:
-          # src/bin/*_engine.rs  common/**  photo-engine/**  deps/**  Cargo.lock
-          FP=$(find src/bin -name "*_engine.rs" \
-                    common photo-engine deps Cargo.lock \
-               -type f 2>/dev/null \
-               | LC_ALL=C sort \
-               | xargs sha256sum 2>/dev/null \
-               | sha256sum \
-               | cut -d' ' -f1)
-          echo "hash=${FP}" >> "$GITHUB_OUTPUT"
-          echo "Engine fingerprint: ${FP}"
+          set -euo pipefail
+          echo "hash=${ENGINE_HASH}" >> "$GITHUB_OUTPUT"
+          echo "Engine fingerprint: ${ENGINE_HASH}"
 
 # ---------------------------------------------------------------------------
 # Job 2: Rust build (windows-latest — engines must target Windows x86_64)
