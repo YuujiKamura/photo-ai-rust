@@ -1,0 +1,16 @@
+[
+  { "id": "empty_string",          "text": "" },
+  { "id": "dash",                  "text": "-" },
+  { "id": "post_no_lane",          "text": "No.6" },
+  { "id": "post_right_lane",       "text": "No.6 R" },
+  { "id": "post_left_L",           "text": "No.4 L" },
+  { "id": "post_left_ja",          "text": "No.4 左" },
+  { "id": "access_road",           "text": "取付道路 No.1" },
+  { "id": "date_simple",           "text": "2月11日" },
+  { "id": "date_with_dump",        "text": "2月9日 1台目" },
+  { "id": "date_multi_dump",       "text": "3月5日 3台目" },
+  { "id": "invalid_month",         "text": "13月5日" },
+  { "id": "invalid_day",           "text": "2月32日" },
+  { "id": "freetext_linemarkings", "text": "ダイヤモンド標示" },
+  { "id": "freetext_crosswalk",    "text": "横断歩道線" }
+]

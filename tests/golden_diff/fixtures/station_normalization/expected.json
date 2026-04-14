@@ -1,0 +1,16 @@
+[
+  { "id": "empty_string",          "kind": "Empty",  "display": "",                  "is_post": false, "is_date": false, "has_dump_number": false },
+  { "id": "dash",                  "kind": "Empty",  "display": "",                  "is_post": false, "is_date": false, "has_dump_number": false },
+  { "id": "post_no_lane",          "kind": "Post",   "display": "No.6",              "is_post": true,  "is_date": false, "has_dump_number": false },
+  { "id": "post_right_lane",       "kind": "Post",   "display": "No.6 R",            "is_post": true,  "is_date": false, "has_dump_number": false },
+  { "id": "post_left_L",           "kind": "Post",   "display": "No.4 L",            "is_post": true,  "is_date": false, "has_dump_number": false },
+  { "id": "post_left_ja",          "kind": "Post",   "display": "No.4 L",            "is_post": true,  "is_date": false, "has_dump_number": false },
+  { "id": "access_road",           "kind": "Post",   "display": "取付道路 No.1",     "is_post": true,  "is_date": false, "has_dump_number": false },
+  { "id": "date_simple",           "kind": "Date",   "display": "2月11日",           "is_post": false, "is_date": true,  "has_dump_number": false },
+  { "id": "date_with_dump",        "kind": "Date",   "display": "2月9日 1台目",      "is_post": false, "is_date": true,  "has_dump_number": true  },
+  { "id": "date_multi_dump",       "kind": "Date",   "display": "3月5日 3台目",      "is_post": false, "is_date": true,  "has_dump_number": true  },
+  { "id": "invalid_month",         "kind": "Other",  "display": "13月5日",           "is_post": false, "is_date": false, "has_dump_number": false },
+  { "id": "invalid_day",           "kind": "Other",  "display": "2月32日",           "is_post": false, "is_date": false, "has_dump_number": false },
+  { "id": "freetext_linemarkings", "kind": "Other",  "display": "ダイヤモンド標示",  "is_post": false, "is_date": false, "has_dump_number": false },
+  { "id": "freetext_crosswalk",    "kind": "Other",  "display": "横断歩道線",        "is_post": false, "is_date": false, "has_dump_number": false }
+]

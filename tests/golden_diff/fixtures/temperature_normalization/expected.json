@@ -1,0 +1,15 @@
+[
+  { "id": "arrival_canonical",         "kind": "TemperatureArrival",           "label": "到着温度測定",         "short_label": "到着温度",         "found": true },
+  { "id": "arrival_with_value",        "kind": "TemperatureArrival",           "label": "到着温度測定",         "short_label": "到着温度",         "found": true },
+  { "id": "spreading_canonical",       "kind": "TemperatureSpreading",         "label": "敷均し温度測定",       "short_label": "敷均し温度",       "found": true },
+  { "id": "spreading_variant",         "kind": "TemperatureSpreading",         "label": "敷均し温度測定",       "short_label": "敷均し温度",       "found": true },
+  { "id": "initial_compaction_new",    "kind": "TemperatureInitialCompaction", "label": "初期締固め前温度測定", "short_label": "初期締固め前温度", "found": true },
+  { "id": "initial_compaction_old",    "kind": "TemperatureInitialCompaction", "label": "初期締固め前温度測定", "short_label": "初期締固め前温度", "found": true },
+  { "id": "opening_canonical",         "kind": "TemperatureOpening",           "label": "開放温度測定",         "short_label": "開放温度",         "found": true },
+  { "id": "opening_misspelled",        "kind": "TemperatureOpening",           "label": "開放温度測定",         "short_label": "開放温度",         "found": true },
+  { "id": "outside_air_full",          "kind": "TemperatureOutsideAir",        "label": "舗装日外気温測定",     "short_label": "舗装日外気温",     "found": true },
+  { "id": "outside_air_short",         "kind": "TemperatureOutsideAir",        "label": "舗装日外気温測定",     "short_label": "舗装日外気温",     "found": true },
+  { "id": "unrelated_pavement",        "kind": "",                             "label": "",                     "short_label": "",                 "found": false },
+  { "id": "empty_string",             "kind": "",                             "label": "",                     "short_label": "",                 "found": false },
+  { "id": "density_test",             "kind": "",                             "label": "",                     "short_label": "",                 "found": false }
+]
