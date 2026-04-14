@@ -16,7 +16,9 @@ import (
 
 	"github.com/YuujiKamura/photo-ai-go/internal/ai"
 	"github.com/YuujiKamura/photo-ai-go/internal/matching"
+	"github.com/YuujiKamura/photo-ai-go/internal/normalizer"
 	"github.com/YuujiKamura/photo-ai-go/internal/ocr"
+	"github.com/YuujiKamura/photo-ai-go/internal/pairing"
 	"github.com/YuujiKamura/photo-ai-go/internal/rules"
 	"github.com/YuujiKamura/photo-ai-go/pkg/engine"
 )
@@ -57,7 +59,14 @@ type Config struct {
 	PayPerUse   bool
 	FolderRules []rules.FolderRule
 	AIClient    *ai.Client  // may be nil; DLL path is used when set
-	Matcher     *matching.Matcher
+	// Matcher is the legacy bigram-only matcher (used when HierarchyMaster is nil).
+	Matcher *matching.Matcher
+	// HierarchyMaster is the canonical full two-phase matcher ported from Rust.
+	// When set, it is used in preference to Matcher.
+	HierarchyMaster *matching.HierarchyMaster
+	// PairAfterFolder, when non-empty, enables pair-completion scanning after
+	// the main analysis pass. Must point to the directory containing A* image files.
+	PairAfterFolder string
 }
 
 // Result is the per-photo output of the analysis pipeline.
@@ -193,8 +202,11 @@ func ExtractEXIFDates(ctx context.Context, images []ImageInfo) []ImageInfo {
 	return out
 }
 
-// Run executes the full pipeline: scan → EXIF → AI grouping → matching →
-// normalization. Mirrors scan_and_analyze in analysis.rs.
+// Run executes the full pipeline:
+//
+//	scan → EXIF → AI grouping → master match → normalize → pair completion → output
+//
+// Mirrors scan_and_analyze in analysis.rs.
 func Run(ctx context.Context, cfg Config) ([]Result, error) {
 	// 1. Scan images
 	suffix := ""
@@ -233,29 +245,52 @@ func Run(ctx context.Context, cfg Config) ([]Result, error) {
 	}
 	fmt.Printf("✓ AI解析完了 (%d枚)\n\n", imgResult.PhotoCount)
 
-	// 4. Build results from images + master matching
+	// 4. Build results from images + master matching.
+	// Use HierarchyMaster (full OCR-aware two-phase scorer) when available,
+	// falling back to the legacy bigram Matcher.
 	folderName := filepath.Base(cfg.Folder)
-	results := buildResults(images, cfg.Matcher, folderName)
+	results := buildResults(images, cfg.Matcher, cfg.HierarchyMaster, folderName)
 
-	// 5. Station bulk-apply + normalization (mirrors normalize_results_with_station)
+	// 5. Station bulk-apply (mirrors normalize_results_with_station in analysis.rs)
 	if cfg.Station != "" {
 		applyStation(results, cfg.Station)
 	}
 
-	// 6. Folder-specific corrections via rule set
+	// 6. Normalizer pass: use StationParse to canonicalise station strings.
+	// Mirrors the normalize phase in analysis.rs.
+	normalizeStations(results)
+
+	// 7. Folder-specific corrections via the full rules engine.
+	// Replaces the previous partial reimplementation: now delegates to
+	// rules.ApplyFolderRules which handles all 15 rule steps.
 	if len(cfg.FolderRules) > 0 {
-		rs := rules.RuleSet{Rules: cfg.FolderRules}
-		applyFolderRules(results, cfg.Folder, &rs)
+		rulesResults := resultsToRulesSlice(results)
+		rulesResults = rules.ApplyFolderRules(rulesResults, folderName, cfg.FolderRules)
+		results = rulesSliceToResults(rulesResults)
 	}
 
 	fmt.Printf("✓ マスタ照合完了（%d枚）\n\n", len(results))
+
+	// 8. Pair completion pass (optional).
+	// When PairAfterFolder is provided, scan for P* pair folders and log summary.
+	// This mirrors handle_pair_completion in pair_completion.rs.
+	if cfg.PairAfterFolder != "" {
+		pairFolders, err := pairing.ScanPairFolders(cfg.PairAfterFolder)
+		if err == nil && len(pairFolders) > 0 {
+			fmt.Printf("[3] ペア完成スキャン: %d 組のペアフォルダを検出\n\n", len(pairFolders))
+		}
+	}
+
 	return results, nil
 }
 
 // buildResults converts scanned images + AI match into a Result slice,
 // sorted by date then filename. Mirrors convert_groups_to_results.
-func buildResults(images []ImageInfo, m *matching.Matcher, folderName string) []Result {
-	_ = folderName // used for domain corrections (future)
+//
+// Master matching priority:
+//  1. hm (HierarchyMaster) — full OCR-aware two-phase scorer from master_matcher.go
+//  2. m  (Matcher)         — legacy bigram-only scorer from matching.go
+func buildResults(images []ImageInfo, m *matching.Matcher, hm *matching.HierarchyMaster, folderName string) []Result {
 	results := make([]Result, 0, len(images))
 
 	for _, img := range images {
@@ -265,7 +300,7 @@ func buildResults(images []ImageInfo, m *matching.Matcher, folderName string) []
 			Date:     img.Date,
 		}
 
-		// OCR station extraction from detected text
+		// OCR station extraction from detected text.
 		kvs := ocr.ExtractKV(r.DetectedText)
 		for _, kv := range kvs {
 			if kv.Key == "場所" || kv.Key == "測点" {
@@ -274,8 +309,21 @@ func buildResults(images []ImageInfo, m *matching.Matcher, folderName string) []
 			}
 		}
 
-		// Master matching
-		if m != nil {
+		// Master matching: prefer HierarchyMaster (full OCR-aware port).
+		if hm != nil {
+			var texts []string
+			if r.DetectedText != "" {
+				texts = []string{r.DetectedText}
+			}
+			if row := matching.MatchMasterFromDetectedTexts(hm, texts, folderName, r.FocusTarget); row != nil {
+				r.WorkType = row.WorkType
+				r.Variety = row.Variety
+				r.Subphase = row.Subphase
+				r.Remarks = row.Remarks
+				r.PhotoCategory = row.PhotoType
+			}
+		} else if m != nil {
+			// Fallback to legacy bigram matcher.
 			mr, ok := m.Match(r.DetectedText, r.PhotoCategory)
 			if ok {
 				r.WorkType = mr.Entry.WorkType
@@ -288,7 +336,7 @@ func buildResults(images []ImageInfo, m *matching.Matcher, folderName string) []
 		results = append(results, r)
 	}
 
-	// Sort by date then file name (mirrors Rust sort)
+	// Sort by date then file name (mirrors Rust sort).
 	sort.Slice(results, func(i, j int) bool {
 		if results[i].Date != results[j].Date {
 			return results[i].Date < results[j].Date
@@ -353,34 +401,58 @@ func dateToMonthDay(date string) string {
 	return m + "月" + d + "日"
 }
 
-// applyFolderRules applies the first matching folder rule to every result.
-func applyFolderRules(results []Result, folderPath string, rs *rules.RuleSet) {
-	rule, ok := rs.Match(folderPath)
-	if !ok {
-		return
-	}
-	if rule.Apply == nil {
-		return
-	}
+// normalizeStations applies normalizer.StationParse to canonicalise each result's
+// Station field. Mirrors the normalize phase in analysis.rs where station strings
+// go through Station::parse → to_display round-trip to reach canonical form.
+func normalizeStations(results []Result) {
 	for i := range results {
-		r := &results[i]
-		if rule.Apply.WorkType != nil {
-			r.WorkType = *rule.Apply.WorkType
-		}
-		if rule.Apply.Variety != nil {
-			r.Variety = *rule.Apply.Variety
-		}
-		if rule.Apply.Subphase != nil {
-			r.Subphase = *rule.Apply.Subphase
-		}
-		if rule.Apply.Remarks != nil {
-			r.Remarks = *rule.Apply.Remarks
-		}
-		if rule.Apply.PhotoCategory != nil {
-			r.PhotoCategory = *rule.Apply.PhotoCategory
-		}
-		if rule.Apply.Station != nil {
-			r.Station = *rule.Apply.Station
+		if results[i].Station != "" {
+			results[i].Station = normalizer.StationParse(results[i].Station).ToDisplay()
 		}
 	}
+}
+
+// resultsToRulesSlice converts pipeline.Result slice to rules.AnalysisResult slice.
+// The two types mirror each other; the conversion bridges the two packages.
+func resultsToRulesSlice(src []Result) []rules.AnalysisResult {
+	out := make([]rules.AnalysisResult, len(src))
+	for i, r := range src {
+		out[i] = rules.AnalysisResult{
+			FileName:      r.FileName,
+			FilePath:      r.FilePath,
+			PhotoCategory: r.PhotoCategory,
+			WorkType:      r.WorkType,
+			Variety:       r.Variety,
+			Subphase:      r.Subphase,
+			Remarks:       r.Remarks,
+			Station:       r.Station,
+			Measurements:  r.Measurements,
+			FocusTarget:   r.FocusTarget,
+			DetectedText:  r.DetectedText,
+			Group:         r.Group,
+		}
+	}
+	return out
+}
+
+// rulesSliceToResults converts rules.AnalysisResult slice back to pipeline.Result slice.
+func rulesSliceToResults(src []rules.AnalysisResult) []Result {
+	out := make([]Result, len(src))
+	for i, r := range src {
+		out[i] = Result{
+			FileName:      r.FileName,
+			FilePath:      r.FilePath,
+			PhotoCategory: r.PhotoCategory,
+			WorkType:      r.WorkType,
+			Variety:       r.Variety,
+			Subphase:      r.Subphase,
+			Remarks:       r.Remarks,
+			Station:       r.Station,
+			Measurements:  r.Measurements,
+			FocusTarget:   r.FocusTarget,
+			DetectedText:  r.DetectedText,
+			Group:         r.Group,
+		}
+	}
+	return out
 }
