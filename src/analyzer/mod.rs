@@ -81,6 +81,21 @@ pub async fn analyze_images(
     Ok(photos.into_iter().map(Photo::into_analysis_result).collect())
 }
 
+/// キャッシュを使用して画像を解析（TypeState 版）
+///
+/// 既存 `analyze_images_with_cache` の結果を `Vec<Photo<Raw>>` にラップして返す。
+/// キャッシュに格納されるデータは Step1 出力（Raw phase 相当）なので、
+/// `From<AnalysisResult>` エスケープハッチ経由の変換が意味的に正しい。
+pub async fn analyze_images_with_cache_typed(
+    images: &[ImageInfo],
+    folder: &Path,
+    batch_size: usize,
+    verbose: bool,
+) -> Result<Vec<Photo<Raw>>> {
+    let results = analyze_images_with_cache(images, folder, batch_size, verbose).await?;
+    Ok(results.into_iter().map(Photo::<Raw>::from).collect())
+}
+
 /// キャッシュを使用して画像を解析
 ///
 /// - キャッシュにある画像はスキップ
