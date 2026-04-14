@@ -9,6 +9,8 @@
 
 pub mod master;
 pub mod report;
+pub mod vision;
 
 pub use master::{MasterError, MasterRepository};
 pub use report::{ImageData, MockRenderer, OutputFormat, RenderError, ReportRenderer};
+pub use vision::{ImageRef, MockCallLog, MockOracle, OracleError, VisionOracle};

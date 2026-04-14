@@ -10,11 +10,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 csv = "1"
 thiserror = "2"
+async-trait = "0.1"
 rust_xlsxwriter = { version = "0.92", optional = true }
 pdf-analysis-embed = { path = "../deps/pdf-analysis-embed" }
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt"] }
 
 [features]
 default = []
