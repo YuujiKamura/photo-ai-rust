@@ -96,12 +96,15 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-
 
       # Tier 1: actions/cache keyed by engine fingerprint.
+      # v2: post-Go-migration engines with match-master/normalize subcommands.
+      # Older caches lacked these and were shipped in v0.3.3 — bumping the
+      # prefix invalidates stale entries.
       - name: Restore engines from actions cache
         id: engines-cache
         uses: actions/cache@v4
         with:
           path: target/release
-          key: engines-${{ runner.os }}-${{ env.ENGINE_FP }}
+          key: engines-v2-${{ runner.os }}-${{ env.ENGINE_FP }}
 
       # Tier 2: engines-latest GitHub release.
       - name: Fetch engines from engines-latest release

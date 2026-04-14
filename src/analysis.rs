@@ -732,15 +732,7 @@ pub fn convert_groups_to_results(
             result.subphase = row.subphase.clone();
             result.remarks = row.remarks.clone();
 
-            // 舗装補修工CSVにマッチした場合の正規化
-            if result.work_type == "舗装補修工" {
-                result.work_type = "舗装工".to_string();
-                if result.variety == "アスファルト舗装補修工" {
-                    result.variety = VARIETY_PAVEMENT_REPLACE.to_string();
-                }
-            }
-
-            // 「切削機」フォルダの使用機械は、機械名を備考へ埋め込む。
+// 「切削機」フォルダの使用機械は、機械名を備考へ埋め込む。
             if result.remarks == "使用機械"
                 && folder_name.contains("切削機")
                 && rec.core.machine_type.contains("路面切削機")

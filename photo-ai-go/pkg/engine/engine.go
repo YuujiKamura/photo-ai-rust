@@ -28,20 +28,58 @@ import (
 
 var GitCommit = "unknown"
 
+// RequiredAnalysisEngineSubcommands declares the subcommands the Go frontend
+// invokes on photo-analysis-engine.exe. If an embedded engine is missing any
+// of these, the pipeline will fail mid-analysis (e.g. match-master), so we
+// verify presence at extraction time and surface a clear error instead.
+var RequiredAnalysisEngineSubcommands = []string{
+	"tag-groups",
+	"single-step",
+	"match-master",
+	"normalize",
+	"pair-ensemble",
+}
+
+// EngineVerification records the outcome of verifying an engine binary against
+// its expected subcommand / flag contract. Exposed via /api/runtime-status so
+// the Web UI can flag mismatches before the user kicks off an analysis.
+type EngineVerification struct {
+	Name             string   `json:"name"`
+	Path             string   `json:"path"`
+	OK               bool     `json:"ok"`
+	MissingCommands  []string `json:"missingCommands,omitempty"`
+	Error            string   `json:"error,omitempty"`
+}
+
 var (
-	ensureOnce sync.Once
-	ensureDir  string
-	ensureErr  error
-	runGrouping = tagger.RunGrouping
+	ensureOnce          sync.Once
+	ensureDir           string
+	ensureErr           error
+	ensureVerifications []EngineVerification
+	runGrouping         = tagger.RunGrouping
 )
 
-// EnsureEngines extracts embedded engine binaries to a temporary directory.
-// It is safe to call concurrently; extraction happens exactly once.
+// EnsureEngines extracts embedded engine binaries to a temporary directory
+// and verifies that each engine advertises the subcommands the frontend
+// relies on. It is safe to call concurrently; extraction happens exactly once.
 func EnsureEngines() (string, error) {
 	ensureOnce.Do(func() {
 		ensureDir, ensureErr = doEnsureEngines()
+		if ensureErr == nil {
+			ensureVerifications = verifyExtractedEngines(ensureDir)
+			if err := firstVerificationError(ensureVerifications); err != nil {
+				ensureErr = err
+			}
+		}
 	})
 	return ensureDir, ensureErr
+}
+
+// EngineVerifications returns the cached results of the startup verification
+// performed by EnsureEngines. Triggers extraction+verification if not yet run.
+func EngineVerifications() []EngineVerification {
+	_, _ = EnsureEngines()
+	return append([]EngineVerification(nil), ensureVerifications...)
 }
 
 func doEnsureEngines() (string, error) {
@@ -54,6 +92,7 @@ func doEnsureEngines() (string, error) {
 		"photo-analysis-engine.exe",
 		"photo-pdf-engine.exe",
 		"photo-excel-engine.exe",
+		"cli-ai-analyzer.exe",
 	}
 
 	for _, name := range engineNames {
@@ -74,6 +113,74 @@ func doEnsureEngines() (string, error) {
 	}
 
 	return tempDir, nil
+}
+
+// verifyExtractedEngines runs --help on each expected engine and confirms the
+// required subcommands are advertised. Missing engines are skipped (dev mode);
+// present engines that fail the contract are reported with detail.
+func verifyExtractedEngines(dir string) []EngineVerification {
+	analysisPath := filepath.Join(dir, "photo-analysis-engine.exe")
+	results := []EngineVerification{}
+	if _, err := os.Stat(analysisPath); err == nil {
+		results = append(results, verifyEngineSubcommands(
+			"photo-analysis-engine.exe",
+			analysisPath,
+			RequiredAnalysisEngineSubcommands,
+		))
+	}
+	return results
+}
+
+// verifyEngineSubcommands runs `<engine> --help` and confirms each required
+// subcommand name appears in the output. The engines print usage to stdout
+// on --help even when clap-generated.
+func verifyEngineSubcommands(name, path string, required []string) EngineVerification {
+	res := EngineVerification{Name: name, Path: path}
+	cmd := exec.Command(path, "--help")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		res.Error = fmt.Sprintf("--help exited with error: %v (output: %s)", err, string(out))
+		return res
+	}
+	help := string(out)
+	for _, sub := range required {
+		if !helpMentionsToken(help, sub) {
+			res.MissingCommands = append(res.MissingCommands, sub)
+		}
+	}
+	res.OK = len(res.MissingCommands) == 0
+	return res
+}
+
+// helpMentionsToken checks whether the clap-rendered --help output includes a
+// given subcommand name. clap prints subcommands as indented lines starting
+// with the name, so a simple substring check is sufficient and conservative.
+func helpMentionsToken(help, token string) bool {
+	for _, line := range strings.Split(help, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == token || strings.HasPrefix(trimmed, token+" ") || strings.HasPrefix(trimmed, token+"\t") {
+			return true
+		}
+	}
+	return false
+}
+
+func firstVerificationError(vs []EngineVerification) error {
+	for _, v := range vs {
+		if v.OK {
+			continue
+		}
+		if len(v.MissingCommands) > 0 {
+			return fmt.Errorf(
+				"embedded %s is missing required subcommand(s) %v — photo-ai.exe was built against a stale engine binary; rebuild and redownload the release",
+				v.Name, v.MissingCommands,
+			)
+		}
+		if v.Error != "" {
+			return fmt.Errorf("embedded %s verification failed: %s", v.Name, v.Error)
+		}
+	}
+	return nil
 }
 
 func matchesEmbeddedFile(targetPath string, expected []byte) bool {
@@ -147,6 +254,17 @@ func runCommand(cmd *exec.Cmd) ([]byte, error) {
 type resolvedEngine struct {
 	Path   string // absolute or basename path to the engine EXE
 	Source string // resolution source: "env", "embedded", "sibling", "target-release", "path-fallback"
+}
+
+// ResolveCliAiAnalyzerPath returns the extracted path to cli-ai-analyzer.exe.
+// This binary drives Gemini CLI under the TimeBasedQuota (subscription) path.
+// Resolution order: env CLI_AI_ANALYZER_EXE, embedded temp dir, sibling, PATH fallback.
+func ResolveCliAiAnalyzerPath() (string, error) {
+	r, err := resolveEnginePath("CLI_AI_ANALYZER_EXE", "cli-ai-analyzer.exe")
+	if err != nil {
+		return "", err
+	}
+	return r.Path, nil
 }
 
 // resolveEnginePath returns the path to the specified engine EXE and how it was resolved.
@@ -323,6 +441,9 @@ func ProcessImage(config ImageConfig) (ImageResult, error) {
 	}
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = 10
+	}
+	if cliPath, err := ResolveCliAiAnalyzerPath(); err == nil {
+		cfg.CliAnalyzerPath = cliPath
 	}
 
 	res, err := runGrouping(context.Background(), cfg)

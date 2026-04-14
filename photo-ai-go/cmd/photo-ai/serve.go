@@ -81,6 +81,9 @@ type RuntimeStatus struct {
 	MasterWritable        bool   `json:"masterWritable"`
 	MasterVersion         string `json:"masterVersion,omitempty"`
 	MasterSchemaVersion   int    `json:"masterSchemaVersion,omitempty"`
+	EngineVerifications   []engine.EngineVerification `json:"engineVerifications,omitempty"`
+	EngineVerifyOK        bool   `json:"engineVerifyOk"`
+	EngineVerifyError     string `json:"engineVerifyError,omitempty"`
 }
 
 var serverState AppState
@@ -933,6 +936,24 @@ func getRuntimeStatus(repoDir string) RuntimeStatus {
 		status.MasterSchemaVersion = src.SchemaVersion
 	}
 	status.AgentAPIURL, status.AgentAPIAvailable, status.AgentAPIState, status.AgentAPIProvider = detectAgentAPIStatus()
+
+	// Verify embedded engines advertise the subcommands the frontend invokes.
+	// A release built against a stale actions/cache entry may ship an engine
+	// missing e.g. match-master, so surface the mismatch here instead of
+	// letting analyze fail halfway through.
+	status.EngineVerifications = engine.EngineVerifications()
+	status.EngineVerifyOK = true
+	for _, v := range status.EngineVerifications {
+		if !v.OK {
+			status.EngineVerifyOK = false
+			if len(v.MissingCommands) > 0 {
+				status.EngineVerifyError = fmt.Sprintf("%s missing subcommand(s): %s", v.Name, strings.Join(v.MissingCommands, ", "))
+			} else if v.Error != "" {
+				status.EngineVerifyError = fmt.Sprintf("%s: %s", v.Name, v.Error)
+			}
+			break
+		}
+	}
 	return status
 }
 

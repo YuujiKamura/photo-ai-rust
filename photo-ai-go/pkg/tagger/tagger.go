@@ -11,12 +11,13 @@ const defaultBatchSize = 10
 
 // Config holds parameters for RunGrouping.
 type Config struct {
-	Folder     string
-	BatchSize  int
-	PayPerUse  bool
-	APIKey     string
-	Model      string
-	Vocabulary []string
+	Folder          string
+	BatchSize       int
+	PayPerUse       bool
+	APIKey          string
+	Model           string
+	Vocabulary      []string
+	CliAnalyzerPath string // absolute path to cli-ai-analyzer.exe (resolved by caller)
 }
 
 // Result is returned by RunGrouping.
@@ -69,9 +70,10 @@ func RunGrouping(ctx context.Context, cfg Config) (Result, error) {
 
 	if len(pending) > 0 {
 		classifyCfg := &ClassifyConfig{
-			APIKey:     cfg.APIKey,
-			Model:      cfg.Model,
-			Vocabulary: cfg.Vocabulary,
+			APIKey:          cfg.APIKey,
+			Model:           cfg.Model,
+			Vocabulary:      cfg.Vocabulary,
+			CliAnalyzerPath: cfg.CliAnalyzerPath,
 		}
 
 		start := time.Now()
