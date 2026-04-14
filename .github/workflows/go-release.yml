@@ -1,33 +1,187 @@
 name: Go Release
 
+# ---------------------------------------------------------------------------
+# Release workflow for v* tags. Produces a single photo-ai.exe with embedded
+# Rust engines. Mirrors ci.yml's 3-tier engine cache to avoid rebuilding
+# hundreds of crates on every tag push:
+#
+#   Cache resolution order (short-circuits on first hit):
+#     1. actions/cache keyed by engine fingerprint   (fastest — prior same-fp run)
+#     2. gh release download engines-latest           (canonical pre-built binaries)
+#     3. cargo build --release                        (full build fallback)
+#
+# Expected runtimes:
+#   Warm path (engines cached or engines-latest fresh): ~2-3 min
+#   Cold path (engine source changed):                   ~15 min (once, then cached)
+# ---------------------------------------------------------------------------
+
 on:
   push:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: "Force full Rust engine rebuild (bypass cache and engines-latest release)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
 jobs:
-  build-go-cli:
-    runs-on: windows-latest
+  # ---------------------------------------------------------------------------
+  # Job 1: Compute engine source fingerprint (ubuntu for speed).
+  # ---------------------------------------------------------------------------
+  fingerprint:
+    runs-on: ubuntu-latest
+    outputs:
+      engine-fp: ${{ steps.fp.outputs.hash }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Compute engine source fingerprint
+        id: fp
+        shell: bash
+        env:
+          ENGINE_HASH: ${{ hashFiles('src/bin/*_engine.rs', 'common/**', 'photo-engine/**', 'deps/**', 'Cargo.lock') }}
+        run: |
+          set -euo pipefail
+          echo "hash=${ENGINE_HASH}" >> "$GITHUB_OUTPUT"
+          echo "Engine fingerprint: ${ENGINE_HASH}"
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Obtain engine binaries (via cache, release, or cargo build).
+  # ---------------------------------------------------------------------------
+  rust-engines:
+    needs: fingerprint
+    runs-on: windows-latest
+    env:
+      ENGINE_FP: ${{ needs.fingerprint.outputs.engine-fp }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
 
       - name: Checkout required submodules
         shell: bash
-        run: git submodule update --init --depth=1 deps/pdf-analysis-embed deps/folder-watcher
+        run: |
+          git submodule update --init --depth=1 deps/pdf-analysis-embed
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
         with:
-          prefix-key: "go-release"
-          shared-key: "engines"
-          cache-targets: "true"
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      # Tier 1: actions/cache keyed by engine fingerprint.
+      - name: Restore engines from actions cache
+        id: engines-cache
+        uses: actions/cache@v4
+        with:
+          path: target/release
+          key: engines-${{ runner.os }}-${{ env.ENGINE_FP }}
+
+      # Tier 2: engines-latest GitHub release.
+      - name: Fetch engines from engines-latest release
+        id: engines-release
+        if: >-
+          steps.engines-cache.outputs.cache-hit != 'true' &&
+          github.event.inputs.force_rebuild != 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p target/release
+          set +e
+          gh release download engines-latest \
+            --pattern "photo-analysis-engine.exe" \
+            --pattern "photo-pdf-engine.exe" \
+            --pattern "photo-excel-engine.exe" \
+            --dir target/release \
+            2>/dev/null
+          DL_EXIT=$?
+          set -e
+          if [ "$DL_EXIT" -eq 0 ] \
+             && [ -f target/release/photo-analysis-engine.exe ] \
+             && [ -f target/release/photo-pdf-engine.exe ] \
+             && [ -f target/release/photo-excel-engine.exe ]; then
+            echo "fetched=true"  >> "$GITHUB_OUTPUT"
+            echo "Engines fetched from engines-latest release — skipping cargo build"
+          else
+            echo "fetched=false" >> "$GITHUB_OUTPUT"
+            echo "Release fetch failed or incomplete — falling back to cargo build"
+          fi
+
+      # Tier 3: full cargo build fallback.
+      - name: Build Rust engines from source
+        if: >-
+          steps.engines-cache.outputs.cache-hit != 'true' &&
+          steps.engines-release.outputs.fetched != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release -p photo-engine --bin photo-analysis-engine
+          cargo build --release -p photo-ai-rust --bin photo-pdf-engine --features pdf-gen
+          cargo build --release -p photo-ai-rust --bin photo-excel-engine --features excel
+          ls -la target/release/photo-*-engine.exe
+
+      # Persist freshly built engines so subsequent same-fp runs skip the build.
+      - name: Save engines to actions cache
+        if: >-
+          steps.engines-cache.outputs.cache-hit != 'true' &&
+          steps.engines-release.outputs.fetched != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: target/release
+          key: engines-${{ runner.os }}-${{ env.ENGINE_FP }}
+
+      # Upload as workflow artifact for the Go build job.
+      - name: Upload engine binaries artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: engines-windows-x86_64
+          path: |
+            target/release/photo-analysis-engine.exe
+            target/release/photo-pdf-engine.exe
+            target/release/photo-excel-engine.exe
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Build photo-ai.exe (Go) and publish GitHub release.
+  # ---------------------------------------------------------------------------
+  go-release:
+    needs: rust-engines
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Checkout required submodules
+        shell: bash
+        run: git submodule update --init --depth=1 deps/folder-watcher
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -35,20 +189,18 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: photo-ai-go/go.sum
 
-      - name: Build Rust engines from current commit
+      - name: Download engine binaries artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: engines-windows-x86_64
+          path: target/release
+
+      - name: Copy engine binaries for Go embed
         shell: bash
         run: |
-          set -euo pipefail
-          # photo-tag-engine is now pure Go (pkg/tagger) — no Rust build needed
-          # photo-ai-rust: pdf + excel engines share deps
-          cargo build --release -p photo-ai-rust --features pdf-gen,excel
-          # photo-engine: separate crate
-          cargo build --release -p photo-engine --bin photo-analysis-engine
           mkdir -p photo-ai-go/internal/engines
-          for bin in photo-analysis-engine photo-pdf-engine photo-excel-engine; do
-            cp "target/release/$bin.exe" "photo-ai-go/internal/engines/$bin.exe"
-          done
-          echo "Built engines:"
+          cp target/release/photo-*-engine.exe photo-ai-go/internal/engines/
+          echo "Embedded engines:"
           ls -la photo-ai-go/internal/engines/
 
       - name: Copy web assets and master CSVs for embedding
@@ -64,12 +216,6 @@ jobs:
           cp /tmp/package/dist/* $GITHUB_WORKSPACE/photo-ai-go/internal/web/ghostty/dist/
           cp /tmp/package/ghostty-vt.wasm $GITHUB_WORKSPACE/photo-ai-go/internal/web/ghostty/dist/
           cd $GITHUB_WORKSPACE
-          echo "Web assets:"
-          ls photo-ai-go/internal/web/
-          echo "Master CSVs:"
-          ls photo-ai-go/internal/master/by_work_type/
-          echo "Ghostty dist:"
-          ls photo-ai-go/internal/web/ghostty/dist/
 
       - name: Build Go CLI (single binary with embedded engines)
         shell: bash
@@ -85,6 +231,7 @@ jobs:
           ls -lh photo-ai.exe
 
       - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: photo-ai.exe
