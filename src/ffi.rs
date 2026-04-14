@@ -3,7 +3,7 @@ use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use crate::error::Result;
-use crate::cli::PdfQuality;
+use crate::export_types::PdfQuality;
 use photo_ai_common::AnalysisResult;
 
 /// DLLレスポンスの共通ヘッダー

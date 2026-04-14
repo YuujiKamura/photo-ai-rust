@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use clap::Parser;
 use photo_ai_rust::export::{pdf, pair_pdf};
-use photo_ai_rust::cli::PdfQuality;
+use photo_ai_rust::export_types::PdfQuality;
 use photo_ai_common::AnalysisResult;
 use serde::Serialize;
 
