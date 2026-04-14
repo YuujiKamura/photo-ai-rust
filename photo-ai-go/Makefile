@@ -19,10 +19,13 @@ all:
 	cd .. && cargo build --release -p photo-engine --bin photo-analysis-engine
 	cd .. && cargo build --release -p photo-ai-rust --bin photo-pdf-engine --features pdf-gen
 	cd .. && cargo build --release -p photo-ai-rust --bin photo-excel-engine --features excel
+	# cli-ai-analyzer の実体は resident-ai::cli-compat (ACP 経由)。sibling repo を expect。
+	cd ../../resident-agent && cargo build --release --bin cli-compat
 	@echo "Copying engines from cargo target directory..."
 	cp -f ../target/release/photo-analysis-engine.exe ./internal/engines/ 2>/dev/null || echo "WARN: photo-analysis-engine.exe not found in target/release"
 	cp -f ../target/release/photo-pdf-engine.exe ./internal/engines/ 2>/dev/null || echo "WARN: photo-pdf-engine.exe not found in target/release"
 	cp -f ../target/release/photo-excel-engine.exe ./internal/engines/ 2>/dev/null || echo "WARN: photo-excel-engine.exe not found in target/release"
+	cp -f ../../resident-agent/target/release/cli-compat.exe ./internal/engines/cli-ai-analyzer.exe 2>/dev/null || echo "WARN: cli-compat.exe not found; tagger will need CLI_AI_ANALYZER_EXE env"
 	mkdir -p ./internal/web
 	cp -f ../web/*.html ../web/*.json ./internal/web/ 2>/dev/null || echo "WARN: web assets not found"
 	mkdir -p ./internal/master/by_work_type
