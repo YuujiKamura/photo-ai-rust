@@ -181,12 +181,15 @@ pub fn build_pdf_info_fields(result: &AnalysisResult) -> Vec<PdfInfoField> {
 
 /// 日時フォーマット変換
 /// "2025-12-26 13:47:52" → "2025/12/26 13:47"
+/// EXIF素通り形式 "2025:12:26 13:47:52" も同じ結果になるよう正規化してから処理する。
 fn format_date(date: &str) -> String {
     if date.is_empty() {
         return "-".to_string();
     }
+    // 防御: ingestion漏れで `YYYY:MM:DD HH:MM:SS` が残っていても時刻コロンを壊さず処理。
+    let normalized = crate::types::normalize_exif_datetime(date);
     // "YYYY-MM-DD HH:MM:SS" → "YYYY/MM/DD HH:MM"
-    let formatted = date.replace('-', "/");
+    let formatted = normalized.replace('-', "/");
     // 秒を削除（最後の:SS部分）
     if formatted.len() > 16 {
         formatted[..16].to_string()
@@ -352,6 +355,19 @@ mod tests {
         assert_eq!(format_date(""), "-");
         assert_eq!(format_date("2025-12-26 13:47:52"), "2025/12/26 13:47");
         assert_eq!(format_date("2025-01-01"), "2025/01/01");
+    }
+
+    #[test]
+    fn test_format_date_exif_raw_format_defense() {
+        // 防御: ingestion漏れで kamadak-exif 素通りの EXIF 仕様
+        // `YYYY:MM:DD HH:MM:SS` が date に入っていても、
+        // 時刻部分のコロンは維持され `YYYY/MM/DD HH:MM` として表示できること。
+        assert_eq!(
+            format_date("2025:12:26 13:47:52"),
+            "2025/12/26 13:47"
+        );
+        // 日付のみのEXIF形式
+        assert_eq!(format_date("2025:01:01"), "2025/01/01");
     }
 
     #[test]

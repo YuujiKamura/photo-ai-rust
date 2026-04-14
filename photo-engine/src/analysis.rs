@@ -1,8 +1,9 @@
 use crate::agentapi;
 use anyhow::{anyhow, Context, Result};
 use photo_ai_common::{
-    build_prompt_for_category, build_step1_prompt, parse_single_step_response,
-    parse_step1_response, AnalysisResult, HierarchyMaster, RawImageData,
+    build_prompt_for_category, build_step1_prompt, normalize_exif_datetime,
+    parse_single_step_response, parse_step1_response, AnalysisResult, HierarchyMaster,
+    RawImageData,
 };
 use photo_ai_rust::grouping::{GroupCore, GroupRecord, GroupRecords};
 use regex::Regex;
@@ -332,7 +333,8 @@ fn extract_date(path: &Path) -> Option<String> {
     let field = exif_data
         .get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY)
         .or_else(|| exif_data.get_field(exif::Tag::DateTime, exif::In::PRIMARY))?;
-    Some(field.display_value().to_string())
+    // kamadak-exif 仕様 `YYYY:MM:DD HH:MM:SS` を ISO 風 YMD に正規化して格納。
+    Some(normalize_exif_datetime(&field.display_value().to_string()))
 }
 
 fn classify_group_batch(

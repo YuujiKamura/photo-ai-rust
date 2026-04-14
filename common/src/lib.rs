@@ -23,7 +23,7 @@ pub mod evaluate;
 #[cfg(any(feature = "excel", feature = "pdf"))]
 pub mod export;
 
-pub use types::{AnalysisResult, RawImageData, PhotoData, WorkTypeDefinition, LineTypeEntry, LineTypesConfig};
+pub use types::{AnalysisResult, RawImageData, PhotoData, WorkTypeDefinition, LineTypeEntry, LineTypesConfig, normalize_exif_datetime};
 pub use layout::{PdfLayout, ExcelLayout, FieldKey};
 pub use alias::{AliasConfig, apply_aliases, longest_match_transform};
 pub use error::{Error, Result, HierarchyError, AnalyzerError};

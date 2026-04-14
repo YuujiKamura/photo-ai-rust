@@ -1,4 +1,5 @@
 /// EXIF extraction using kamadak-exif crate.
+use photo_ai_common::normalize_exif_datetime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
@@ -57,9 +58,11 @@ fn extract_exif_inner(config: &ExifConfig) -> Result<ExifResult, String> {
         let value_str = field.display_value().to_string();
 
         // Extract datetime
+        // kamadak-exif は仕様どおり `YYYY:MM:DD HH:MM:SS` を返すため、
+        // 下流の chrono パーサ等が扱えるよう ISO風に正規化して格納する。
         if field.tag == exif::Tag::DateTimeOriginal || field.tag == exif::Tag::DateTime {
             if datetime.is_none() {
-                datetime = Some(value_str.clone());
+                datetime = Some(normalize_exif_datetime(&value_str));
             }
         }
 

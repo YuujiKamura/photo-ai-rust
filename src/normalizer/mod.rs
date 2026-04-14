@@ -310,6 +310,9 @@ fn is_board_up_photo(focus_target: &str) -> bool {
 }
 
 fn parse_result_datetime(date: &str) -> Option<NaiveDateTime> {
+    // 万一EXIF仕様の `YYYY:MM:DD HH:MM:SS` が素通りした場合の防御。
+    // 通常は ingestion (src/scanner/exif.rs など) で normalize 済み。
+    let date = photo_ai_common::normalize_exif_datetime(date);
     let formats = [
         "%Y-%m-%d %H:%M:%S",
         "%Y/%m/%d %H:%M:%S",
@@ -317,7 +320,7 @@ fn parse_result_datetime(date: &str) -> Option<NaiveDateTime> {
         "%Y/%m/%d %H:%M",
     ];
     for fmt in formats {
-        if let Ok(dt) = NaiveDateTime::parse_from_str(date, fmt) {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(&date, fmt) {
             return Some(dt);
         }
     }
@@ -840,6 +843,33 @@ mod tests {
 
         assert_eq!(result.stats.total_records, 1);
         assert!(result.corrections.is_empty());
+    }
+
+    #[test]
+    fn test_parse_result_datetime_iso_format() {
+        // ISO風 `YYYY-MM-DD HH:MM:SS`（ingestionで正規化済みの想定形式）
+        let dt = parse_result_datetime("2025-12-26 13:47:52").expect("parse失敗");
+        assert_eq!(dt.format("%Y-%m-%d %H:%M:%S").to_string(), "2025-12-26 13:47:52");
+    }
+
+    #[test]
+    fn test_parse_result_datetime_exif_format_defense() {
+        // 防御: ingestion漏れで kamadak-exif 素通りの EXIF 仕様
+        // `YYYY:MM:DD HH:MM:SS` が来ても parse 成功することを確認。
+        let dt = parse_result_datetime("2025:12:26 13:47:52").expect("EXIF素通り形式のparseが失敗");
+        assert_eq!(dt.format("%Y-%m-%d %H:%M:%S").to_string(), "2025-12-26 13:47:52");
+    }
+
+    #[test]
+    fn test_parse_result_datetime_slash_format() {
+        let dt = parse_result_datetime("2025/12/26 13:47:52").expect("parse失敗");
+        assert_eq!(dt.format("%Y-%m-%d %H:%M:%S").to_string(), "2025-12-26 13:47:52");
+    }
+
+    #[test]
+    fn test_parse_result_datetime_invalid_returns_none() {
+        assert!(parse_result_datetime("").is_none());
+        assert!(parse_result_datetime("not a date").is_none());
     }
 
     #[test]

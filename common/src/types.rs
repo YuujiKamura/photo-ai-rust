@@ -7,6 +7,35 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Normalize EXIF `DateTimeOriginal` format to ISO-ish.
+///
+/// EXIF spec uses `YYYY:MM:DD HH:MM:SS`. This converts the YMD colons to hyphens,
+/// leaving the `HH:MM:SS` time portion untouched. Idempotent for already-normalized
+/// input (e.g. `YYYY-MM-DD HH:MM:SS`). Handles `YYYY:MM:DD` date-only strings too.
+///
+/// Implementation: only the first two `:` (the YMD separators that appear before
+/// the first ASCII space, tab, or `T`) are rewritten. Anything after the separator
+/// — notably `HH:MM:SS` — is copied verbatim so time-of-day colons survive.
+pub fn normalize_exif_datetime(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+    // Find first time-separator (space / tab / 'T'). Everything before it is the
+    // date portion; everything from it onward is copied verbatim.
+    let split_idx = s
+        .char_indices()
+        .find(|(_, c)| matches!(c, ' ' | '\t' | 'T'))
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+    let (date_part, rest) = s.split_at(split_idx);
+    // Replace only the first two ':' in the date portion — matches EXIF YMD.
+    let rewritten_date = date_part.replacen(':', "-", 2);
+    let mut out = String::with_capacity(s.len());
+    out.push_str(&rewritten_date);
+    out.push_str(rest);
+    out
+}
+
 /// 工種キーワード定義
 #[derive(Debug, Clone)]
 pub struct WorkTypeDefinition {
@@ -457,4 +486,61 @@ mod tests {
         assert_eq!(raw.detected_text, ""); // デフォルト値
     }
 
+    // =============================================
+    // normalize_exif_datetime テスト
+    // =============================================
+
+    #[test]
+    fn test_normalize_exif_datetime_full_exif_format() {
+        // EXIF仕様の YYYY:MM:DD HH:MM:SS 形式。YMDの `:` のみ `-` に置換され、
+        // 時刻部分 HH:MM:SS のコロンは保持されることを確認。
+        assert_eq!(
+            normalize_exif_datetime("2025:12:26 13:47:52"),
+            "2025-12-26 13:47:52"
+        );
+    }
+
+    #[test]
+    fn test_normalize_exif_datetime_already_iso_passthrough() {
+        // 既にISO形式ならそのまま返す（冪等性）。
+        assert_eq!(
+            normalize_exif_datetime("2025-12-26 13:47:52"),
+            "2025-12-26 13:47:52"
+        );
+        assert_eq!(normalize_exif_datetime("2025-01-01"), "2025-01-01");
+    }
+
+    #[test]
+    fn test_normalize_exif_datetime_date_only() {
+        // 時刻なしのEXIF日付（bare `YYYY:MM:DD`）。
+        assert_eq!(normalize_exif_datetime("2025:12:26"), "2025-12-26");
+    }
+
+    #[test]
+    fn test_normalize_exif_datetime_mixed_separators() {
+        // 既に1つ目が `-` になっているケース、`T` セパレータなど。
+        assert_eq!(
+            normalize_exif_datetime("2025-12:26 13:47:52"),
+            "2025-12-26 13:47:52"
+        );
+        assert_eq!(
+            normalize_exif_datetime("2025:12:26T13:47:52"),
+            "2025-12-26T13:47:52"
+        );
+    }
+
+    #[test]
+    fn test_normalize_exif_datetime_empty_string() {
+        assert_eq!(normalize_exif_datetime(""), "");
+    }
+
+    #[test]
+    fn test_normalize_exif_datetime_preserves_time_colons() {
+        // 3つ以上の `:` があっても時刻部分はそのまま（replacenでn=2制限）。
+        let input = "2025:01:02 03:04:05";
+        let out = normalize_exif_datetime(input);
+        assert_eq!(out, "2025-01-02 03:04:05");
+        // 時刻側コロン2個が維持されていること
+        assert_eq!(out.matches(':').count(), 2);
+    }
 }
