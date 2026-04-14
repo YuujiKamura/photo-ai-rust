@@ -103,6 +103,22 @@ jobs:
         run: |
           git submodule update --init deps/pdf-analysis-embed
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
       # --- Cache tier 1: actions/cache (strict fingerprint key) ---
       - name: Restore engines from actions cache
         id: engines-cache
@@ -140,32 +156,6 @@ jobs:
             echo "fetched=false" >> "$GITHUB_OUTPUT"
             echo "Release fetch failed or incomplete — falling back to cargo build"
           fi
-
-      # --- Toolchain: only install when a full build is needed ---
-      - name: Install Rust toolchain
-        if: >-
-          steps.engines-cache.outputs.cache-hit != 'true' &&
-          steps.engines-release.outputs.fetched != 'true'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup sccache
-        if: >-
-          steps.engines-cache.outputs.cache-hit != 'true' &&
-          steps.engines-release.outputs.fetched != 'true'
-        uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Cache cargo registry
-        if: >-
-          steps.engines-cache.outputs.cache-hit != 'true' &&
-          steps.engines-release.outputs.fetched != 'true'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
 
       # --- Cache tier 3: full cargo build (fallback) ---
       - name: Build Rust engines from source
