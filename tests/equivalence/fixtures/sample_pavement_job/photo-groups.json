@@ -1,0 +1,56 @@
+{
+  "テスト001.JPG": {
+    "role": "board",
+    "machine_type": "",
+    "machine_id": "",
+    "has_board": true,
+    "detected_text": "工種：舗装工\n種別：舗装打換え工\n測点：No.1+10\nAs舗装版切断状況",
+    "description": "黒板アップ写真。工種・測点・作業内容が記載されている。",
+    "group": 1
+  },
+  "テスト002.JPG": {
+    "role": "scene",
+    "machine_type": "フィニッシャー",
+    "machine_id": "",
+    "has_board": false,
+    "detected_text": "",
+    "description": "アスファルトフィニッシャーによる表層工の敷均し状況。",
+    "group": 1
+  },
+  "テスト003.JPG": {
+    "role": "board",
+    "machine_type": "",
+    "machine_id": "",
+    "has_board": true,
+    "detected_text": "到着温度 160℃\nNo.1台目",
+    "description": "温度測定黒板。到着温度160℃を示す。",
+    "group": 2
+  },
+  "テスト004.JPG": {
+    "role": "board",
+    "machine_type": "",
+    "machine_id": "",
+    "has_board": true,
+    "detected_text": "工種：構造物撤去工\n撤去状況\n測点：No.3+50",
+    "description": "撤去作業の黒板写真。工種・測点を記録。",
+    "group": 3
+  },
+  "テスト005.JPG": {
+    "role": "scene",
+    "machine_type": "",
+    "machine_id": "",
+    "has_board": false,
+    "detected_text": "",
+    "description": "構造物撤去の全景。バックホウによる取壊し作業中。",
+    "group": 3
+  },
+  "テスト006.JPG": {
+    "role": "board",
+    "machine_type": "",
+    "machine_id": "",
+    "has_board": true,
+    "detected_text": "区画線工\n溶融式区画線\n施工状況\n測点：No.5+00",
+    "description": "区画線施工の黒板写真。",
+    "group": 4
+  }
+}
