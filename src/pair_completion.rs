@@ -3,7 +3,24 @@
 //! Before/After写真をそれぞれ番号付きコンタクトシートにまとめ、
 //! 1コール1問×アンサンブル（順逆走査3回）で90%精度のペアリングを実現する。
 
-use crate::commands::{PairCompletionCommandArgs, PairReplaceCommandArgs};
+/// ペアリング完了コマンドの引数
+pub struct PairCompletionCommandArgs {
+    pub before: std::path::PathBuf,
+    pub after: std::path::PathBuf,
+    pub output: Option<std::path::PathBuf>,
+    pub project_name: Option<String>,
+    pub build: bool,
+    pub verbose: bool,
+}
+
+/// ペア差し替えコマンドの引数
+pub struct PairReplaceCommandArgs {
+    pub folder: std::path::PathBuf,
+    pub pairs: String,
+    pub new_after: std::path::PathBuf,
+    pub project_name: String,
+    pub output: Option<std::path::PathBuf>,
+}
 #[cfg(feature = "pdf-gen")]
 use crate::contactsheet::generate_contact_sheet;
 use crate::error::{PhotoAiError, Result};
@@ -121,7 +138,7 @@ impl Drop for TempDirGuard {
 
 #[cfg(feature = "pdf-gen")]
 pub async fn handle_pair_completion(args: PairCompletionCommandArgs) -> Result<()> {
-    let verbose = args.cli_args.verbose;
+    let verbose = args.verbose;
     println!("photo-ai-rust - 着手前/竣工 ペアリング（コンタクトシート+アンサンブル方式）\n");
 
     let (before_pages, _temp_guard) = if args.before.is_dir() {

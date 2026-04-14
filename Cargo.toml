@@ -28,9 +28,6 @@ path = "src/bin/pdf_engine.rs"
 name = "photo-excel-engine"
 path = "src/bin/excel_engine.rs"
 
-[[bin]]
-name = "photo-ai-rust"
-path = "src/main.rs"
 
 [dependencies]
 # PDF解析・埋め込みライブラリ
@@ -54,7 +51,7 @@ kamadak-exif = "0.5"
 # ファイル操作
 walkdir = "2"
 
-# 非同期（#[tokio::main]用）
+# 非同期（#[tokio::test]・analyzer用）
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 async-trait = "0.1"
 

@@ -1,7 +1,7 @@
 #[cfg(feature = "ffi-stubs")]
 pub mod ffi;
 pub mod api_key_guard;
-pub mod cli;
+pub mod export_types;
 pub mod config;
 pub mod temperature;
 pub mod domain;
@@ -19,7 +19,6 @@ pub mod master_matcher;
 pub mod line_type_detector;
 pub mod analysis;
 pub mod folder_rules;
-pub mod commands;
 pub mod gt;
 pub mod engine;
 pub mod pair_completion;

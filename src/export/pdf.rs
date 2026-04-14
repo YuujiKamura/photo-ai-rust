@@ -5,7 +5,7 @@
 //! - 2026-01-18: printpdf 0.8アップグレード、フォントサブセット化対応
 
 use crate::analyzer::AnalysisResult;
-use crate::cli::PdfQuality;
+use crate::export_types::PdfQuality;
 use crate::error::{PhotoAiError, Result};
 use std::path::{Path, PathBuf};
 

@@ -4,7 +4,7 @@ pub mod excel;
 pub mod photo_xml;
 
 use crate::analyzer::AnalysisResult;
-use crate::cli::{ExportFormat, PdfQuality};
+use crate::export_types::{ExportFormat, PdfQuality};
 use crate::error::Result;
 use photo_ai_common::export::pdf_embed::embed_analysis_to_pdf;
 use std::path::Path;
