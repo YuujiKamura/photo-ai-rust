@@ -1,0 +1,15 @@
+[
+  { "id": "arrival_canonical",         "text": "到着温度" },
+  { "id": "arrival_with_value",        "text": "到着温度 160℃" },
+  { "id": "spreading_canonical",       "text": "敷均し温度" },
+  { "id": "spreading_variant",         "text": "敷きならし直後" },
+  { "id": "initial_compaction_new",    "text": "初期締固め前温度測定" },
+  { "id": "initial_compaction_old",    "text": "初期転圧前温度" },
+  { "id": "opening_canonical",         "text": "開放温度" },
+  { "id": "opening_misspelled",        "text": "解放温度 45℃" },
+  { "id": "outside_air_full",          "text": "舗装日外気温測定" },
+  { "id": "outside_air_short",         "text": "外気温 12℃" },
+  { "id": "unrelated_pavement",        "text": "舗設状況" },
+  { "id": "empty_string",             "text": "" },
+  { "id": "density_test",             "text": "密度試験" }
+]
