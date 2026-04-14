@@ -714,14 +714,14 @@ pub fn convert_groups_to_results(
                 rec.core.detected_text.clone()
             };
             let texts = vec![combined.as_str()];
-            match_master_from_detected_texts(master, &texts, folder_name, ft)
+            match_master_from_detected_texts(master, &texts, folder_name, ft, folder_context)
         } else if !rec.core.machine_type.is_empty() {
             // detected_text空でもmachine_typeがあればキーワードとして使う
             let texts = vec![rec.core.machine_type.as_str()];
-            match_master_from_detected_texts(master, &texts, folder_name, ft)
+            match_master_from_detected_texts(master, &texts, folder_name, ft, folder_context)
         } else {
             // detected_text空、machine_type空ならフォルダ名のみで照合
-            match_master_from_detected_texts(master, &[], folder_name, ft)
+            match_master_from_detected_texts(master, &[], folder_name, ft, folder_context)
         };
 
         // マスタ照合結果を適用

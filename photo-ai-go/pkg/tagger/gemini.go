@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const defaultModel = "gemini-2.5-flash"
+const defaultModel = "gemini-3-pro-preview"
 
 // ClassifyConfig holds configuration for the Gemini classify call.
 // APIKey is unused (retained for API compat); classification now goes through

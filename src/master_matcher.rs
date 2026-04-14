@@ -19,6 +19,67 @@ const PARTIAL_MATCH_SCORE: usize = 50;
 const FOCUS_TARGET_BOOST_MULTIPLIER: usize = 3;
 const SEARCH_PATTERN_PRIORITY_SCORE: usize = 1000;
 
+/// フォルダ片 × photo_type の LCS スコア採用下限（未満は 0 点）
+const FOLDER_PHOTO_TYPE_MIN_SCORE: usize = 6;
+
+/// フォルダ名→写真区分のエイリアス（フォルダ側に現れる語, 対応するマスタ photo_type）
+const PHOTO_TYPE_ALIASES: &[(&str, &str)] = &[
+    ("温度管理", "品質管理写真"),
+];
+
+/// 最長共通部分文字列の長さ（文字単位）。
+fn lcs_len(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    if a.is_empty() || b.is_empty() {
+        return 0;
+    }
+    let mut dp = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    let mut best = 0;
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            if a[i - 1] == b[j - 1] {
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+                if dp[i][j] > best {
+                    best = dp[i][j];
+                }
+            }
+        }
+    }
+    best
+}
+
+/// フォルダ片と photo_type のスコア。直接 LCS または alias 経由 LCS のうち最大値を 2 倍。
+/// `FOLDER_PHOTO_TYPE_MIN_SCORE` 未満なら 0。
+fn folder_photo_type_score(folder_part: &str, photo_type: &str) -> usize {
+    if folder_part.is_empty() || photo_type.is_empty() {
+        return 0;
+    }
+    let direct = 2 * lcs_len(folder_part, photo_type);
+    let alias_best = PHOTO_TYPE_ALIASES
+        .iter()
+        .filter(|(_, tgt)| *tgt == photo_type)
+        .map(|(key, _)| 2 * lcs_len(folder_part, key))
+        .max()
+        .unwrap_or(0);
+    let best = direct.max(alias_best);
+    if best >= FOLDER_PHOTO_TYPE_MIN_SCORE { best } else { 0 }
+}
+
+/// フォルダパス文字列を normal component 群に分解する（drive/root は除外）。
+fn split_folder_parts(folder_context: &str) -> Vec<String> {
+    if folder_context.is_empty() {
+        return Vec::new();
+    }
+    std::path::Path::new(folder_context)
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str().map(|s| s.to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// OCRから抽出した工種名をマスタの工種名に正規化する
 ///
 /// 実体は `photo_ai_common::domain::policy::normalize_work_type_from_ocr`。
@@ -271,6 +332,7 @@ fn score_candidates(
     variety_hint: Option<&str>,
     focus_target: Option<&str>,
     exclude_other: bool,
+    folder_parts: &[String],
 ) -> Vec<(HierarchyRow, usize)> {
     // 工種・種別でマスタをフィルタ
     let candidates: Vec<_> = master.rows().iter()
@@ -356,7 +418,12 @@ fn score_candidates(
         } else {
             0
         };
-        let score = kw_score + ft_boost;
+        // フォルダパス各片 × 当該行の photo_type で LCS×2 加点（alias 含む）
+        let folder_score: usize = folder_parts
+            .iter()
+            .map(|p| folder_photo_type_score(p, &row.photo_type))
+            .sum();
+        let score = kw_score + ft_boost + folder_score;
         if score > 0 {
             scored.push(((*row).clone(), score));
         }
@@ -374,9 +441,11 @@ pub(crate) fn match_master_from_detected_texts(
     detected_texts: &[&str],
     folder_name: &str,
     focus_target: Option<&str>,
+    folder_context: &str,
 ) -> Option<HierarchyRow> {
     let (keywords, work_type_hint, variety_hint) = extract_match_keywords(master, detected_texts, folder_name);
     let exclude_other = should_exclude_other_for_folder(master, folder_name);
+    let folder_parts = split_folder_parts(folder_context);
 
     let scored = score_candidates(
         master,
@@ -385,6 +454,7 @@ pub(crate) fn match_master_from_detected_texts(
         variety_hint.as_deref(),
         focus_target,
         exclude_other,
+        &folder_parts,
     );
 
     scored.into_iter()
@@ -475,7 +545,7 @@ mod tests {
         let text = "工種：舗装補修工\n表層工\n舗設状況";
         let texts = vec![text];
 
-        let result = match_master_from_detected_texts(&master, &texts, "", None);
+        let result = match_master_from_detected_texts(&master, &texts, "", None, "");
         assert!(result.is_some(), "should match despite work_type being 舗装補修工");
         let row = result.unwrap();
         assert_eq!(row.work_type, "舗装工");
@@ -496,11 +566,11 @@ mod tests {
         let texts = vec![text];
 
         // focusTargetなし: 「切削殻積込状況」が勝つ（bigram score 4 > 2）
-        let result = match_master_from_detected_texts(&master, &texts, "", None);
+        let result = match_master_from_detected_texts(&master, &texts, "", None, "");
         assert_eq!(result.as_ref().unwrap().remarks, "切削殻積込状況");
 
         // focusTarget「路面切削状況」あり: boostにより「路面切削状況」が勝つ
-        let result = match_master_from_detected_texts(&master, &texts, "", Some("路面切削状況"));
+        let result = match_master_from_detected_texts(&master, &texts, "", Some("路面切削状況"), "");
         assert_eq!(result.as_ref().unwrap().remarks, "路面切削状況");
     }
 
@@ -520,15 +590,15 @@ mod tests {
         let texts = vec![text];
 
         // ft=敷均し温度 → 敷均し温度が勝つ
-        let result = match_master_from_detected_texts(&master, &texts, "", Some("敷均し温度"));
+        let result = match_master_from_detected_texts(&master, &texts, "", Some("敷均し温度"), "");
         assert_eq!(result.as_ref().unwrap().remarks, "敷均し温度");
 
         // ft=初期転圧前温度 → 初期締固め前温度が勝つ（bigram: 初期, 前温, 温度 が共通）
-        let result = match_master_from_detected_texts(&master, &texts, "", Some("初期転圧前温度"));
+        let result = match_master_from_detected_texts(&master, &texts, "", Some("初期転圧前温度"), "");
         assert_eq!(result.as_ref().unwrap().remarks, "初期締固め前温度");
 
         // ft=到着温度 → 到着温度が勝つ
-        let result = match_master_from_detected_texts(&master, &texts, "", Some("到着温度"));
+        let result = match_master_from_detected_texts(&master, &texts, "", Some("到着温度"), "");
         assert_eq!(result.as_ref().unwrap().remarks, "到着温度");
     }
 
@@ -549,7 +619,7 @@ mod tests {
         let texts = vec![text];
 
         // フォルダ名「切削出来形」→ 検索パターン「切削出来形」で路面切削工出来形測定がマッチ
-        let result = match_master_from_detected_texts(&master, &texts, "切削出来形", None);
+        let result = match_master_from_detected_texts(&master, &texts, "切削出来形", None, "");
         assert!(result.is_some(), "should match");
         assert_eq!(result.unwrap().remarks, "路面切削工出来形測定");
     }
@@ -569,7 +639,7 @@ mod tests {
         let texts = vec![text];
 
         // フォルダ名「不陸整正」→ 検索パターン「基準高」で不陸整正出来形がマッチ
-        let result = match_master_from_detected_texts(&master, &texts, "不陸整正", None);
+        let result = match_master_from_detected_texts(&master, &texts, "不陸整正", None, "");
         assert!(result.is_some(), "should match");
         assert_eq!(result.unwrap().remarks, "不陸整正出来形");
     }
@@ -631,7 +701,7 @@ mod tests {
 
         let text = "工種：舗装工";
         let texts = vec![text];
-        let result = match_master_from_detected_texts(&master, &texts, "疎通_施工状況_1枚", None);
+        let result = match_master_from_detected_texts(&master, &texts, "疎通_施工状況_1枚", None, "");
         assert!(result.is_some());
         assert_eq!(result.unwrap().photo_type, "施工状況写真");
     }
@@ -648,8 +718,8 @@ mod tests {
         let text = "表層工\n舗設状況";
         let texts = vec![text];
 
-        let result_none = match_master_from_detected_texts(&master, &texts, "", None);
-        let result_empty = match_master_from_detected_texts(&master, &texts, "", Some(""));
+        let result_none = match_master_from_detected_texts(&master, &texts, "", None, "");
+        let result_empty = match_master_from_detected_texts(&master, &texts, "", Some(""), "");
         assert_eq!(result_none.as_ref().unwrap().remarks, result_empty.as_ref().unwrap().remarks);
         assert_eq!(result_none.unwrap().remarks, "舗設状況");
     }
@@ -664,7 +734,7 @@ mod tests {
         let master = HierarchyMaster::from_csv_str(csv).unwrap();
         let texts = vec!["表層工\n初期転圧状況\nコンバインドローラー"];
 
-        let result = match_master_from_detected_texts(&master, &texts, "施工状況", Some("初期転圧状況"));
+        let result = match_master_from_detected_texts(&master, &texts, "施工状況", Some("初期転圧状況"), "");
         assert!(result.is_some());
         let row = result.unwrap();
         assert_eq!(row.photo_type, "施工状況写真");
@@ -689,28 +759,28 @@ mod tests {
         // R0010577: detected_textにコアーキーワードなし、focus_targetに正解あり
         let text = "市道 ○○町第1号線舗装補修工事, 舗装工 表層工, No.8 R";
         let texts = vec![text];
-        let result = match_master_from_detected_texts(&master, &texts, "コアNo.8", Some("コアー厚さ測定"));
+        let result = match_master_from_detected_texts(&master, &texts, "コアNo.8", Some("コアー厚さ測定"), "");
         assert!(result.is_some(), "focus_target should match コアー厚さ測定 search pattern");
         assert_eq!(result.unwrap().remarks, "コアー厚さ測定");
 
         // R0010578: detected_text="55mm"のみ、focus_target="舗装厚測定・接写"
         let text2 = "55mm";
         let texts2 = vec![text2];
-        let result2 = match_master_from_detected_texts(&master, &texts2, "コアNo.8", Some("舗装厚測定・接写"));
+        let result2 = match_master_from_detected_texts(&master, &texts2, "コアNo.8", Some("舗装厚測定・接写"), "");
         assert!(result2.is_some(), "focus_target '舗装厚測定・接写' should match search pattern '舗装厚測定'");
         assert_eq!(result2.unwrap().remarks, "コアー厚さ測定");
 
         // R0010582: コアー採取前
         let text3 = "工事名：市道 ○○町第1号線舗装補修工事, 場所：No.1 R, 表層工 コアー 採取前";
         let texts3 = vec![text3];
-        let result3 = match_master_from_detected_texts(&master, &texts3, "コアNo.1", Some("コアー採取前"));
+        let result3 = match_master_from_detected_texts(&master, &texts3, "コアNo.1", Some("コアー採取前"), "");
         assert!(result3.is_some());
         assert_eq!(result3.unwrap().remarks, "コアー採取前");
 
         // R0010589: コアー復築前
         let text4 = "工事名 市道 ○○第1号線舗装補修工事, 場所 No. 1R, 表層工 コアー 復築前";
         let texts4 = vec![text4];
-        let result4 = match_master_from_detected_texts(&master, &texts4, "コアNo.1", Some("コアー復築前"));
+        let result4 = match_master_from_detected_texts(&master, &texts4, "コアNo.1", Some("コアー復築前"), "");
         assert!(result4.is_some());
         assert_eq!(result4.unwrap().remarks, "コアー復築前");
     }
@@ -729,14 +799,14 @@ mod tests {
         // 「工種:」空のOCR
         let text = "工事名:テスト工事, 工種:, 測点:No.12, 切削完了";
         let texts = vec![text];
-        let result = match_master_from_detected_texts(&master, &texts, "施工状況", Some("切削完了"));
+        let result = match_master_from_detected_texts(&master, &texts, "施工状況", Some("切削完了"), "");
         assert!(result.is_some(), "should match 切削完了 despite empty 工種:");
         assert_eq!(result.unwrap().remarks, "切削完了");
 
         // 端部舗装版撤去
         let text2 = "工事名:テスト工事, 工種:, 測点:No.12, 端部舗装版撤去状況";
         let texts2 = vec![text2];
-        let result2 = match_master_from_detected_texts(&master, &texts2, "施工状況", Some("端部舗装版撤去状況"));
+        let result2 = match_master_from_detected_texts(&master, &texts2, "施工状況", Some("端部舗装版撤去状況"), "");
         assert!(result2.is_some(), "should match 端部舗装版撤去状況");
         assert_eq!(result2.unwrap().remarks, "端部舗装版撤去状況");
     }
@@ -753,7 +823,7 @@ mod tests {
         let text = "場所: 取付 No.1 L\n工種: 路面切削工\n状況: 切削・積込状況";
         let texts = vec![text];
 
-        let result = match_master_from_detected_texts(&master, &texts, "疎通_施工状況_1枚", Some("作業状況"));
+        let result = match_master_from_detected_texts(&master, &texts, "疎通_施工状況_1枚", Some("作業状況"), "");
         assert!(result.is_some(), "variety-like 工種 should not filter out 舗装工 rows");
         assert_eq!(result.unwrap().photo_type, "施工状況写真");
     }
