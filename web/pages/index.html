@@ -402,8 +402,8 @@
                 <h1>工事写真をAIで<br>分類できるのか？</h1>
                 <p class="lead">
                     photo-ai は、工事写真のグループ化だけで終わらせず、工種マスタ照合と PDF / Excel 台帳出力まで
-                    実務フローにつなげるためのツールです。GitHub Pages では入口だけを公開し、実際の運用はローカル Web UI と
-                    Go メイン CLI で回します。
+                    実務フローにつなげるためのツールです。<strong>単一の <code>photo-ai.exe</code></strong> に Go フロントと
+                    Rust engine をすべて同梱し、ダウンロードして実行するだけで動きます。
                 </p>
                 <div class="actions">
                     <a class="btn btn-primary" href="https://github.com/YuujiKamura/photo-ai-rust/releases/latest">Windows 版をダウンロード</a>
@@ -411,8 +411,8 @@
                     <a class="btn" href="https://github.com/YuujiKamura/photo-ai-rust/blob/master/docs/QUICKSTART.md">Quickstart</a>
                 </div>
                 <div class="meta">
-                    <span>Go メイン CLI + Rust engine (embedded)</span>
-                    <span>ACP / resident-ai</span>
+                    <span>単一バイナリ (Go frontend + Rust engines embedded)</span>
+                    <span>Rust / Go 解析エンジン切替対応</span>
                     <span>施工写真向けマスタ照合</span>
                 </div>
             </div>
@@ -490,15 +490,15 @@ result.json
             <div class="feature-grid">
                 <div class="feature">
                     <h3>Go メイン</h3>
-                    <p>ユーザー向けの主系CLI。配布、CI、リリースはこの入口を基準に揃えています。</p>
+                    <p>ユーザー向けの主系CLI。タグ付けは Go ネイティブ実装 (<code>pkg/tagger</code>) に移植済み。配布、CI、リリースはこの入口を基準に揃えています。</p>
                 </div>
                 <div class="feature">
                     <h3>Rust engines (embedded)</h3>
-                    <p>タグ付け、解析、PDF、Excel を個別バイナリに分離。Go バイナリに同梱し、エンジンパス解決の可観測性も確保しています。</p>
+                    <p>解析・PDF・Excel の 3 エンジンを <code>photo-ai.exe</code> に同梱。エンジンパス解決の可観測性を確保しつつ、配布時は単一バイナリにまとまります。</p>
                 </div>
                 <div class="feature">
                     <h3>ローカル Web UI</h3>
-                    <p>最新UIは <code>web/</code> 側。Pages では静的プレビューだけを公開し、実働はローカルサーバーで使います。</p>
+                    <p><code>photo-ai.exe serve</code> でローカルサーバーを起動。ダブルクリック起動でも自動で Web UI が立ち上がります。</p>
                 </div>
             </div>
         </section>
@@ -520,7 +520,7 @@ result.json
                 </div>
                 <div class="mode">
                     <h3>ローカル Web UI</h3>
-                    <p><code>webserver.exe</code> で起動する実務用画面です。API と端末連携があるため Pages では動きません。</p>
+                    <p><code>photo-ai.exe serve</code> (ダブルクリック起動も可) で立ち上がる実務用画面です。API と端末連携があるため Pages では動きません。</p>
                     <ul>
                         <li>工種マスタ編集</li>
                         <li>端末ログ確認</li>
@@ -529,23 +529,23 @@ result.json
                 </div>
                 <div class="mode">
                     <h3>Go メイン CLI</h3>
-                    <p><code>photo-ai.exe</code> から engine 群を呼び出して処理します。</p>
+                    <p><code>photo-ai.exe</code> から埋め込み engine 群を呼び出して処理します。<code>--engine=rust|go</code> で解析エンジンを切替可能。</p>
                     <ul>
-                        <li>analyze</li>
+                        <li>analyze (<code>--engine=rust|go</code>)</li>
                         <li>export pdf / excel</li>
-                        <li>pair / completion</li>
+                        <li>pair / serve</li>
                     </ul>
                 </div>
             </div>
             <div class="callout">
-                <strong>注意:</strong> `web/` の本体は `/api/*` とローカル terminal / websocket に依存します。
-                そのため Pages は `web/pages` の静的入口だけを配信し、実働UIはローカル実行に寄せています。
+                <strong>注意:</strong> <code>web/</code> の本体は <code>/api/*</code> とローカル terminal / websocket に依存します。
+                そのため Pages は <code>web/pages</code> の静的入口だけを配信し、実働UIは <code>photo-ai.exe serve</code> でのローカル実行に寄せています。
             </div>
         </section>
 
         <footer>
-            <div>photo-ai | Go frontend + Rust embedded engines + resident-ai (ACP)</div>
-            <div>GitHub Pages source: <code>web/pages</code></div>
+            <div>photo-ai | 単一バイナリ配布 — Go frontend + Rust embedded engines</div>
+            <div>GitHub Pages source: <code>web/pages</code> — リリース: <a href="https://github.com/YuujiKamura/photo-ai-rust/releases/latest">releases/latest</a></div>
         </footer>
     </div>
 </body>
