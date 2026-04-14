@@ -1,5 +1,5 @@
 use crate::error::{PhotoAiError, Result};
-use crate::grouping::{CarrierConfig, GroupRecords, UsageMode};
+use crate::grouping::{CarrierConfig, GroupRecords};
 use photo_ai_common::{AnalysisResult, RawImageData};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -33,7 +33,7 @@ pub fn run_tag_groups(
     folder: &Path,
     batch_size: usize,
     vocabulary: Option<&[String]>,
-    carrier: CarrierConfig,
+    _carrier: CarrierConfig,
 ) -> Result<GroupRecords> {
     let mut args = vec![
         "tag-groups".to_string(),
@@ -41,14 +41,6 @@ pub fn run_tag_groups(
         folder.display().to_string(),
         "--batch-size".to_string(),
         batch_size.to_string(),
-        "--usage-mode".to_string(),
-        usage_mode_name(carrier.effective_usage_mode()).to_string(),
-        "--provider".to_string(),
-        provider_name(carrier).to_string(),
-        "--billing".to_string(),
-        billing_name(carrier).to_string(),
-        "--transport".to_string(),
-        transport_name(carrier).to_string(),
     ];
 
     if let Some(vocabulary) = vocabulary {
@@ -202,36 +194,3 @@ fn resolve_analysis_engine_binary() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(exe_name))
 }
 
-fn usage_mode_name(usage_mode: UsageMode) -> &'static str {
-    match usage_mode {
-        UsageMode::PayPerUse => "pay_per_use",
-        UsageMode::Resident => "resident",
-        UsageMode::TimeBasedQuota => "time_based_quota",
-    }
-}
-
-fn provider_name(carrier: CarrierConfig) -> &'static str {
-    match carrier.provider {
-        crate::grouping::AiProvider::Auto => "auto",
-        crate::grouping::AiProvider::Gemini => "gemini",
-        crate::grouping::AiProvider::Claude => "claude",
-        crate::grouping::AiProvider::Codex => "codex",
-    }
-}
-
-fn billing_name(carrier: CarrierConfig) -> &'static str {
-    match carrier.billing {
-        crate::grouping::BillingMode::Auto => "auto",
-        crate::grouping::BillingMode::Subscription => "subscription",
-        crate::grouping::BillingMode::PayPerUse => "pay_per_use",
-    }
-}
-
-fn transport_name(carrier: CarrierConfig) -> &'static str {
-    match carrier.transport {
-        crate::grouping::TransportMode::Auto => "auto",
-        crate::grouping::TransportMode::AgentApi => "agent_api",
-        crate::grouping::TransportMode::ResidentAgent => "resident_agent",
-        crate::grouping::TransportMode::DirectCli => "direct_cli",
-    }
-}

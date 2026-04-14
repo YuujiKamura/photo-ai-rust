@@ -187,7 +187,6 @@ func TestPipelineResultsToEngineResultsMapping(t *testing.T) {
 		{"PhotoCategory", r.PhotoCategory, src[0].PhotoCategory},
 		{"Reasoning", r.Reasoning, src[0].Reasoning},
 		{"FocusTarget", r.FocusTarget, src[0].FocusTarget},
-		{"AnalysisTransport", r.AnalysisTransport, "go_pipeline"},
 	}
 	for _, c := range checks {
 		if c.got != c.want {

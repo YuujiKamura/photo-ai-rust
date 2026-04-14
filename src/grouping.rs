@@ -2,61 +2,18 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageMode {
-    PayPerUse,
-    Resident,
+    #[default]
     TimeBasedQuota,
 }
 
+/// AI経路設定。Gemini CLI (time-based quota) 固定のため空。
+///
+/// API後方互換のため残置。全フィールドは削除済み。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum AiProvider {
-    #[default]
-    Auto,
-    Gemini,
-    Claude,
-    Codex,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum BillingMode {
-    #[default]
-    Auto,
-    Subscription,
-    PayPerUse,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum TransportMode {
-    #[default]
-    Auto,
-    AgentApi,
-    ResidentAgent,
-    DirectCli,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct CarrierConfig {
-    pub provider: AiProvider,
-    pub billing: BillingMode,
-    pub transport: TransportMode,
-}
-
-impl CarrierConfig {
-    pub fn effective_usage_mode(self) -> UsageMode {
-        if self.billing == BillingMode::PayPerUse {
-            UsageMode::PayPerUse
-        } else if self.transport == TransportMode::ResidentAgent {
-            UsageMode::Resident
-        } else {
-            UsageMode::TimeBasedQuota
-        }
-    }
-}
+pub struct CarrierConfig;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GroupCore {

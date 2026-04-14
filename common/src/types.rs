@@ -135,14 +135,6 @@ pub struct AnalysisResult {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub analysis_provider: String,
 
-    /// 解析時の課金系統
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub analysis_billing: String,
-
-    /// 解析時の呼び出し経路
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub analysis_transport: String,
-
     /// 解析バイナリのコミットID
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub analysis_commit: String,
@@ -364,8 +356,6 @@ mod tests {
             reasoning: "分類理由".to_string(),
             analysis_timestamp: "2026-04-09 13:00:00 +0900".to_string(),
             analysis_provider: "claude".to_string(),
-            analysis_billing: "subscription".to_string(),
-            analysis_transport: "agent_api".to_string(),
             analysis_commit: "370fea0cc5b8aa2201bad392c3415b32af78a13a".to_string(),
             analysis_master_selection: "single".to_string(),
             analysis_master_path: "master/by_work_type/舗装工.csv".to_string(),
@@ -395,8 +385,6 @@ mod tests {
         let result: AnalysisResult = serde_json::from_str(json).expect("デシリアライズ失敗");
         assert_eq!(result.analysis_timestamp, "");
         assert_eq!(result.analysis_provider, "");
-        assert_eq!(result.analysis_billing, "");
-        assert_eq!(result.analysis_transport, "");
         assert_eq!(result.analysis_commit, "");
         assert_eq!(result.analysis_master_selection, "");
         assert_eq!(result.analysis_master_path, "");

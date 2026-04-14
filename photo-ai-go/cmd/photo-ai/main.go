@@ -300,10 +300,6 @@ type analyzeMetadata struct {
 
 func stampAnalysisMetadata(results []engine.AnalysisResult, meta analyzeMetadata) {
 	timestamp := time.Now().Format("2006-01-02 15:04:05 -0700")
-	billing := "subscription"
-	if meta.PayPerUse {
-		billing = "pay_per_use"
-	}
 	masterSelection := "all"
 	if meta.MasterPath != "" {
 		masterSelection = "single"
@@ -312,8 +308,6 @@ func stampAnalysisMetadata(results []engine.AnalysisResult, meta analyzeMetadata
 	for i := range results {
 		results[i].AnalysisTimestamp = timestamp
 		results[i].AnalysisProvider = "auto"
-		results[i].AnalysisBilling = billing
-		results[i].AnalysisTransport = "binary_engine"
 		results[i].AnalysisCommit = gitCommit
 		results[i].AnalysisMasterSelection = masterSelection
 		results[i].AnalysisMasterPath = meta.MasterPath

@@ -652,6 +652,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
 
 [[package]]
+name = "cli-ai-analyzer"
+version = "0.1.0"
+source = "git+https://github.com/YuujiKamura/cli-ai-analyzer.git?branch=master#da8570f72447e481666c67e67489cb0e43679d98"
+dependencies = [
+ "base64",
+ "clap",
+ "mime_guess",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "codepage"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2699,6 +2713,7 @@ dependencies = [
  "calamine",
  "chrono",
  "clap",
+ "cli-ai-analyzer",
  "image",
  "imageproc",
  "kamadak-exif",
@@ -2709,7 +2724,6 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest",
- "resident-ai",
  "rust_xlsxwriter 0.79.4",
  "serde",
  "serde_json",
@@ -3348,15 +3362,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "webpki-roots",
-]
-
-[[package]]
-name = "resident-ai"
-version = "0.2.0"
-source = "git+https://github.com/YuujiKamura/resident-ai.git?branch=master#2f49b59f7102c087d2533fa971402db0fd097587"
-dependencies = [
- "base64",
- "serde_json",
 ]
 
 [[package]]

@@ -169,8 +169,6 @@ pub fn merge_results(
                 label_overrides: HashMap::new(),
                 analysis_timestamp: String::new(),
                 analysis_provider: String::new(),
-                analysis_billing: String::new(),
-                analysis_transport: String::new(),
                 analysis_commit: String::new(),
                 analysis_master_selection: String::new(),
                 analysis_master_path: String::new(),

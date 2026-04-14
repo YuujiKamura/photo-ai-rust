@@ -7,7 +7,7 @@
 use crate::{analyzer, engine, error, scanner};
 use crate::domain::*;
 use crate::folder_rules::FolderRule;
-use crate::grouping::{CarrierConfig, GroupRecords, UsageMode};
+use crate::grouping::{CarrierConfig, GroupRecords};
 use crate::normalizer::{self, NormalizationOptions};
 use crate::ocr_parser::{extract_kv_from_text, normalize_station};
 use crate::master_matcher::{
@@ -156,11 +156,7 @@ pub async fn scan_and_analyze(config: &ScanAnalysisConfig<'_>) -> Result<Vec<ana
     let vocabulary = master.extract_vocabulary();
 
     // 3. 解析engine（語彙リスト付き）
-    if config.carrier.effective_usage_mode() == UsageMode::PayPerUse {
-        println!("{} photo-analysis-engine実行中... [従量課金API]", config.step_prefix_analyze);
-    } else {
-        println!("{} photo-analysis-engine実行中...", config.step_prefix_analyze);
-    }
+    println!("{} photo-analysis-engine実行中...", config.step_prefix_analyze);
     let vocab_ref = if vocabulary.is_empty() { None } else { Some(vocabulary.as_slice()) };
     let group_records = engine::run_tag_groups(config.folder, config.batch_size, vocab_ref, config.carrier)?;
 

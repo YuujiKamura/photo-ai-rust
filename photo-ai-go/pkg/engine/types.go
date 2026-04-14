@@ -106,8 +106,6 @@ type AnalysisResult struct {
 	LabelOverrides          map[string]string `json:"labelOverrides,omitempty"`
 	AnalysisTimestamp       string            `json:"analysisTimestamp,omitempty"`
 	AnalysisProvider        string            `json:"analysisProvider,omitempty"`
-	AnalysisBilling         string            `json:"analysisBilling,omitempty"`
-	AnalysisTransport       string            `json:"analysisTransport,omitempty"`
 	AnalysisCommit          string            `json:"analysisCommit,omitempty"`
 	AnalysisMasterSelection string            `json:"analysisMasterSelection,omitempty"`
 	AnalysisMasterPath      string            `json:"analysisMasterPath,omitempty"`

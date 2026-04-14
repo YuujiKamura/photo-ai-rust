@@ -84,8 +84,6 @@ func pipelineResultsToEngineResults(src []pipeline.Result) []engine.AnalysisResu
 			Reasoning:     r.Reasoning,
 			FocusTarget:   r.FocusTarget,
 			Group:         r.Group,
-			// AnalysisTransport marks origin so consumers can distinguish engine outputs.
-			AnalysisTransport: "go_pipeline",
 		}
 	}
 	return out
