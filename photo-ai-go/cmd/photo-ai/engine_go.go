@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/YuujiKamura/photo-ai-go/internal/matching"
 	"github.com/YuujiKamura/photo-ai-go/internal/pipeline"
 	"github.com/YuujiKamura/photo-ai-go/pkg/engine"
 )
@@ -17,7 +18,7 @@ import (
 // runGoEngine executes the Go-native pipeline and writes result.json.
 // The output schema mirrors engine.AnalysisResult so downstream consumers
 // (export pdf/excel, pair) can work with either engine's output unchanged.
-func runGoEngine(folder, destJSON string, flags analyzeFlagSet) error {
+func runGoEngine(folder, destJSON, master string, flags analyzeFlagSet) error {
 	cfg := pipeline.Config{
 		Folder:     folder,
 		BatchSize:  flags.batchSize,
@@ -29,8 +30,14 @@ func runGoEngine(folder, destJSON string, flags analyzeFlagSet) error {
 		Recursive:  flags.recursive,
 		IncludeAll: flags.includeAll,
 		PayPerUse:  flags.payPerUse,
-		// FolderRules: populated from file below when the flag is set.
-		// Matcher / HierarchyMaster: nil — caller may set via environment or future flag.
+	}
+
+	if master != "" {
+		hm, err := matching.NewHierarchyMasterFromCSVFile(master)
+		if err != nil {
+			return fmt.Errorf("go engine: load master %s: %w", master, err)
+		}
+		cfg.HierarchyMaster = hm
 	}
 
 	results, err := pipeline.Run(context.Background(), cfg)

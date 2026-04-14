@@ -143,7 +143,7 @@ var analyzeCmd = &cobra.Command{
 		fmt.Fprintln(os.Stderr, "写真解析を開始しています...")
 
 		if engineName == "go" {
-			return runGoEngine(folder, destJSON, flags)
+			return runGoEngine(folder, destJSON, master, flags)
 		}
 		// Default: Rust engine path (identical to pre-refactor behaviour).
 		return runRustEngine(cmd, folder, destJSON, master, flags)
