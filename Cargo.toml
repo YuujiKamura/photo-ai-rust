@@ -56,6 +56,7 @@ walkdir = "2"
 
 # 非同期（#[tokio::main]用）
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+async-trait = "0.1"
 
 # シリアライズ
 serde = { version = "1", features = ["derive"] }

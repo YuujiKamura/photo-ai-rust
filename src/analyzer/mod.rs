@@ -1,4 +1,5 @@
 mod gemini_cli;
+pub mod adapters;
 pub mod cache;
 
 pub use cache::{CacheFile, filter_cached_images};
