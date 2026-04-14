@@ -12,12 +12,17 @@
 //! 新しい業務ルールを追加するときは、まずこのモジュールを拡張すること。
 
 pub mod constants;
+pub mod photo;
 pub mod photo_category;
 pub mod policy;
 pub mod station;
 pub mod temperature;
 
 pub use constants::*;
+pub use photo::{
+    Classified, Exportable, IsClassifiedOrLater, IsMatchedOrLater, IsNormalizedOrLater, Matched,
+    Normalized, Photo, PhotoPhase, Raw,
+};
 pub use photo_category::PhotoCategory;
 pub use station::{DateStation, Lane, PostStation, Station};
 pub use temperature::TemperatureKind;
