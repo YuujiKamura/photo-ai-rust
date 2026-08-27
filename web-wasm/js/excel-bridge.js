@@ -176,6 +176,8 @@ function createFieldCell(sheet, row, label, value, rowSpan) {
   valueCell.border = BORDER_THIN;
   let adjustedFontSize = FONT_SIZE;
   if (value && typeof value === 'string') {
+    // PDFレイアウト用の点字空白(U+2800)や先頭の改行をExcel出力時には除去する
+    value = value.replace(/^[⠀\s]+/, '').replace(/[⠀\s]+$/, '');
     const lines = value.split('\n');
     let displayLines = lines.length;
     for (const line of lines) {
