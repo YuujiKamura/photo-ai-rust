@@ -56,7 +56,7 @@ export const GAP_ROWS = 1;
 export const ROWS_PER_BLOCK = PHOTO_ROWS + GAP_ROWS;  // 11
 export const ROW_HEIGHT_PT = Math.floor((PHOTO_HEIGHT_PT / PHOTO_ROWS) * SCALE);  // 26pt
 
-export const COL_A_WIDTH = 56.1;  // 写真列
+export const COL_A_WIDTH = 64.4;  // 写真列 (64.4 chars * 7.1 + 5 = 462.2px)
 export const COL_B_WIDTH = 11;  // ラベル列
 export const COL_C_WIDTH = 28.6;  // 値列
 export const FONT_NAME = 'MS Mincho';
