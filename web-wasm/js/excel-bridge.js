@@ -174,22 +174,36 @@ function createFieldCell(sheet, row, label, value, rowSpan) {
   const valueCell = sheet.getCell(row, 3);
   valueCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
   valueCell.border = BORDER_THIN;
-  
+  let adjustedFontSize = FONT_SIZE;
+  if (value && typeof value === 'string') {
+    const lines = value.split('\n');
+    let displayLines = lines.length;
+    for (const line of lines) {
+      if (line.length > 26) {
+        displayLines += Math.floor(line.length / 26);
+      }
+    }
+    const maxLines = rowSpan * 2.2; // approx 2.2 lines per row of 28pt
+    if (displayLines > maxLines) {
+      adjustedFontSize = Math.max(6, Math.floor(FONT_SIZE * (maxLines / displayLines)));
+    }
+  }
+
   if (value && typeof value === 'string' && value.includes('実測')) {
     const lines = value.split('\n');
     const richText = [];
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (line.includes('実測')) {
-        richText.push({ text: line + (i < lines.length - 1 ? '\n' : ''), font: { name: FONT_NAME, size: FONT_SIZE, color: { argb: 'FFFF0000' } } });
+        richText.push({ text: line + (i < lines.length - 1 ? '\n' : ''), font: { name: FONT_NAME, size: adjustedFontSize, color: { argb: 'FFFF0000' } } });
       } else {
-        richText.push({ text: line + (i < lines.length - 1 ? '\n' : ''), font: { name: FONT_NAME, size: FONT_SIZE } });
+        richText.push({ text: line + (i < lines.length - 1 ? '\n' : ''), font: { name: FONT_NAME, size: adjustedFontSize } });
       }
     }
     valueCell.value = { richText };
   } else {
     valueCell.value = value;
-    valueCell.font = { name: FONT_NAME, size: FONT_SIZE };
+    valueCell.font = { name: FONT_NAME, size: adjustedFontSize };
   }
 
   // 複数行の場合はマージ
