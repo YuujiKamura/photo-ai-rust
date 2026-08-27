@@ -123,8 +123,8 @@ export async function generateExcel(photosJson, optionsJson) {
           if (imageId !== null) {
             sheet.addImage(imageId, {
               tl: { col: 0, row: startRow - 1 },
-              br: { col: 1, row: startRow - 1 + PHOTO_ROWS },
-              editAs: 'absolute'
+              ext: { width: 462, height: 346 }, // 4:3 ratio based on 260pt cell height (346.6px height, 462.2px width)
+              editAs: 'oneCell'
             });
           }
         } catch (err) {
@@ -168,19 +168,29 @@ function createFieldCell(sheet, row, label, value, rowSpan) {
   labelCell.value = label;
   labelCell.font = { name: FONT_NAME, size: FONT_SIZE };
   labelCell.alignment = { vertical: 'middle', horizontal: 'center' };
-  labelCell.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFF5F5F5' }
-  };
   labelCell.border = BORDER_THIN;
 
   // 値セル（列C）
   const valueCell = sheet.getCell(row, 3);
-  valueCell.value = value;
   valueCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
-  valueCell.font = { name: FONT_NAME, size: FONT_SIZE };
   valueCell.border = BORDER_THIN;
+  
+  if (value && typeof value === 'string' && value.includes('実測')) {
+    const lines = value.split('\n');
+    const richText = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.includes('実測')) {
+        richText.push({ text: line + (i < lines.length - 1 ? '\n' : ''), font: { name: FONT_NAME, size: FONT_SIZE, color: { argb: 'FFFF0000' } } });
+      } else {
+        richText.push({ text: line + (i < lines.length - 1 ? '\n' : ''), font: { name: FONT_NAME, size: FONT_SIZE } });
+      }
+    }
+    valueCell.value = { richText };
+  } else {
+    valueCell.value = value;
+    valueCell.font = { name: FONT_NAME, size: FONT_SIZE };
+  }
 
   // 複数行の場合はマージ
   if (rowSpan > 1) {

@@ -123,7 +123,7 @@ export const LAYOUT_FIELDS = [
   {
     "key": "measurements",
     "label": "測定値",
-    "rowSpan": 3
+    "rowSpan": 2
   }
 ];
 
