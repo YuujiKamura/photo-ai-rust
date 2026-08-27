@@ -123,8 +123,8 @@ export async function generateExcel(photosJson, optionsJson) {
           if (imageId !== null) {
             sheet.addImage(imageId, {
               tl: { col: 0, row: startRow - 1 },
-              ext: { width: 462, height: 346 }, // 4:3 ratio based on 260pt cell height (346.6px height, 462.2px width)
-              editAs: 'oneCell'
+              br: { col: 1, row: startRow - 1 + PHOTO_ROWS },
+              editAs: 'absolute'
             });
           }
         } catch (err) {
