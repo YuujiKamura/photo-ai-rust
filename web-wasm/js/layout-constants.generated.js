@@ -118,12 +118,12 @@ export const LAYOUT_FIELDS = [
   {
     "key": "remarks",
     "label": "備考",
-    "rowSpan": 2
+    "rowSpan": 1
   },
   {
     "key": "measurements",
     "label": "測定値",
-    "rowSpan": 2
+    "rowSpan": 3
   }
 ];
 
