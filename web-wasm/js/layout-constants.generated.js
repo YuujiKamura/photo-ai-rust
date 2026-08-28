@@ -1,8 +1,8 @@
 // ============================================
 // AUTO-GENERATED FILE - DO NOT EDIT DIRECTLY
 // Generated from: shared/layout-config/layout-config.json
-// Version: 1.0.0
-// Generated at: 2026-01-31T10:48:33.666Z
+// Version: 1.1.0
+// Generated at: 2026-08-28T05:32:08.700Z
 // ============================================
 
 // ============================================
@@ -54,7 +54,7 @@ export const SCALE = 1.1;
 export const PHOTO_ROWS = 10;
 export const GAP_ROWS = 1;
 export const ROWS_PER_BLOCK = PHOTO_ROWS + GAP_ROWS;  // 11
-export const ROW_HEIGHT_PT = 28;
+export const ROW_HEIGHT_PT = 28;  // 印刷時の写真の縦横比を合わせた実測値 (導出式ではなく SoT の値)
 
 export const COL_A_WIDTH = 63;  // 写真列
 export const COL_B_WIDTH = 11;  // ラベル列

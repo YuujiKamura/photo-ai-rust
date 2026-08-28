@@ -1,8 +1,8 @@
 //! AUTO-GENERATED FILE - DO NOT EDIT DIRECTLY
 //!
 //! Generated from: shared/layout-config/layout-config.json
-//! Version: 1.0.0
-//! Generated at: 2026-01-31T10:48:31.827Z
+//! Version: 1.1.0
+//! Generated at: 2026-08-28T05:31:38.827Z
 
 // ============================================
 // mm基準レイアウト（Source of Truth）
@@ -89,10 +89,10 @@ pub const ROWS_PER_BLOCK_3UP: u8 = PHOTO_ROWS + GAP_ROWS; // 11行/ブロック
 pub const ROWS_PER_BLOCK_2UP: u8 = 17; // 17行/ブロック
 
 /// 行高さ (pt)
-pub const ROW_HEIGHT_PT: f32 = 26.0;
+pub const ROW_HEIGHT_PT: f32 = 28.0;
 
 /// 列幅 (Excel単位)
-pub const PHOTO_COL_WIDTH: f32 = 56.1;
+pub const PHOTO_COL_WIDTH: f32 = 63.0;
 pub const LABEL_COL_WIDTH: f32 = 11.0;
 pub const VALUE_COL_WIDTH: f32 = 28.6;
 pub const INFO_COL_WIDTH: f32 = 39.6;
@@ -117,7 +117,7 @@ pub const LAYOUT_FIELDS: &[FieldDefinition] = &[
     FieldDefinition { key: "variety", label: "種別", row_span: 1 },
     FieldDefinition { key: "subphase", label: "細別", row_span: 1 },
     FieldDefinition { key: "station", label: "測点", row_span: 1 },
-    FieldDefinition { key: "remarks", label: "備考", row_span: 2 },
+    FieldDefinition { key: "remarks", label: "備考", row_span: 1 },
     FieldDefinition { key: "measurements", label: "測定値", row_span: 3 },
 ];
 
@@ -366,8 +366,8 @@ mod tests {
         let layout = ExcelLayout::three_up();
         assert_eq!(layout.rows_per_block, 11);
         assert_eq!(layout.photo_rows, 10);
-        assert!((layout.row_height_pt - 26.0).abs() < 0.01);
-        assert!((layout.col_a_width - 56.1).abs() < 0.01);
+        assert!((layout.row_height_pt - 28.0).abs() < 0.01);
+        assert!((layout.col_a_width - 63.0).abs() < 0.01);
         assert!((layout.col_b_width - 11.0).abs() < 0.01);
         assert!((layout.col_c_width - 28.6).abs() < 0.01);
     }
